@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+
+# C++ build artifacts
+*.o
+linux*/
+
+# OpenFOAM runtime
+processor*/
+polyMesh/
+dynamicCode/
+0/
+*.foam
+
+# Mesh and geometry
+*.stl
+*.msh
+bubble-contour/TaylorBubbleSTL/
+
+# Data
+*.csv
+bubble-contour/*-Spline.csv
+*analyzed
+
+# Logs
+*.log
+log.*
+.engauge.log
+
+# Images
+*.png
+
+# IDE / tools
+.ccls-cache/
+.claude/
+sync.ffs_db
+*.swp
+
+# Snakemake 
+.snakemake/
