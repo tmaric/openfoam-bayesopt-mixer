@@ -10,15 +10,13 @@ FoamFile
     version     2.0;
     format      ascii;
     class       dictionary;
-    object      transportProperties;
+    object      decomposeParDict;
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-transportModel  Newtonian;
+numberOfSubdomains  6;
 
-// Water at 20°C: nu = 1e-6 m²/s
-// Re = U_mean * H / nu = 0.01 * 1e-3 / 1e-6 = 10
-nu              1e-06;
+method              scotch;
 
 
 // ************************************************************************* //

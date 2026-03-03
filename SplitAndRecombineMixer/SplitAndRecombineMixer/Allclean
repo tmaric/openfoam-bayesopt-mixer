@@ -1,0 +1,27 @@
+#!/bin/bash
+cd "${0%/*}" || exit    # run from this directory
+
+# Remove mesh
+rm -rf constant/polyMesh/{boundary,cells,faces,neighbour,owner,points,sets,meshMetaDict}
+
+# Remove generated STL
+rm -f constant/triSurface/sar_mixer.stl
+
+# Remove processor directories (parallel decomposition)
+rm -rf processor*
+
+# Remove time step result directories (keep 0/)
+ls -d [1-9]* 2>/dev/null | xargs -r rm -rf
+
+# Remove cfMesh diagnostic files
+rm -f badSurfaceWithSubsets.fms
+
+# Remove postprocessing output
+rm -f pressureDrop.csv
+rm -rf postProcessing
+
+# Remove solver log
+rm -f log.simpleFoam
+
+# Remove ParaView .foam file
+rm -f ./*.foam

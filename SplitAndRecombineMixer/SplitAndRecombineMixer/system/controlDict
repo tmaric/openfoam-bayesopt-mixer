@@ -30,7 +30,7 @@ writeControl    timeStep;
 
 writeInterval   100;
 
-purgeWrite      0;
+purgeWrite      1;
 
 writeFormat     ascii;
 
@@ -46,7 +46,33 @@ runTimeModifiable true;
 
 functions
 {
-    #includeFunc streamlines
+    pAvgInlet
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        fields          (p);
+        operation       areaAverage;
+        regionType      patch;
+        name            inlet;
+        writeFields     false;
+        log             false;
+        writeControl    timeStep;
+        writeInterval   1;
+    }
+
+    pAvgOutlet
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        fields          (p);
+        operation       areaAverage;
+        regionType      patch;
+        name            outlet;
+        writeFields     false;
+        log             false;
+        writeControl    timeStep;
+        writeInterval   1;
+    }
 }
 
 
