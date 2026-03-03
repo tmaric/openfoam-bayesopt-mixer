@@ -1,0 +1,117 @@
+#!/bin/bash
+cd "${0%/*}" || exit    # run from this directory (SplitAndRecombineMixer/)
+
+# Python interpreter that has cadquery + foamlib (miniconda base env)
+PYTHON="${HOME}/miniconda3/bin/python3"
+
+# Source OpenFOAM and RunFunctions
+. "$WM_PROJECT_DIR/etc/bashrc" 2>/dev/null \
+    || source "$HOME/OpenFOAM/OpenFOAM-v2506/etc/bashrc" \
+    || { echo "ERROR: cannot source OpenFOAM environment"; exit 1; }
+. "$WM_PROJECT_DIR/bin/tools/RunFunctions"
+
+# ===========================================================================
+# SplitAndRecombineHydro – flow solver
+# ===========================================================================
+cd SplitAndRecombineHydro || exit 1
+
+# ---------------------------------------------------------------------------
+# 1. Generate geometry STL
+# ---------------------------------------------------------------------------
+"$PYTHON" sar_mixer_cad.py || exit 1
+
+# ---------------------------------------------------------------------------
+# 2. Mesh with cfMesh cartesian2DMesh
+# ---------------------------------------------------------------------------
+runApplication cartesian2DMesh
+
+# Fix boundary patch types: cfMesh sets all patches to 'empty' by default.
+# polyBoundaryMesh uses a list format that foamDictionary cannot target by
+# patch name, so we use Python regex to do the replacement.
+"$PYTHON" - << 'PYEOF'
+import re, pathlib, sys
+f = pathlib.Path("constant/polyMesh/boundary")
+t = f.read_text()
+t = re.sub(r'(inlet\s*\{[^}]*?)type\s+empty',  r'\1type patch', t, flags=re.DOTALL)
+t = re.sub(r'(outlet\s*\{[^}]*?)type\s+empty', r'\1type patch', t, flags=re.DOTALL)
+t = re.sub(r'(walls\s*\{[^}]*?)type\s+empty',  r'\1type wall',  t, flags=re.DOTALL)
+f.write_text(t)
+print("Boundary types fixed: inlet→patch, outlet→patch, walls→wall")
+PYEOF
+[ $? -eq 0 ] || exit 1
+
+# ---------------------------------------------------------------------------
+# 3. Write cell volumes for mesh statistics (postprocessing)
+# ---------------------------------------------------------------------------
+runApplication postProcess -func writeCellVolumes -time 0
+
+# ---------------------------------------------------------------------------
+# 4. Decompose for parallel run
+# ---------------------------------------------------------------------------
+runApplication decomposePar
+
+# ---------------------------------------------------------------------------
+# 5. Run simpleFoam in parallel
+# ---------------------------------------------------------------------------
+runParallel simpleFoam
+
+# ---------------------------------------------------------------------------
+# 6. Reconstruct the final time step
+# ---------------------------------------------------------------------------
+runApplication reconstructPar -latestTime
+
+# ---------------------------------------------------------------------------
+# 7. Pressure drop postprocessing
+# ---------------------------------------------------------------------------
+"$PYTHON" postprocess_pressure_drop.py || exit 1
+
+# ---------------------------------------------------------------------------
+# 8. Copy mesh and converged fields to SplitAndRecombineMixing
+# ---------------------------------------------------------------------------
+MIXING_DIR="$(pwd)/../SplitAndRecombineMixing"
+
+mkdir -p "$MIXING_DIR/constant"
+cp -r constant/polyMesh "$MIXING_DIR/constant/"
+
+LATEST_TIME=$(foamListTimes -latestTime)
+cp "${LATEST_TIME}/U"   "$MIXING_DIR/0/"
+cp "${LATEST_TIME}/phi" "$MIXING_DIR/0/"
+
+# ===========================================================================
+# SplitAndRecombineMixing – scalar transport
+# ===========================================================================
+cd "$MIXING_DIR" || exit 1
+
+# ---------------------------------------------------------------------------
+# 9. Initialise T field
+# ---------------------------------------------------------------------------
+runApplication setExprFields -dict system/setExprFieldsDict -time 0
+
+# ---------------------------------------------------------------------------
+# 10. Decompose for parallel run
+# ---------------------------------------------------------------------------
+runApplication decomposePar
+
+# ---------------------------------------------------------------------------
+# 11. Run scalarTransportFoam in parallel
+# ---------------------------------------------------------------------------
+runParallel scalarTransportFoam
+
+# ---------------------------------------------------------------------------
+# 12. Reconstruct the final time step
+# ---------------------------------------------------------------------------
+runApplication reconstructPar -latestTime
+
+# ---------------------------------------------------------------------------
+# 13. Mixing quality postprocessing
+# ---------------------------------------------------------------------------
+"$PYTHON" postprocess_mixing.py || exit 1
+
+# ===========================================================================
+cd ..
+
+for CASE_DIR in SplitAndRecombineHydro SplitAndRecombineMixing; do
+    touch "${CASE_DIR}/${CASE_DIR}.foam"
+done
+
+echo "=== Done ==="

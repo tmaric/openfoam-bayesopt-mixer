@@ -1,0 +1,60 @@
+#!/bin/bash
+cd "${0%/*}" || exit    # run from this directory (SplitAndRecombineMixer/)
+
+# ---------------------------------------------------------------------------
+# Clean SplitAndRecombineHydro (flow solver case)
+# ---------------------------------------------------------------------------
+(
+    cd SplitAndRecombineHydro || exit
+
+    # Remove mesh
+    rm -rf constant/polyMesh/{boundary,cells,faces,neighbour,owner,points,sets,meshMetaDict}
+
+    # Remove generated STL
+    rm -f constant/triSurface/sar_mixer.stl
+
+    # Remove processor directories (parallel decomposition)
+    rm -rf processor*
+
+    # Remove time step result directories (keep 0/)
+    ls -d [1-9]* 2>/dev/null | xargs -r rm -rf
+
+    # Remove cfMesh diagnostic files
+    rm -f badSurfaceWithSubsets.fms
+
+    # Remove postprocessing output
+    rm -f pressureDrop.csv
+    rm -rf postProcessing
+
+    # Remove solver log
+    rm -f log.simpleFoam
+
+    # Remove ParaView .foam file
+    rm -f ./*.foam
+)
+
+# ---------------------------------------------------------------------------
+# Clean SplitAndRecombineMixing (scalar transport case)
+# ---------------------------------------------------------------------------
+(
+    cd SplitAndRecombineMixing || exit
+
+    # Remove copied mesh
+    rm -rf constant/polyMesh
+
+    # Remove copied flow fields from 0/
+    rm -f 0/U 0/phi
+
+    # Remove processor directories
+    rm -rf processor*
+
+    # Remove time step result directories (keep 0/)
+    ls -d [1-9]* 2>/dev/null | xargs -r rm -rf
+
+    # Remove postprocessing output
+    rm -f mixing.csv
+    rm -rf postProcessing
+
+    # Remove solver log
+    rm -f log.scalarTransportFoam
+)

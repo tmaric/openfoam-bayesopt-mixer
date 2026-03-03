@@ -1,7 +1,0 @@
-#!/bin/bash
-cd "${0%/*}" || exit    # run from this directory
-
-# Create an empty ParaView .foam reader file named after this case directory
-CASE_NAME=$(basename "$PWD")
-touch "${CASE_NAME}.foam"
-echo "Created ${CASE_NAME}.foam"
