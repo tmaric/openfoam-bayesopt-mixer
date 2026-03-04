@@ -26,8 +26,8 @@ cd "${0%/*}" || exit    # run from this directory (SplitAndRecombineMixer/)
     rm -f pressureDrop.csv
     rm -rf postProcessing
 
-    # Remove solver log
-    rm -f log.simpleFoam
+    # Remove logs
+    rm -f log.*
 
     # Remove ParaView .foam file
     rm -f ./*.foam
@@ -55,6 +55,6 @@ cd "${0%/*}" || exit    # run from this directory (SplitAndRecombineMixer/)
     rm -f mixing.csv
     rm -rf postProcessing
 
-    # Remove solver log
-    rm -f log.scalarTransportFoam
+    # Remove logs
+    rm -f log.*
 )

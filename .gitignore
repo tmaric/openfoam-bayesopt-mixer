@@ -13,11 +13,14 @@ env/
 linux*/
 
 # OpenFOAM runtime
-processor*/
 polyMesh/
 dynamicCode/
-0/
 *.foam
+[0-9]*/
+processor*/
+postProcessing/
+VTK/
+*.OpenFOAM
 
 # Mesh and geometry
 *.stl
