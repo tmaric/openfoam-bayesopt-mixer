@@ -1,4 +1,4 @@
-﻿# Benchmark Problem Specification
+﻿# Benchmark-Problem-Specification
 
 Source converted from user-provided mixed overview + technical note into Markdown.
 

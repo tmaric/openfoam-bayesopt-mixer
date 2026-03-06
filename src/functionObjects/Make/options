@@ -1,0 +1,10 @@
+EXE_INC = \
+    -I$(WM_PROJECT_DIR)/src/OpenFOAM/lnInclude \
+    -I$(WM_PROJECT_DIR)/src/OSspecific/POSIX/lnInclude \
+    -I$(WM_PROJECT_DIR)/src/finiteVolume/lnInclude \
+    -I$(WM_PROJECT_DIR)/src/meshTools/lnInclude
+
+LIB_LIBS = \
+    -lOpenFOAM \
+    -lfiniteVolume \
+    -lmeshTools

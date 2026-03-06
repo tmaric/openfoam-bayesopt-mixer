@@ -1,4 +1,4 @@
-﻿# Weekly Template
+﻿# Weekly-Template
 
 ## Week
 `YYYY-MM-DD` to `YYYY-MM-DD`

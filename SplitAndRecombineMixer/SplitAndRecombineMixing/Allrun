@@ -1,0 +1,53 @@
+#!/bin/bash
+set -euo pipefail
+
+CASE_DIR="$(cd "${0%/*}" && pwd)"
+cd "$CASE_DIR" || exit 1
+
+if ! command -v foamDictionary >/dev/null 2>&1; then
+    set +u
+    . "${WM_PROJECT_DIR:-$HOME/OpenFOAM/OpenFOAM-v2506}/etc/bashrc" \
+        || { echo "ERROR: cannot source OpenFOAM environment"; exit 1; }
+    set -u
+fi
+
+set +u
+. "${WM_PROJECT_DIR}/bin/tools/RunFunctions"
+
+REPO_ROOT="$(cd "$CASE_DIR/../.." && pwd)"
+export FOAM_USER_LIBBIN="$REPO_ROOT/platforms/${WM_OPTIONS}/lib"
+export LD_LIBRARY_PATH="$FOAM_USER_LIBBIN:${LD_LIBRARY_PATH:-}"
+
+[ -f "$FOAM_USER_LIBBIN/libbayesoptMixerFunctionObjects.so" ] \
+    || { echo "ERROR: missing $FOAM_USER_LIBBIN/libbayesoptMixerFunctionObjects.so. Run ./Allwmake from repo root."; exit 1; }
+
+HYDRO_DIR="$CASE_DIR/../SplitAndRecombineHydro"
+
+[ -d "$HYDRO_DIR/constant/polyMesh" ] \
+    || { echo "ERROR: missing Hydro polyMesh. Run SplitAndRecombineHydro/Allrun first."; exit 1; }
+
+mkdir -p constant
+rm -rf constant/polyMesh
+cp -r "$HYDRO_DIR/constant/polyMesh" constant/
+
+LATEST_TIME=$(
+    find "$HYDRO_DIR" -maxdepth 1 -mindepth 1 -type d -regex '.*/[0-9]+' -printf '%f\n' \
+    | sort -n | tail -1
+)
+[ -n "$LATEST_TIME" ] || { echo "ERROR: could not determine latest Hydro time directory"; exit 1; }
+[ -f "$HYDRO_DIR/$LATEST_TIME/U" ]   || { echo "ERROR: missing $HYDRO_DIR/$LATEST_TIME/U";   exit 1; }
+[ -f "$HYDRO_DIR/$LATEST_TIME/phi" ] || { echo "ERROR: missing $HYDRO_DIR/$LATEST_TIME/phi"; exit 1; }
+
+cp "$HYDRO_DIR/$LATEST_TIME/U"   0/
+cp "$HYDRO_DIR/$LATEST_TIME/phi" 0/
+
+runApplication setExprFields -dict system/setExprFieldsDict -time 0
+runApplication decomposePar -force
+runParallel scalarTransportFoam
+runApplication reconstructPar -latestTime
+
+if [ ! -f mixing.csv ] && [ -f processor0/mixing.csv ]; then
+    cp processor0/mixing.csv mixing.csv
+fi
+
+[ -f mixing.csv ] || { echo "ERROR: mixing.csv not produced by patchMixingQuality FO"; exit 1; }

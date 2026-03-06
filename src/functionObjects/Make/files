@@ -1,0 +1,4 @@
+patchMixingQuality/patchMixingQuality.C
+pressureDrop/pressureDrop.C
+
+LIB = $(FOAM_USER_LIBBIN)/libbayesoptMixerFunctionObjects

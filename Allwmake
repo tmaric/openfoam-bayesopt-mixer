@@ -1,0 +1,5 @@
+#!/bin/bash
+set -o pipefail
+cd "${0%/*}" || exit 1
+
+wmake libso src/functionObjects

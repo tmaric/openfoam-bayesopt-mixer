@@ -4,8 +4,8 @@ Minimal project documentation for execution.
 
 ## Use Only These Notes
 - [[Milestones]]
-- [[Weekly Index]]
-- [[2026-W10 (2026-03-02 to 2026-03-06)]]
+- [[Weekly-Index]]
+- [[2026-W10-(2026-03-02-to-2026-03-06)]]
 
 ## Rule
 Each weekly note must declare:

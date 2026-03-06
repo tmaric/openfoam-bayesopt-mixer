@@ -1,0 +1,303 @@
+from pathlib import Path
+
+shell.executable("/bin/bash")
+
+CASE_ROOT = Path(workflow.basedir).resolve()
+REPO_ROOT = CASE_ROOT.parent
+RESULTS_ROOT = CASE_ROOT / "results"
+WORKFLOW = RESULTS_ROOT / ".workflow"
+
+TEMPLATE_HYDRO = CASE_ROOT / "SplitAndRecombineHydro"
+TEMPLATE_MIXING = CASE_ROOT / "SplitAndRecombineMixing"
+HYDRO = RESULTS_ROOT / "SplitAndRecombineHydro"
+MIXING = RESULTS_ROOT / "SplitAndRecombineMixing"
+
+NPROCS = max(1, int(workflow.cores))
+
+shell.prefix(
+    "set -eo pipefail; "
+    "if ! command -v foamDictionary >/dev/null 2>&1; then "
+    ". \"$HOME/OpenFOAM/OpenFOAM-v2506/etc/bashrc\" "
+    "|| (echo \"ERROR: cannot source OpenFOAM environment\"; exit 1); "
+    "fi; "
+    f"export FOAM_USER_LIBBIN=\"{REPO_ROOT}/platforms/$WM_OPTIONS/lib\"; "
+    "export LD_LIBRARY_PATH=\"$FOAM_USER_LIBBIN:$LD_LIBRARY_PATH\"; "
+)
+
+
+rule all:
+    threads: 1
+    input:
+        str(HYDRO / "pressureDrop.csv"),
+        str(MIXING / "mixing.csv"),
+        str(HYDRO / "SplitAndRecombineHydro.foam"),
+        str(MIXING / "SplitAndRecombineMixing.foam"),
+
+
+rule stage_template_cases:
+    threads: 1
+    input:
+        str(TEMPLATE_HYDRO),
+        str(TEMPLATE_MIXING),
+    output:
+        str(WORKFLOW / "stage_template_cases.done"),
+    shell:
+        """
+        set -eo pipefail
+        mkdir -p "{RESULTS_ROOT}" "{WORKFLOW}"
+
+        rm -rf "{HYDRO}" "{MIXING}"
+        cp -a "{TEMPLATE_HYDRO}" "{HYDRO}"
+        cp -a "{TEMPLATE_MIXING}" "{MIXING}"
+
+        cd "{HYDRO}"
+        rm -rf constant/polyMesh
+        rm -f constant/triSurface/sar_mixer.stl
+        rm -f 0/V
+        rm -rf processor*
+        find . -maxdepth 1 -mindepth 1 -type d -regex './[1-9][0-9]*' -exec rm -rf {{}} +
+        rm -f badSurfaceWithSubsets.fms
+        rm -f pressureDrop.csv
+        rm -rf postProcessing
+        rm -rf __pycache__
+        rm -f log.*
+        rm -f ./*.foam
+
+        cd "{MIXING}"
+        rm -rf constant/polyMesh
+        rm -f 0/U 0/phi
+        rm -rf processor*
+        find . -maxdepth 1 -mindepth 1 -type d -regex './[1-9][0-9]*' -exec rm -rf {{}} +
+        rm -f mixing.csv
+        rm -rf postProcessing
+        rm -rf __pycache__
+        rm -f log.*
+        rm -f ./*.foam
+
+        touch "{output}"
+        """
+
+
+rule hydro_geometry:
+    threads: 1
+    input:
+        str(WORKFLOW / "stage_template_cases.done"),
+    output:
+        str(HYDRO / "constant/triSurface/sar_mixer.stl"),
+    shell:
+        """
+        set -eo pipefail
+        cd "{HYDRO}"
+        python3 sar_mixer_cad.py
+        """
+
+
+rule hydro_mesh:
+    threads: 1
+    input:
+        str(HYDRO / "constant/triSurface/sar_mixer.stl"),
+        str(TEMPLATE_HYDRO / "system/meshDict"),
+    output:
+        str(HYDRO / "constant/polyMesh/boundary"),
+        str(HYDRO / "constant/polyMesh/points"),
+    shell:
+        """
+        set -eo pipefail
+        cp "{TEMPLATE_HYDRO}/system/meshDict" "{HYDRO}/system/meshDict"
+        cd "{HYDRO}"
+        cartesian2DMesh
+        """
+
+
+rule hydro_cell_volumes:
+    threads: 1
+    input:
+        str(HYDRO / "constant/polyMesh/boundary"),
+    output:
+        str(HYDRO / "0/V"),
+    shell:
+        """
+        set -eo pipefail
+        cd "{HYDRO}"
+        postProcess -func writeCellVolumes -time 0
+        """
+
+
+rule hydro_decompose:
+    threads: NPROCS
+    input:
+        str(HYDRO / "0/V"),
+    output:
+        str(WORKFLOW / "hydro_decompose.done"),
+    shell:
+        """
+        set -eo pipefail
+        mkdir -p "{WORKFLOW}"
+        cd "{HYDRO}"
+        foamDictionary -entry method -set scotch system/decomposeParDict
+        foamDictionary -entry numberOfSubdomains -set {threads} system/decomposeParDict
+        decomposePar -force
+        touch "{output}"
+        """
+
+
+rule hydro_simpleFoam:
+    threads: NPROCS
+    input:
+        str(WORKFLOW / "hydro_decompose.done"),
+    output:
+        done    = str(WORKFLOW / "hydro_simpleFoam.done"),
+        csv     = str(HYDRO / "pressureDrop.csv"),
+    shell:
+        """
+        set -eo pipefail
+        mkdir -p "{WORKFLOW}"
+        cd "{HYDRO}"
+        mpirun -np {threads} simpleFoam -parallel 2>&1 | tee log.simpleFoam
+        if [ ! -f pressureDrop.csv ] && [ -f processor0/pressureDrop.csv ]; then
+            cp processor0/pressureDrop.csv pressureDrop.csv
+        fi
+        [ -f pressureDrop.csv ] || {{ echo "ERROR: pressureDrop.csv not produced by pressureDrop FO"; exit 1; }}
+        touch "{output.done}"
+        """
+
+
+rule hydro_reconstruct:
+    threads: 1
+    input:
+        str(WORKFLOW / "hydro_simpleFoam.done"),
+    output:
+        str(WORKFLOW / "hydro_reconstruct.done"),
+    shell:
+        """
+        set -eo pipefail
+        mkdir -p "{WORKFLOW}"
+        cd "{HYDRO}"
+        reconstructPar -latestTime
+        touch "{output}"
+        """
+
+
+rule copy_hydro_to_mixing:
+    threads: 1
+    input:
+        str(HYDRO / "pressureDrop.csv"),
+        str(HYDRO / "constant/polyMesh/boundary"),
+        str(WORKFLOW / "hydro_reconstruct.done"),
+    output:
+        str(MIXING / "constant/polyMesh/boundary"),
+        str(MIXING / "0/U"),
+        str(MIXING / "0/phi"),
+        str(WORKFLOW / "copy_hydro_to_mixing.done"),
+    shell:
+        """
+        set -eo pipefail
+        mkdir -p "{WORKFLOW}"
+
+        latest_time=$(cd "{HYDRO}" && foamListTimes -latestTime)
+
+        rm -rf "{MIXING}/constant/polyMesh"
+        mkdir -p "{MIXING}/constant"
+        cp -r "{HYDRO}/constant/polyMesh" "{MIXING}/constant/"
+        cp "{HYDRO}/${{latest_time}}/U" "{MIXING}/0/U"
+        cp "{HYDRO}/${{latest_time}}/phi" "{MIXING}/0/phi"
+
+        touch "{output[3]}"
+        """
+
+
+rule mixing_set_expr_fields:
+    threads: 1
+    input:
+        str(WORKFLOW / "copy_hydro_to_mixing.done"),
+    output:
+        str(WORKFLOW / "mixing_set_expr_fields.done"),
+    shell:
+        """
+        set -eo pipefail
+        mkdir -p "{WORKFLOW}"
+        cd "{MIXING}"
+        setExprFields -dict system/setExprFieldsDict -time 0
+        touch "{output}"
+        """
+
+
+rule mixing_decompose:
+    threads: NPROCS
+    input:
+        str(WORKFLOW / "mixing_set_expr_fields.done"),
+    output:
+        str(WORKFLOW / "mixing_decompose.done"),
+    shell:
+        """
+        set -eo pipefail
+        mkdir -p "{WORKFLOW}"
+        cd "{MIXING}"
+        foamDictionary -entry method -set scotch system/decomposeParDict
+        foamDictionary -entry numberOfSubdomains -set {threads} system/decomposeParDict
+        decomposePar -force
+        touch "{output}"
+        """
+
+
+rule mixing_scalar_transport:
+    threads: NPROCS
+    input:
+        str(WORKFLOW / "mixing_decompose.done"),
+    output:
+        done    = str(WORKFLOW / "mixing_scalar_transport.done"),
+        csv     = str(MIXING / "mixing.csv"),
+    shell:
+        """
+        set -eo pipefail
+        mkdir -p "{WORKFLOW}"
+        cd "{MIXING}"
+        mpirun -np {threads} scalarTransportFoam -parallel 2>&1 | tee log.scalarTransportFoam
+        if [ ! -f mixing.csv ] && [ -f processor0/mixing.csv ]; then
+            cp processor0/mixing.csv mixing.csv
+        fi
+        [ -f mixing.csv ] || {{ echo "ERROR: mixing.csv not produced by patchMixingQuality FO"; exit 1; }}
+        touch "{output.done}"
+        """
+
+
+rule mixing_reconstruct:
+    threads: 1
+    input:
+        str(WORKFLOW / "mixing_scalar_transport.done"),
+    output:
+        str(WORKFLOW / "mixing_reconstruct.done"),
+    shell:
+        """
+        set -eo pipefail
+        mkdir -p "{WORKFLOW}"
+        cd "{MIXING}"
+        reconstructPar -latestTime
+        touch "{output}"
+        """
+
+
+rule create_foam_files:
+    threads: 1
+    input:
+        str(HYDRO / "pressureDrop.csv"),
+        str(MIXING / "mixing.csv"),
+    output:
+        str(HYDRO / "SplitAndRecombineHydro.foam"),
+        str(MIXING / "SplitAndRecombineMixing.foam"),
+    shell:
+        """
+        set -eo pipefail
+        touch "{HYDRO}/SplitAndRecombineHydro.foam"
+        touch "{MIXING}/SplitAndRecombineMixing.foam"
+        """
+
+
+rule clean:
+    threads: 1
+    shell:
+        """
+        set -eo pipefail
+        find "{CASE_ROOT}" -type d -name __pycache__ -prune -exec rm -rf {{}} +
+        rm -rf "{RESULTS_ROOT}"
+        """

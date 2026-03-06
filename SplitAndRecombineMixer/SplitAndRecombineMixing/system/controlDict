@@ -22,13 +22,13 @@ startTime       0;
 
 stopAt          endTime;
 
-endTime         2000;
+endTime         20;
 
 deltaT          1;
 
 writeControl    timeStep;
 
-writeInterval   100;
+writeInterval   1;
 
 purgeWrite      1;
 
@@ -46,16 +46,22 @@ runTimeModifiable true;
 
 functions
 {
-    TAvgOutlet
+    patchMixingQuality
     {
-        type            surfaceFieldValue;
-        libs            (fieldFunctionObjects);
-        fields          (T);
-        operation       areaAverage;
-        regionType      patch;
-        name            outlet;
-        writeFields     false;
-        log             false;
+        type                    patchMixingQuality;
+        libs                    ("libbayesoptMixerFunctionObjects.so");
+
+        scalarField             T;
+        patch                   outlet;
+        weighting               phi;
+        meanMode                fromInletRatio;
+        aMean                   0.5;
+        epsilon                 1e-12;
+        reportMixingIndex       true;
+        reportAbsoluteDeviations true;
+        csvFile                 mixing.csv;
+
+        log                     true;
         writeControl    timeStep;
         writeInterval   1;
     }

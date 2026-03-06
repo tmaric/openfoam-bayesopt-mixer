@@ -52,5 +52,34 @@ localRefinement
     }
 }
 
+// Set boundary names/types directly during meshing.
+renameBoundary
+{
+    defaultName     frontAndBack;
+    defaultType     empty;
+
+    newPatchNames
+    {
+        "inlet.*"
+        {
+            newName inlet;
+            type    patch;
+        }
+
+        "outlet.*"
+        {
+            newName outlet;
+            type    patch;
+        }
+
+        "walls.*"
+        {
+            newName walls;
+            type    wall;
+        }
+
+    }
+}
+
 
 // ************************************************************************* //

@@ -22,13 +22,13 @@ startTime       0;
 
 stopAt          endTime;
 
-endTime         2000;
+endTime         20;
 
 deltaT          1;
 
 writeControl    timeStep;
 
-writeInterval   100;
+writeInterval   1;
 
 purgeWrite      1;
 
@@ -46,30 +46,17 @@ runTimeModifiable true;
 
 functions
 {
-    pAvgInlet
+    pressureDrop
     {
-        type            surfaceFieldValue;
-        libs            (fieldFunctionObjects);
-        fields          (p);
-        operation       areaAverage;
-        regionType      patch;
-        name            inlet;
-        writeFields     false;
-        log             false;
-        writeControl    timeStep;
-        writeInterval   1;
-    }
+        type            pressureDrop;
+        libs            ("libbayesoptMixerFunctionObjects.so");
 
-    pAvgOutlet
-    {
-        type            surfaceFieldValue;
-        libs            (fieldFunctionObjects);
-        fields          (p);
-        operation       areaAverage;
-        regionType      patch;
-        name            outlet;
-        writeFields     false;
-        log             false;
+        field           p;
+        patch1          inlet;
+        patch2          outlet;
+        csvFile         pressureDrop.csv;
+
+        log             true;
         writeControl    timeStep;
         writeInterval   1;
     }
