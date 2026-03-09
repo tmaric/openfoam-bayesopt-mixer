@@ -21,6 +21,7 @@ processor*/
 postProcessing/
 VTK/
 *.OpenFOAM
+lnInclude/
 
 # Mesh and geometry
 *.stl

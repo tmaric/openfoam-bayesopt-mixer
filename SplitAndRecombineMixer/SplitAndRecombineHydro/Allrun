@@ -4,22 +4,8 @@ set -euo pipefail
 CASE_DIR="$(cd "${0%/*}" && pwd)"
 cd "$CASE_DIR" || exit 1
 
-if ! command -v foamDictionary >/dev/null 2>&1; then
-    set +u
-    . "${WM_PROJECT_DIR:-$HOME/OpenFOAM/OpenFOAM-v2506}/etc/bashrc" \
-        || { echo "ERROR: cannot source OpenFOAM environment"; exit 1; }
-    set -u
-fi
-
 set +u
 . "${WM_PROJECT_DIR}/bin/tools/RunFunctions"
-
-REPO_ROOT="$(cd "$CASE_DIR/../.." && pwd)"
-export FOAM_USER_LIBBIN="$REPO_ROOT/platforms/${WM_OPTIONS}/lib"
-export LD_LIBRARY_PATH="$FOAM_USER_LIBBIN:${LD_LIBRARY_PATH:-}"
-
-[ -f "$FOAM_USER_LIBBIN/libbayesoptMixerFunctionObjects.so" ] \
-    || { echo "ERROR: missing $FOAM_USER_LIBBIN/libbayesoptMixerFunctionObjects.so. Run ./Allwmake from repo root."; exit 1; }
 
 runApplication python3 sar_mixer_cad.py
 runApplication cartesian2DMesh

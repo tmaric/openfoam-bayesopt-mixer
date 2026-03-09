@@ -4,7 +4,11 @@ shell.executable("/bin/bash")
 
 CASE_ROOT = Path(workflow.basedir).resolve()
 REPO_ROOT = CASE_ROOT.parent
-RESULTS_ROOT = CASE_ROOT / "results"
+
+# results_dir can be overridden per sample:
+#   snakemake --cores 4 --config results_dir=samples/00
+# Default is the single-run layout used by Allrun.
+RESULTS_ROOT = Path(config.get("results_dir", str(CASE_ROOT / "results"))).resolve()
 WORKFLOW = RESULTS_ROOT / ".workflow"
 
 TEMPLATE_HYDRO = CASE_ROOT / "SplitAndRecombineHydro"
@@ -28,8 +32,7 @@ shell.prefix(
 rule all:
     threads: 1
     input:
-        str(HYDRO / "pressureDrop.csv"),
-        str(MIXING / "mixing.csv"),
+        str(RESULTS_ROOT / "objectives.csv"),
         str(HYDRO / "SplitAndRecombineHydro.foam"),
         str(MIXING / "SplitAndRecombineMixing.foam"),
 
@@ -40,7 +43,8 @@ rule stage_template_cases:
         str(TEMPLATE_HYDRO),
         str(TEMPLATE_MIXING),
     output:
-        str(WORKFLOW / "stage_template_cases.done"),
+        done = str(WORKFLOW / "stage_template_cases.done"),
+        yaml = str(HYDRO / "sar_mixer_cad.yaml"),
     shell:
         """
         set -eo pipefail
@@ -74,7 +78,12 @@ rule stage_template_cases:
         rm -f log.*
         rm -f ./*.foam
 
-        touch "{output}"
+        # If a sample YAML was placed in results_dir by the BO loop, use it.
+        if [ -f "{RESULTS_ROOT}/sar_mixer_cad.yaml" ]; then
+            cp "{RESULTS_ROOT}/sar_mixer_cad.yaml" "{HYDRO}/sar_mixer_cad.yaml"
+        fi
+
+        touch "{output.done}"
         """
 
 
@@ -88,7 +97,7 @@ rule hydro_geometry:
         """
         set -eo pipefail
         cd "{HYDRO}"
-        python3 sar_mixer_cad.py
+        python3 sar_mixer_cad.py 2>&1 | tee log.sar_mixer_cad
         """
 
 
@@ -105,7 +114,7 @@ rule hydro_mesh:
         set -eo pipefail
         cp "{TEMPLATE_HYDRO}/system/meshDict" "{HYDRO}/system/meshDict"
         cd "{HYDRO}"
-        cartesian2DMesh
+        cartesian2DMesh 2>&1 | tee log.cartesian2DMesh
         """
 
 
@@ -119,7 +128,7 @@ rule hydro_cell_volumes:
         """
         set -eo pipefail
         cd "{HYDRO}"
-        postProcess -func writeCellVolumes -time 0
+        postProcess -func writeCellVolumes -time 0 2>&1 | tee log.postProcess
         """
 
 
@@ -136,7 +145,7 @@ rule hydro_decompose:
         cd "{HYDRO}"
         foamDictionary -entry method -set scotch system/decomposeParDict
         foamDictionary -entry numberOfSubdomains -set {threads} system/decomposeParDict
-        decomposePar -force
+        decomposePar -force 2>&1 | tee log.decomposePar
         touch "{output}"
         """
 
@@ -173,7 +182,7 @@ rule hydro_reconstruct:
         set -eo pipefail
         mkdir -p "{WORKFLOW}"
         cd "{HYDRO}"
-        reconstructPar -latestTime
+        reconstructPar -latestTime 2>&1 | tee log.reconstructPar
         touch "{output}"
         """
 
@@ -217,7 +226,7 @@ rule mixing_set_expr_fields:
         set -eo pipefail
         mkdir -p "{WORKFLOW}"
         cd "{MIXING}"
-        setExprFields -dict system/setExprFieldsDict -time 0
+        setExprFields -dict system/setExprFieldsDict -time 0 2>&1 | tee log.setExprFields
         touch "{output}"
         """
 
@@ -235,7 +244,7 @@ rule mixing_decompose:
         cd "{MIXING}"
         foamDictionary -entry method -set scotch system/decomposeParDict
         foamDictionary -entry numberOfSubdomains -set {threads} system/decomposeParDict
-        decomposePar -force
+        decomposePar -force 2>&1 | tee log.decomposePar
         touch "{output}"
         """
 
@@ -272,7 +281,7 @@ rule mixing_reconstruct:
         set -eo pipefail
         mkdir -p "{WORKFLOW}"
         cd "{MIXING}"
-        reconstructPar -latestTime
+        reconstructPar -latestTime 2>&1 | tee log.reconstructPar
         touch "{output}"
         """
 
@@ -290,6 +299,26 @@ rule create_foam_files:
         set -eo pipefail
         touch "{HYDRO}/SplitAndRecombineHydro.foam"
         touch "{MIXING}/SplitAndRecombineMixing.foam"
+        """
+
+
+rule agglomerate:
+    threads: 1
+    input:
+        yaml    = str(HYDRO / "sar_mixer_cad.yaml"),
+        pdrop   = str(HYDRO / "pressureDrop.csv"),
+        mixing  = str(MIXING / "mixing.csv"),
+    output:
+        str(RESULTS_ROOT / "objectives.csv"),
+    shell:
+        """
+        set -eo pipefail
+        python3 "{CASE_ROOT}/postprocessing_agglomeration.py" \
+            --yaml        "{input.yaml}"   \
+            --pdrop       "{input.pdrop}"  \
+            --mixing      "{input.mixing}" \
+            --output      "{output}"       \
+            --results-dir "{RESULTS_ROOT}"
         """
 
 
