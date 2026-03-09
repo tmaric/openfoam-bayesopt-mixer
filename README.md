@@ -34,18 +34,20 @@ openfoam-bayesopt-mixer/
 │   └── functionObjects/
 │       ├── pressureDrop/           # computes J_dp, writes pressureDrop.csv
 │       └── patchMixingQuality/     # computes J_mix, writes mixing.csv
-└── SplitAndRecombineMixer/         # SAR lamination ladder mixer case
-    ├── Allrun                      # run Hydro then Mixing sequentially
-    ├── Allclean                    # clean both sub-cases
-    ├── Snakefile                   # Snakemake workflow (geometry → mesh → flow → mixing)
-    ├── SplitAndRecombineHydro/     # flow sub-case
+└── SplitAndRecombineMixer/                   # SAR lamination ladder mixer case
+    ├── Allrun                                # run Hydro then Mixing sequentially
+    ├── Allclean                              # clean both sub-cases
+    ├── Snakefile                             # Snakemake workflow
+    ├── QUICKSTART.md                         # quickstart for the Snakemake workflow
+    ├── postprocessing_agglomeration.py       # merges YAML + CSVs into objectives.csv
+    ├── SplitAndRecombineHydro/               # flow sub-case (template)
     │   ├── Allrun
     │   ├── Allclean
-    │   ├── sar_mixer_cad.py        # CADquery geometry script
-    │   ├── sar_mixer_cad.yaml      # geometry parameters (edit this)
+    │   ├── sar_mixer_cad.py                  # CADquery geometry script
+    │   ├── sar_mixer_cad.yaml                # geometry parameters (edit this)
     │   └── system/, constant/, 0/
-    └── SplitAndRecombineMixing/    # scalar transport sub-case
-        ├── Allrun                  # copies mesh+fields from Hydro, runs transport
+    └── SplitAndRecombineMixing/              # scalar transport sub-case (template)
+        ├── Allrun                            # copies mesh+fields from Hydro, runs transport
         ├── Allclean
         └── system/, constant/, 0/
 ```
@@ -155,53 +157,78 @@ template cases untouched.
 
 ```bash
 cd SplitAndRecombineMixer
-snakemake --cores 4          # run with 4 parallel MPI ranks
-snakemake --cores 4 clean    # remove results/
+snakemake -j 4          # run with 4 cores (used by mpirun for both solvers)
+snakemake -j 1 clean    # remove results/
 ```
+
+See `SplitAndRecombineMixer/QUICKSTART.md` for a concise reference.
 
 The workflow proceeds as follows:
 
 ```
 stage_template_cases
         │
-        ├─► hydro_geometry      (CADquery: generate STL)
+        ├─► hydro_geometry      (CADquery: generate STL)      → log.sar_mixer_cad
         │        │
-        │   hydro_mesh          (cartesian2DMesh)
+        │   hydro_mesh          (cartesian2DMesh)              → log.cartesian2DMesh
         │        │
-        │   hydro_cell_volumes  (postProcess writeCellVolumes)
+        │   hydro_cell_volumes  (postProcess writeCellVolumes) → log.postProcess
         │        │
-        │   hydro_decompose     (decomposePar, N = --cores)
+        │   hydro_decompose     (decomposePar, N = -j N)       → log.decomposePar
         │        │
-        │   hydro_simpleFoam    (mpirun simpleFoam -parallel)
-        │        │  outputs: pressureDrop.csv + log.simpleFoam
+        │   hydro_simpleFoam    (mpirun -np N simpleFoam)      → log.simpleFoam
+        │        │  also writes: pressureDrop.csv
         │        │
-        │   hydro_reconstruct   (reconstructPar -latestTime)
+        │   hydro_reconstruct   (reconstructPar -latestTime)   → log.reconstructPar
         │        │
         │   copy_hydro_to_mixing
         │        │
-        │   mixing_set_expr_fields
+        │   mixing_set_expr_fields  (setExprFields)            → log.setExprFields
         │        │
-        │   mixing_decompose
+        │   mixing_decompose    (decomposePar, N = -j N)       → log.decomposePar
         │        │
-        │   mixing_scalar_transport  (mpirun scalarTransportFoam -parallel)
-        │        │  outputs: mixing.csv + log.scalarTransportFoam
+        │   mixing_scalar_transport (mpirun -np N scalarTransportFoam) → log.scalarTransportFoam
+        │        │  also writes: mixing.csv
         │        │
-        │   mixing_reconstruct
+        │   mixing_reconstruct  (reconstructPar -latestTime)   → log.reconstructPar
+        │        │
+        ├─► agglomerate         (postprocessing_agglomeration.py)
+        │        │  writes: objectives.csv
         │
         └─► create_foam_files   (.foam files for ParaView)
 ```
 
-`pressureDrop.csv` and `mixing.csv` are declared Snakemake outputs of the
-respective solver rules.  If a custom function object fails to write its CSV,
-the rule fails immediately with the full solver log available in
-`results/SplitAndRecombineHydro/log.simpleFoam` (or `log.scalarTransportFoam`).
+Every rule captures its application output via `tee log.<appname>` inside the
+results directory.  `pressureDrop.csv` and `mixing.csv` are declared Snakemake
+outputs of the respective solver rules — if a function object fails to write its
+CSV the rule fails immediately rather than silently producing empty results.
+
+### Batch mode for Bayesian optimisation
+
+Each Snakemake run can be redirected to an isolated results directory:
+
+```bash
+snakemake -j 4 --config results_dir=samples/00
+```
+
+The BO loop writes `samples/{id}/sar_mixer_cad.yaml` before launching Snakemake.
+After completion, `samples/{id}/objectives.csv` contains a single row with the
+geometry parameters, all pressure-drop columns, and all mixing-quality columns,
+plus `sample_id` and `results_dir` for traceability back to the ParaView case.
 
 ## Outputs
 
 | File | Location | Contents |
 |------|----------|----------|
 | `pressureDrop.csv` | Hydro case dir | time, inlet/outlet average pressure, `J_dp` |
-| `mixing.csv` | Mixing case dir | time, outlet mixing defect `J_mix` |
-| `log.simpleFoam` | Hydro case dir (Snakemake only) | full simpleFoam stdout |
-| `log.scalarTransportFoam` | Mixing case dir (Snakemake only) | full transport solver stdout |
-| `*.foam` | both case dirs | ParaView session files |
+| `mixing.csv` | Mixing case dir | time, all mixing quality metrics |
+| `objectives.csv` | `results/` (or `samples/{id}/`) | single-row: geometry params + all objectives |
+| `log.sar_mixer_cad` | Hydro case dir | CADquery geometry script output |
+| `log.cartesian2DMesh` | Hydro case dir | cfMesh output |
+| `log.postProcess` | Hydro case dir | writeCellVolumes output |
+| `log.decomposePar` | Hydro / Mixing case dir | domain decomposition output |
+| `log.simpleFoam` | Hydro case dir | full simpleFoam stdout |
+| `log.setExprFields` | Mixing case dir | scalar field initialisation output |
+| `log.scalarTransportFoam` | Mixing case dir | full scalarTransportFoam stdout |
+| `log.reconstructPar` | Hydro / Mixing case dir | reconstruction output |
+| `*.foam` | Hydro / Mixing case dir | ParaView session files |
