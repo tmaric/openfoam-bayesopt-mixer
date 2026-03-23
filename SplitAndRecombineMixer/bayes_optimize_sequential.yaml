@@ -1,0 +1,7 @@
+# Configuration for bayes_optimize_sequential.py
+# Edit these values to control the optimisation run.
+# Reduce n_bo for quick workflow prototyping.
+
+n_init: 4    # Sobol quasi-random initialisation samples
+n_bo:   4    # Bayesian optimisation iterations
+cores:  4    # CPU cores passed to each Snakemake call

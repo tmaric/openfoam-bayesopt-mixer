@@ -1,0 +1,43 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2506                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+// Horizontal cut plane through the mixer mid-plane (z = DEPTH/2 = 5e-6 m).
+// Samples cell-centred values of U and T and writes a VTK surface file.
+//
+// Usage:
+//   postProcess -func samplingPlane -latestTime
+//
+// Output:
+//   postProcessing/samplingPlane/<time>/midPlane_U.vtk
+//   postProcessing/samplingPlane/<time>/midPlane_T.vtk
+
+type            surfaces;
+libs            ("libsampling.so");
+
+writeControl    onEnd;
+
+surfaceFormat   vtk;
+interpolationScheme cellPoint;
+
+fields          (U T);
+
+surfaces
+(
+    midPlane
+    {
+        type         cuttingPlane;
+        planeType    pointAndNormal;
+        pointAndNormalDict
+        {
+            point        (0 0 5e-6);  // z = DEPTH/2; DEPTH = 0.01*H*scale = 1e-5 m
+            normal       (0 0 1);
+        }
+        interpolate  true;
+    }
+);
+
+// ************************************************************************* //

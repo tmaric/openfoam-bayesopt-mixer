@@ -1,4 +1,6 @@
 from pathlib import Path
+import shutil
+import sys
 
 shell.executable("/bin/bash")
 
@@ -15,8 +17,24 @@ TEMPLATE_HYDRO = CASE_ROOT / "SplitAndRecombineHydro"
 TEMPLATE_MIXING = CASE_ROOT / "SplitAndRecombineMixing"
 HYDRO = RESULTS_ROOT / "SplitAndRecombineHydro"
 MIXING = RESULTS_ROOT / "SplitAndRecombineMixing"
+HYDRO_FOAM  = str(HYDRO  / f"{HYDRO.name}.foam")
+MIXING_FOAM = str(MIXING / f"{MIXING.name}.foam")
 
 NPROCS = max(1, int(workflow.cores))
+
+# Optional per-sample T-field PNG rendered with ParaView batch mode.
+# RESULTS_ROOT.name == sample ID (e.g. "00000") when invoked by the BO loop.
+SAMPLE_PNG = RESULTS_ROOT / "visualizations" / f"{RESULTS_ROOT.name}_T.png"
+
+VISUALIZE_SAMPLE_DONE = WORKFLOW / "visualize_sample.done"
+PARAVIEW_RENDER_SCRIPT = CASE_ROOT / "render_latest_mixing_field.py"
+PARAVIEW_BATCH = shutil.which("pvpython") or shutil.which("pvbatch")
+if PARAVIEW_BATCH is None:
+    print(
+        "WARNING: ParaView batch executable (pvpython/pvbatch) not found; "
+        "sample field visualization will be skipped.",
+        file=sys.stderr,
+    )
 
 shell.prefix(
     "set -eo pipefail; "
@@ -33,8 +51,10 @@ rule all:
     threads: 1
     input:
         str(RESULTS_ROOT / "objectives.csv"),
-        str(HYDRO / "SplitAndRecombineHydro.foam"),
-        str(MIXING / "SplitAndRecombineMixing.foam"),
+        HYDRO_FOAM,
+        MIXING_FOAM,
+        str(WORKFLOW / "mixing_post_process.done"),
+        str(VISUALIZE_SAMPLE_DONE),
 
 
 rule stage_template_cases:
@@ -115,6 +135,15 @@ rule hydro_mesh:
         cp "{TEMPLATE_HYDRO}/system/meshDict" "{HYDRO}/system/meshDict"
         cd "{HYDRO}"
         cartesian2DMesh 2>&1 | tee log.cartesian2DMesh
+        # Fail early if cfMesh could not eliminate zero-area faces.
+        # "Number of bad faces N" lines appear in the smoothing loop; the last
+        # value is what remains in the final mesh.  If N > 0 the mesh is invalid
+        # and simpleFoam will crash with a floating-point exception.
+        last_bad=$(grep "Number of bad faces" log.cartesian2DMesh | tail -1 | awk '{{print $NF}}')
+        if [ -n "$last_bad" ] && [ "$last_bad" -gt 0 ]; then
+            echo "ERROR: cfMesh left $last_bad zero-area face(s) in the mesh — aborting" >&2
+            exit 1
+        fi
         """
 
 
@@ -286,19 +315,94 @@ rule mixing_reconstruct:
         """
 
 
+rule mixing_post_process:
+    """Legacy samplingPlane hook kept for workflow compatibility.
+
+    The old OpenFOAM samplingPlane export is disabled in favour of ParaView
+    batch rendering from the reconstructed mixing case.
+    """
+    threads: 1
+    input:
+        str(WORKFLOW / "mixing_reconstruct.done"),
+    output:
+        str(WORKFLOW / "mixing_post_process.done"),
+    shell:
+        """
+        set -eo pipefail
+        mkdir -p "{WORKFLOW}"
+        cd "{MIXING}"
+        # Legacy path kept for reference only:
+        # postProcess -func samplingPlane -latestTime 2>&1 | tee log.postProcess_samplingPlane
+        echo "WARNING: legacy samplingPlane post-processing is disabled; using ParaView batch rendering instead." | tee log.postProcess_samplingPlane
+        touch "{output}"
+        """
+
+
+rule visualize_sample:
+    """Render the latest reconstructed mixing field with ParaView in batch mode.
+
+    When pvpython/pvbatch is unavailable, the render is skipped with a warning
+    and the workflow continues without a per-sample PNG.
+    """
+    threads: 1
+    input:
+        str(WORKFLOW / "mixing_post_process.done"),
+        foam = MIXING_FOAM,
+    output:
+        str(VISUALIZE_SAMPLE_DONE),
+    params:
+        paraview_batch = PARAVIEW_BATCH or "",
+    shell:
+        """
+        set -eo pipefail
+        mkdir -p "{WORKFLOW}" "{RESULTS_ROOT}/visualizations"
+        if [ -n "{params.paraview_batch}" ]; then
+            "{params.paraview_batch}" "{PARAVIEW_RENDER_SCRIPT}"                 --case-foam "{input.foam}"                 --output "{SAMPLE_PNG}"                 --field T
+        else
+            echo "WARNING: ParaView batch executable (pvpython/pvbatch) not found; skipping field visualization for sample {RESULTS_ROOT.name}." | tee "{RESULTS_ROOT}/visualizations/visualization.warning.log" >&2
+        fi
+        touch "{output}"
+        """
+
+
+rule visualize:
+    """Build the animated Pareto-front movie from all completed samples.
+
+    Reads all_samples.csv and the per-sample PNGs produced by
+    visualize_sample, then writes to results/visualizations/:
+      pareto_animation.gif   — always produced (Pillow)
+      pareto_animation.mp4   — produced when ffmpeg is available
+
+    Run after all BO samples are complete:
+        snakemake --cores 1 visualize
+    """
+    threads: 1
+    input:
+        str(RESULTS_ROOT / "all_samples.csv"),
+    output:
+        str(RESULTS_ROOT / "visualizations" / "pareto_animation.gif"),
+    shell:
+        """
+        set -eo pipefail
+        python3 "{CASE_ROOT}/visualize_results.py" \
+            --results-dir "{RESULTS_ROOT}" \
+            --output-dir  "{RESULTS_ROOT}/visualizations"
+        """
+
+
 rule create_foam_files:
     threads: 1
     input:
         str(HYDRO / "pressureDrop.csv"),
         str(MIXING / "mixing.csv"),
     output:
-        str(HYDRO / "SplitAndRecombineHydro.foam"),
-        str(MIXING / "SplitAndRecombineMixing.foam"),
+        HYDRO_FOAM,
+        MIXING_FOAM,
     shell:
         """
         set -eo pipefail
-        touch "{HYDRO}/SplitAndRecombineHydro.foam"
-        touch "{MIXING}/SplitAndRecombineMixing.foam"
+        touch "{HYDRO_FOAM}"
+        touch "{MIXING_FOAM}"
         """
 
 

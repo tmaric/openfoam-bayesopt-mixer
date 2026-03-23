@@ -65,6 +65,38 @@ functions
         writeControl    timeStep;
         writeInterval   1;
     }
+
+    // Horizontal cut plane at z = DEPTH/2 = 5e-6 m.
+    // Writes VTK surface with U and T fields.
+    // Executed explicitly via: postProcess -func samplingPlane -latestTime
+    // (see system/samplingPlane for the standalone function dict)
+    samplingPlane
+    {
+        type            surfaces;
+        libs            ("libsampling.so");
+
+        writeControl    onEnd;
+
+        surfaceFormat   vtk;
+        interpolationScheme cellPoint;
+
+        fields          (U T);
+
+        surfaces
+        (
+            midPlane
+            {
+                type         cuttingPlane;
+                planeType    pointAndNormal;
+                pointAndNormalDict
+                {
+                    basePoint    (0 0 5e-6);
+                    normalVector (0 0 1);
+                }
+                interpolate  true;
+            }
+        );
+    }
 }
 
 

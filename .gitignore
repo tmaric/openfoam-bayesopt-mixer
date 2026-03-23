@@ -49,3 +49,6 @@ sync.ffs_db
 
 # Snakemake 
 .snakemake/
+
+# Model files
+*.pt
