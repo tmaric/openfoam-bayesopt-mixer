@@ -231,8 +231,10 @@ After all iterations `results/all_objectives.csv` aggregates every sample, and
 the Pareto-optimal designs are printed to stdout.
 
 The loop resumes automatically: if `results/` already contains completed
-samples they are loaded and counted toward `--n-init` before any new Snakemake
-calls are made.
+samples they are loaded and counted toward the Sobol initialisation budget
+before any new Snakemake calls are made. Once the Sobol phase is complete,
+each fresh invocation launches another batch of BO iterations and appends new
+sample directories under `results/`.
 
 #### Manual batch invocation
 

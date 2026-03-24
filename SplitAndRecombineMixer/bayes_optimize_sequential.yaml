@@ -1,5 +1,11 @@
 # Configuration for bayes_optimize_sequential.py
 #
+# Resume semantics:
+#   - n_init is the total Sobol budget across the whole study.
+#   - once Sobol initialisation is complete, every fresh invocation of
+#     bayes_optimize_sequential.py launches n_bo additional BO iterations and
+#     appends new sample folders under results/.
+#
 # The BO no longer samples directly in the CAD variables t_m, L_s/L_m split,
 # or delta. Those are derived from interval-safe latent variables so every BO
 # point lands inside a mesh-aware admissible box before sar_mixer_cad.py sees it.

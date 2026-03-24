@@ -511,14 +511,25 @@ def load_model_hyperparams() -> dict | None:
 
 
 def next_candidate(model, X: torch.Tensor, Y: torch.Tensor) -> torch.Tensor:
-    from botorch.acquisition.multi_objective import qNoisyExpectedHypervolumeImprovement
+    try:
+        from botorch.acquisition.multi_objective import (
+            qLogNoisyExpectedHypervolumeImprovement as qNEHVIClass,
+        )
+        acqf_name = "qLogNoisyExpectedHypervolumeImprovement"
+    except ImportError:
+        from botorch.acquisition.multi_objective import (
+            qNoisyExpectedHypervolumeImprovement as qNEHVIClass,
+        )
+        acqf_name = "qNoisyExpectedHypervolumeImprovement"
     from botorch.optim import optimize_acqf
 
     Y_neg = -Y
     Y_range = (Y_neg.max(0).values - Y_neg.min(0).values).clamp(min=1e-6)
     ref_point = Y_neg.min(0).values - 0.1 * Y_range
 
-    acqf = qNoisyExpectedHypervolumeImprovement(
+    print(f"[bo] acquisition: {acqf_name}")
+
+    acqf = qNEHVIClass(
         model=model, ref_point=ref_point, X_baseline=X, prune_baseline=True
     )
 
@@ -640,16 +651,20 @@ def main() -> None:
         sys.exit("[bo] not enough successful samples to fit a GP - aborting")
 
     n_bo_done = max(0, n_existing - N_INIT)
-    n_bo_remaining = max(0, N_BO - n_bo_done)
-    print(f"\n[bo] === Sequential BO: {n_bo_remaining} remaining iteration(s) "
-          f"(of {N_BO}; {n_bo_done} already done) ===")
+    n_bo_to_run = N_BO
+    print(
+        f"\n[bo] === Sequential BO: launching {n_bo_to_run} new iteration(s) "
+        f"(existing BO samples: {n_bo_done}) ==="
+    )
 
     warm_start = load_model_hyperparams()
 
-    for i in range(n_bo_remaining):
+    for i in range(n_bo_to_run):
         bo_iter = n_bo_done + i + 1
-        print(f"\n[bo] --- BO iteration {bo_iter}/{N_BO}  "
-              f"(observed so far: {X_obs.shape[0]}) ---")
+        print(
+            f"\n[bo] --- BO iteration {bo_iter} "
+            f"(launch {i + 1}/{n_bo_to_run}; observed so far: {X_obs.shape[0]}) ---"
+        )
 
         model = fit_model(X_obs, Y_obs, warm_start=warm_start)
         save_model(model)
@@ -671,7 +686,7 @@ def main() -> None:
             X_obs,
             Y_obs,
             n_init_done,
-            f"SAR mixer - BO iter {bo_iter}/{N_BO}  [{X_obs.shape[0]} sample(s)]",
+            f"SAR mixer - BO iter {bo_iter}  [{X_obs.shape[0]} sample(s)]",
         )
 
     from botorch.utils.multi_objective.pareto import is_non_dominated

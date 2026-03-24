@@ -174,6 +174,9 @@ Each run is **automatically resumed** from all previous results:
 
 - Sample directories are numbered `00000`, `00001`, … and new runs continue
   from the highest existing index.
+- `n_init` is treated as the total Sobol budget for the study, while each
+  rerun after Sobol completion adds another `n_bo` BO iterations and appends
+  new sample folders.
 - The Gaussian Process model is checkpointed to `SplitAndRecombineMixer.pt`
   after every BO iteration.  On restart the saved hyperparameters are used
   as a warm start, so the GP converges faster when data already exist.
