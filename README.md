@@ -203,18 +203,49 @@ results directory.  `pressureDrop.csv` and `mixing.csv` are declared Snakemake
 outputs of the respective solver rules — if a function object fails to write its
 CSV the rule fails immediately rather than silently producing empty results.
 
-### Batch mode for Bayesian optimisation
+### Option C — Bayesian optimisation loop
 
-Each Snakemake run can be redirected to an isolated results directory:
+Run the full multi-objective optimisation from `SplitAndRecombineMixer/`:
 
 ```bash
-snakemake -j 4 --config results_dir=samples/00
+python bayes_optimize.py --n-init 8 --n-bo 20 --cores 4
 ```
 
-The BO loop writes `samples/{id}/sar_mixer_cad.yaml` before launching Snakemake.
-After completion, `samples/{id}/objectives.csv` contains a single row with the
-geometry parameters, all pressure-drop columns, and all mixing-quality columns,
-plus `sample_id` and `results_dir` for traceability back to the ParaView case.
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--n-init` | `8` | Sobol initial samples before GP is fit |
+| `--n-bo` | `20` | BO iterations after initialisation |
+| `--cores` | `4` | CPU cores passed to each Snakemake call |
+| `--results-dir` | `results/` | Root directory for per-sample results |
+
+The loop assigns sequential zero-padded IDs (`00000`, `00001`, …).  For each
+candidate it:
+
+1. writes `results/{id}/sar_mixer_cad.yaml` (geometry parameters),
+2. calls Snakemake with `--snakefile`, `--directory results/{id}`, and
+   `--config results_dir=results/{id}` so each run is fully isolated
+   (`.snakemake/` metadata and all CFD outputs live under `results/{id}/`),
+3. reads `results/{id}/objectives.csv` and updates the BOTorch GP model.
+
+After all iterations `results/all_objectives.csv` aggregates every sample, and
+the Pareto-optimal designs are printed to stdout.
+
+The loop resumes automatically: if `results/` already contains completed
+samples they are loaded and counted toward `--n-init` before any new Snakemake
+calls are made.
+
+#### Manual batch invocation
+
+Each Snakemake run can also be triggered by hand for a specific parameter set:
+
+```bash
+# write sar_mixer_cad.yaml into the sample directory first, then:
+snakemake \
+  --snakefile SplitAndRecombineMixer/Snakefile \
+  --directory results/00042 \
+  --cores 4 \
+  --config results_dir=results/00042
+```
 
 ## Outputs
 

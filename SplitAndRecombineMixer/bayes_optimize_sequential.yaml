@@ -1,7 +1,61 @@
 # Configuration for bayes_optimize_sequential.py
-# Edit these values to control the optimisation run.
-# Reduce n_bo for quick workflow prototyping.
+#
+# The BO no longer samples directly in the CAD variables t_m, L_s/L_m split,
+# or delta. Those are derived from interval-safe latent variables so every BO
+# point lands inside a mesh-aware admissible box before sar_mixer_cad.py sees it.
 
-n_init: 4    # Sobol quasi-random initialisation samples
-n_bo:   4    # Bayesian optimisation iterations
-cores:  4    # CPU cores passed to each Snakemake call
+n_init: 8
+n_bo:   20
+cores:  4
+
+bo_parameters:
+  w_s:
+    lower: 0.25
+    upper: 0.45
+  t_s:
+    lower: 0.04
+    upper: 0.15
+  t_m_ratio:
+    lower: 0.0
+    upper: 1.0
+  L_c:
+    lower: 0.40
+    upper: 2.40
+  L_s_ratio:
+    lower: 0.0
+    upper: 1.0
+  delta_ratio:
+    lower: 0.0
+    upper: 1.0
+
+cad_parameter_bounds:
+  t_m:
+    lower: 0.025
+    upper: 0.15
+  L_s:
+    lower: 0.80
+    upper: 1.80
+  L_m:
+    lower: 0.80
+    upper: 1.80
+  delta:
+    lower: 0.025
+    upper: 0.15
+
+mesh_safety:
+  # From SplitAndRecombineHydro/system/meshDict:
+  #   fine cell size = 1.25e-5 m
+  # With H = 1.0e-3 m this is 0.0125 H.
+  fine_cell_size_H: 0.0125
+
+  # Dependent-interval margins expressed in fine-cell counts.
+  # These are the BO-side "interval arithmetic" guards that keep the sampled
+  # CAD away from cfMesh-unresolvable sliver features.
+  t_m_min_cells: 2.0
+  delta_min_cells: 2.0
+  split_gap_min_cells: 4.0
+  splitter_step_min_cells: 1.0
+
+penalties:
+  pdrop: 1000.0
+  mix:   1.0
