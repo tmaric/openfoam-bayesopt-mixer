@@ -127,6 +127,17 @@ def compute_view_size(bounds: tuple[float, ...]) -> list[int]:
     return [view_width, view_height]
 
 
+def enable_offscreen_rendering(render_view) -> None:
+    """Force ParaView to render off-screen so batch screenshots never pop up a window."""
+    for attr in ("UseOffscreenRendering", "UseOffscreenRenderingForScreenshots"):
+        # Newer ParaView versions may remove these properties entirely and
+        # raise from proxy attribute lookup. Treat them as optional.
+        try:
+            setattr(render_view, attr, 1)
+        except Exception:
+            pass
+
+
 def autocrop_png(png_path: Path, tolerance: int = 2, padding: int = 6) -> None:
     """Crop away the uniform white border from a saved screenshot."""
     reader = vtk.vtkPNGReader()
@@ -250,6 +261,7 @@ def render_latest_field(case_foam: Path, output_png: Path, field: str) -> None:
     render_view.ViewSize = compute_view_size(bounds)
     render_view.Background = [1.0, 1.0, 1.0]
     render_view.OrientationAxesVisibility = 0
+    enable_offscreen_rendering(render_view)
 
     display = Show(slice_filter, render_view)
     display.Representation = 'Surface'

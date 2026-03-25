@@ -28,7 +28,7 @@ SAMPLE_PNG = RESULTS_ROOT / "visualizations" / f"{RESULTS_ROOT.name}_T.png"
 
 VISUALIZE_SAMPLE_DONE = WORKFLOW / "visualize_sample.done"
 PARAVIEW_RENDER_SCRIPT = CASE_ROOT / "render_latest_mixing_field.py"
-PARAVIEW_BATCH = shutil.which("pvpython") or shutil.which("pvbatch")
+PARAVIEW_BATCH = shutil.which("pvbatch") or shutil.which("pvpython")
 if PARAVIEW_BATCH is None:
     print(
         "WARNING: ParaView batch executable (pvpython/pvbatch) not found; "
@@ -357,7 +357,7 @@ rule visualize_sample:
         set -eo pipefail
         mkdir -p "{WORKFLOW}" "{RESULTS_ROOT}/visualizations"
         if [ -n "{params.paraview_batch}" ]; then
-            "{params.paraview_batch}" "{PARAVIEW_RENDER_SCRIPT}"                 --case-foam "{input.foam}"                 --output "{SAMPLE_PNG}"                 --field T
+            env VTK_DEFAULT_RENDER_WINDOW_OFFSCREEN=1 "{params.paraview_batch}" "{PARAVIEW_RENDER_SCRIPT}"                 --case-foam "{input.foam}"                 --output "{SAMPLE_PNG}"                 --field T
         else
             echo "WARNING: ParaView batch executable (pvpython/pvbatch) not found; skipping field visualization for sample {RESULTS_ROOT.name}." | tee "{RESULTS_ROOT}/visualizations/visualization.warning.log" >&2
         fi
