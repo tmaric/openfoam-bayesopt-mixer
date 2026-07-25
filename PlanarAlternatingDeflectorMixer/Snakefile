@@ -6,6 +6,7 @@ shell.executable("/bin/bash")
 
 CASE_ROOT = Path(workflow.basedir).resolve()
 REPO_ROOT = CASE_ROOT.parent
+PYTHON_BIN = sys.executable
 
 # results_dir can be overridden per sample:
 #   snakemake --cores 4 --config results_dir=samples/00
@@ -13,12 +14,32 @@ REPO_ROOT = CASE_ROOT.parent
 RESULTS_ROOT = Path(config.get("results_dir", str(CASE_ROOT / "results"))).resolve()
 WORKFLOW = RESULTS_ROOT / ".workflow"
 
-TEMPLATE_HYDRO = CASE_ROOT / "SplitAndRecombineHydro"
-TEMPLATE_MIXING = CASE_ROOT / "SplitAndRecombineMixing"
-HYDRO = RESULTS_ROOT / "SplitAndRecombineHydro"
-MIXING = RESULTS_ROOT / "SplitAndRecombineMixing"
+CAD_CONFIG_NAME = "alternating_deflector_cad.yaml"
+CAD_SCRIPT_NAME = "alternating_deflector_cad.py"
+
+TEMPLATE_HYDRO = CASE_ROOT / "FlowCase"
+TEMPLATE_MIXING = CASE_ROOT / "ScalarTransportCase"
+HYDRO = RESULTS_ROOT / "FlowCase"
+MIXING = RESULTS_ROOT / "ScalarTransportCase"
 HYDRO_FOAM  = str(HYDRO  / f"{HYDRO.name}.foam")
 MIXING_FOAM = str(MIXING / f"{MIXING.name}.foam")
+
+# Explicit source inputs make edits to the template cases invalidate the
+# staging rule. The optional per-sample config is included when BO creates it.
+STAGE_INPUTS = [
+    str(TEMPLATE_HYDRO / CAD_CONFIG_NAME),
+    str(TEMPLATE_HYDRO / CAD_SCRIPT_NAME),
+    str(TEMPLATE_HYDRO / "0/U"),
+    str(TEMPLATE_HYDRO / "0/p"),
+    *[str(path) for path in sorted((TEMPLATE_HYDRO / "constant").glob("*Properties"))],
+    *[str(path) for path in sorted((TEMPLATE_HYDRO / "system").iterdir()) if path.is_file()],
+    str(TEMPLATE_MIXING / "0/T"),
+    *[str(path) for path in sorted((TEMPLATE_MIXING / "constant").glob("*Properties"))],
+    *[str(path) for path in sorted((TEMPLATE_MIXING / "system").iterdir()) if path.is_file()],
+]
+SAMPLE_CONFIG = RESULTS_ROOT / CAD_CONFIG_NAME
+if SAMPLE_CONFIG.exists():
+    STAGE_INPUTS.append(str(SAMPLE_CONFIG))
 
 NPROCS = max(1, int(workflow.cores))
 
@@ -39,8 +60,12 @@ if PARAVIEW_BATCH is None:
 shell.prefix(
     "set -eo pipefail; "
     "if ! command -v foamDictionary >/dev/null 2>&1; then "
-    ". \"$HOME/OpenFOAM/OpenFOAM-v2506/etc/bashrc\" "
-    "|| (echo \"ERROR: cannot source OpenFOAM environment\"; exit 1); "
+    "echo \"ERROR: OpenFOAM is not configured. Source its etc/bashrc first.\" >&2; "
+    "exit 1; "
+    "fi; "
+    "if [ -z \"${{WM_OPTIONS:-}}\" ]; then "
+    "echo \"ERROR: WM_OPTIONS is unset. Source the OpenFOAM environment.\" >&2; "
+    "exit 1; "
     "fi; "
     f"export FOAM_USER_LIBBIN=\"{REPO_ROOT}/platforms/$WM_OPTIONS/lib\"; "
     "export LD_LIBRARY_PATH=\"$FOAM_USER_LIBBIN:$LD_LIBRARY_PATH\"; "
@@ -60,11 +85,10 @@ rule all:
 rule stage_template_cases:
     threads: 1
     input:
-        str(TEMPLATE_HYDRO),
-        str(TEMPLATE_MIXING),
+        STAGE_INPUTS,
     output:
         done = str(WORKFLOW / "stage_template_cases.done"),
-        yaml = str(HYDRO / "sar_mixer_cad.yaml"),
+        yaml = str(HYDRO / CAD_CONFIG_NAME),
     shell:
         """
         set -eo pipefail
@@ -76,7 +100,7 @@ rule stage_template_cases:
 
         cd "{HYDRO}"
         rm -rf constant/polyMesh
-        rm -f constant/triSurface/sar_mixer.stl
+        rm -f constant/triSurface/alternating_deflector_mixer.stl
         rm -f 0/V
         rm -rf processor*
         find . -maxdepth 1 -mindepth 1 -type d -regex './[1-9][0-9]*' -exec rm -rf {{}} +
@@ -98,9 +122,10 @@ rule stage_template_cases:
         rm -f log.*
         rm -f ./*.foam
 
-        # If a sample YAML was placed in results_dir by the BO loop, use it.
-        if [ -f "{RESULTS_ROOT}/sar_mixer_cad.yaml" ]; then
-            cp "{RESULTS_ROOT}/sar_mixer_cad.yaml" "{HYDRO}/sar_mixer_cad.yaml"
+        # If a sample YAML was placed in results_dir by the BO loop, use it
+        # verbatim so the full CAD parameter set (including k) carries through.
+        if [ -f "{SAMPLE_CONFIG}" ]; then
+            cp "{SAMPLE_CONFIG}" "{HYDRO}/{CAD_CONFIG_NAME}"
         fi
 
         touch "{output.done}"
@@ -112,19 +137,19 @@ rule hydro_geometry:
     input:
         str(WORKFLOW / "stage_template_cases.done"),
     output:
-        str(HYDRO / "constant/triSurface/sar_mixer.stl"),
+        str(HYDRO / "constant/triSurface/alternating_deflector_mixer.stl"),
     shell:
         """
         set -eo pipefail
         cd "{HYDRO}"
-        python3 sar_mixer_cad.py 2>&1 | tee log.sar_mixer_cad
+        "{PYTHON_BIN}" "{CAD_SCRIPT_NAME}" 2>&1 | tee log.alternating_deflector_cad
         """
 
 
 rule hydro_mesh:
     threads: 1
     input:
-        str(HYDRO / "constant/triSurface/sar_mixer.stl"),
+        str(HYDRO / "constant/triSurface/alternating_deflector_mixer.stl"),
         str(TEMPLATE_HYDRO / "system/meshDict"),
     output:
         str(HYDRO / "constant/polyMesh/boundary"),
@@ -357,7 +382,10 @@ rule visualize_sample:
         set -eo pipefail
         mkdir -p "{WORKFLOW}" "{RESULTS_ROOT}/visualizations"
         if [ -n "{params.paraview_batch}" ]; then
-            env VTK_DEFAULT_RENDER_WINDOW_OFFSCREEN=1 "{params.paraview_batch}" "{PARAVIEW_RENDER_SCRIPT}"                 --case-foam "{input.foam}"                 --output "{SAMPLE_PNG}"                 --field T
+            if ! env VTK_DEFAULT_RENDER_WINDOW_OFFSCREEN=1 "{params.paraview_batch}" "{PARAVIEW_RENDER_SCRIPT}"                 --case-foam "{input.foam}"                 --output "{SAMPLE_PNG}"                 --field T; then
+                echo "WARNING: ParaView rendering failed for sample {RESULTS_ROOT.name}; BO objectives are complete and the workflow will continue." | tee "{RESULTS_ROOT}/visualizations/visualization.warning.log" >&2
+                rm -f "{SAMPLE_PNG}"
+            fi
         else
             echo "WARNING: ParaView batch executable (pvpython/pvbatch) not found; skipping field visualization for sample {RESULTS_ROOT.name}." | tee "{RESULTS_ROOT}/visualizations/visualization.warning.log" >&2
         fi
@@ -384,7 +412,7 @@ rule visualize:
     shell:
         """
         set -eo pipefail
-        python3 "{CASE_ROOT}/visualize_results.py" \
+        "{PYTHON_BIN}" "{CASE_ROOT}/visualize_results.py" \
             --results-dir "{RESULTS_ROOT}" \
             --output-dir  "{RESULTS_ROOT}/visualizations"
         """
@@ -409,7 +437,7 @@ rule create_foam_files:
 rule agglomerate:
     threads: 1
     input:
-        yaml    = str(HYDRO / "sar_mixer_cad.yaml"),
+        yaml    = str(HYDRO / CAD_CONFIG_NAME),
         pdrop   = str(HYDRO / "pressureDrop.csv"),
         mixing  = str(MIXING / "mixing.csv"),
     output:
@@ -417,7 +445,7 @@ rule agglomerate:
     shell:
         """
         set -eo pipefail
-        python3 "{CASE_ROOT}/postprocessing_agglomeration.py" \
+        "{PYTHON_BIN}" "{CASE_ROOT}/postprocessing_agglomeration.py" \
             --yaml        "{input.yaml}"   \
             --pdrop       "{input.pdrop}"  \
             --mixing      "{input.mixing}" \

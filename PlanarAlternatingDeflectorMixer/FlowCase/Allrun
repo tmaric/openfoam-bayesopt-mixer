@@ -4,10 +4,16 @@ set -euo pipefail
 CASE_DIR="$(cd "${0%/*}" && pwd)"
 cd "$CASE_DIR" || exit 1
 
+if [ -z "${WM_PROJECT_DIR:-}" ]; then
+    echo "ERROR: OpenFOAM is not configured. Source its etc/bashrc first." >&2
+    exit 1
+fi
+
 set +u
 . "${WM_PROJECT_DIR}/bin/tools/RunFunctions"
 
-runApplication python3 sar_mixer_cad.py
+# Reads the local YAML directly, including the staged delta/k bias profile.
+runApplication python3 alternating_deflector_cad.py
 runApplication cartesian2DMesh
 runApplication postProcess -func writeCellVolumes -time 0
 runApplication decomposePar -force

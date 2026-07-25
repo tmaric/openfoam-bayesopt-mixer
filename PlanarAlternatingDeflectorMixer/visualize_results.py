@@ -65,8 +65,13 @@ def find_sample_png(
 def sample_metrics(sample: dict) -> tuple[float | None, float | None]:
     """Return pressure-drop and mixing metrics when available."""
     try:
+        pdrop_raw = sample.get("pdrop_pressure_drop_m2_s2")
+        if pdrop_raw in (None, ""):
+            # Backward compatibility for the original, dimensionally
+            # mislabeled result files. simpleFoam stores kinematic pressure.
+            pdrop_raw = sample["pdrop_pressure_drop_Pa"]
         return (
-            float(sample["pdrop_pressure_drop_Pa"]),
+            float(pdrop_raw),
             float(sample["mixing_intensity_of_segregation"]),
         )
     except (KeyError, TypeError, ValueError):
@@ -81,7 +86,7 @@ def build_field_title(sample: dict) -> str:
         return f"Concentration field T - sample {sid}"
     return (
         f"Concentration field T - sample {sid} | "
-        f"J_dp = {pdrop:.4g} Pa | I_s = {j_mix:.4f}"
+        f"J_dp = {pdrop:.4g} m^2/s^2 | I_s = {j_mix:.4f}"
     )
 
 
@@ -100,12 +105,14 @@ def draw_missing_panel(ax, title: str, message: str) -> None:
     )
 
 
-def collect_per_sample_pngs(samples: list[dict], output_dir: Path) -> None:
+def collect_per_sample_pngs(
+    samples: list[dict], results_root: Path, output_dir: Path
+) -> None:
     """Copy already-rendered per-sample PNGs into the requested output dir."""
     output_dir.mkdir(parents=True, exist_ok=True)
     for sample in samples:
         sid = sample["sample_id"]
-        sample_dir = Path(sample["results_dir"])
+        sample_dir = results_root / sid
         src = find_sample_png(sample_dir, sid)
         if src is None:
             print(
@@ -120,11 +127,13 @@ def collect_per_sample_pngs(samples: list[dict], output_dir: Path) -> None:
         print(f"  {sid}: saved {dst.name}")
 
 
-def create_pareto_animation(samples: list[dict], output_dir: Path) -> None:
+def create_pareto_animation(
+    samples: list[dict], results_root: Path, output_dir: Path
+) -> None:
     """Animated GIF/MP4: Pareto front scatter plus rendered T-field panel."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    j_dp = np.array([float(sample["pdrop_pressure_drop_Pa"]) for sample in samples])
+    j_dp = np.array([sample_metrics(sample)[0] for sample in samples], dtype=float)
     j_mix = np.array([
         float(sample["mixing_intensity_of_segregation"])
         for sample in samples
@@ -182,7 +191,9 @@ def create_pareto_animation(samples: list[dict], output_dir: Path) -> None:
             order = pidx[np.argsort(j_dp_k[pidx])]
             ax_pareto.plot(j_dp_k[order], j_mix_k[order], color="black", lw=1.2, zorder=4)
 
-        ax_pareto.set_xlabel("Pressure drop  $J_{dp}$  [Pa, log scale]")
+        ax_pareto.set_xlabel(
+            "Kinematic pressure drop  $J_{dp}$  [m$^2$/s$^2$, log scale]"
+        )
         ax_pareto.set_ylabel("Intensity of segregation  $J_{mix}$  [ ]")
         ax_pareto.set_xscale("log")
         ax_pareto.set_title(
@@ -207,7 +218,7 @@ def create_pareto_animation(samples: list[dict], output_dir: Path) -> None:
 
         sample = samples[frame]
         sid = sample["sample_id"]
-        sample_dir = Path(sample["results_dir"])
+        sample_dir = results_root / sid
         title = build_field_title(sample)
 
         png_path = find_sample_png(sample_dir, sid, extra_search_dirs=(output_dir,))
@@ -293,11 +304,11 @@ def main() -> None:
 
     print()
     print("[1/2] Collecting per-sample ParaView PNGs ...")
-    collect_per_sample_pngs(samples, output_dir)
+    collect_per_sample_pngs(samples, results_root, output_dir)
 
     print()
     print("[2/2] Animated Pareto front ...")
-    create_pareto_animation(samples, output_dir)
+    create_pareto_animation(samples, results_root, output_dir)
 
     print()
     print(f"Done. Output in {output_dir}/")

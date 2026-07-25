@@ -1,267 +1,142 @@
 # openfoam-bayesopt-mixer
 
-Bayesian optimization of passive laminar micromixers using a fully automated
-CAD-to-CFD pipeline built on CADquery, cfMesh, OpenFOAM, Snakemake, and
-BOTorch.
+Bayesian optimization of parameterized passive micromixers with a portable
+CAD-to-CFD workflow built on CadQuery, cfMesh, OpenFOAM, Snakemake, and
+BoTorch.
 
-## Overview
+## Active study: Planar Alternating-Deflector Micromixer
 
-The goal is to find Pareto-optimal mixer geometries that minimize two competing
-objectives simultaneously:
+The active study is `PlanarAlternatingDeflectorMixer/` (PADM). The former name
+`SplitAndRecombineMixer` was retired because the implemented device is a
+strictly planar channel with a centre baffle and alternating top/bottom wall
+deflectors. It stretches and diffuses the inlet scalar interface, but it has no
+three-dimensional branch exchange and the computed fields do not show the
+layer multiplication claimed by a true split-and-recombine mixer.
 
-- **Mixing defect** `J_mix` — variance of the passive scalar concentration at
-  the outlet (lower = better mixed).
-- **Pressure drop** `J_dp` — area-averaged pressure difference between inlet
-  and outlet (lower = less pumping power).
+The study minimizes two objectives:
 
-Each design candidate is described by a small parameter vector `theta` (stored
-in a YAML file). For every `theta` the pipeline
+- kinematic pressure drop, `J_dp = <p>_in - <p>_out`, in `m²/s²`;
+- outlet intensity of segregation, `J_mix = I_s`, where zero is perfectly
+  mixed and one retains the inlet variance.
 
-1. generates a 2-D CAD geometry (CADquery),
-2. meshes the fluid domain (cfMesh `cartesian2DMesh`),
-3. solves the steady laminar flow (OpenFOAM `simpleFoam`),
-4. solves passive scalar transport (OpenFOAM `scalarTransportFoam`),
-5. extracts `J_dp` and `J_mix` from the computed fields,
-6. returns the objectives to the Bayesian optimizer (BOTorch).
+For water, physical pressure drop in pascals is `rho * J_dp`. The original CSV
+column suffix `_Pa` was dimensionally incorrect; new runs use `_m2_s2`, while
+the Python tools continue to read legacy results.
 
 ## Repository layout
 
-```
+```text
 openfoam-bayesopt-mixer/
-├── Allwmake                        # build custom OpenFOAM function objects
+├── Allwmake                         build the local function-object library
 ├── Allwclean
-├── src/
-│   └── functionObjects/
-│       ├── pressureDrop/           # computes J_dp, writes pressureDrop.csv
-│       └── patchMixingQuality/     # computes J_mix, writes mixing.csv
-└── SplitAndRecombineMixer/                   # SAR lamination ladder mixer case
-    ├── Allrun                                # run Hydro then Mixing sequentially
-    ├── Allclean                              # clean both sub-cases
-    ├── Snakefile                             # Snakemake workflow
-    ├── QUICKSTART.md                         # quickstart for the Snakemake workflow
-    ├── postprocessing_agglomeration.py       # merges YAML + CSVs into objectives.csv
-    ├── SplitAndRecombineHydro/               # flow sub-case (template)
-    │   ├── Allrun
-    │   ├── Allclean
-    │   ├── sar_mixer_cad.py                  # CADquery geometry script
-    │   ├── sar_mixer_cad.yaml                # geometry parameters (edit this)
-    │   └── system/, constant/, 0/
-    └── SplitAndRecombineMixing/              # scalar transport sub-case (template)
-        ├── Allrun                            # copies mesh+fields from Hydro, runs transport
-        ├── Allclean
-        └── system/, constant/, 0/
+├── src/functionObjects/
+│   ├── pressureDrop/                area-averaged kinematic pressure drop
+│   └── patchMixingQuality/          outlet scalar statistics
+└── PlanarAlternatingDeflectorMixer/
+    ├── FlowCase/                    CadQuery + mesh + simpleFoam template
+    ├── ScalarTransportCase/         scalarTransportFoam template
+    ├── Snakefile                    isolated CAD-to-objectives workflow
+    ├── bayes_optimize_sequential.py sequential multi-objective BO
+    ├── bayes_optimize_sequential.yaml
+    ├── QUICKSTART.md
+    └── docs/                        Reveal.js study deck
 ```
 
-## The Split-and-Recombine (SAR) Lamination Ladder Mixer
+`ChannelTwoSquareObstacles/` is a separate experimental benchmark and is not
+part of the PADM study.
 
-The mixer is a 2-D rectangular channel of height `H` and total length
-`L = 2 L0 + N L_cell` containing `N` identical unit cells.  Each unit cell
-performs three actions:
+## Geometry and physics
 
+The default channel is `H = 1 mm`, `L = 24 mm`, with five repeated cells. Each
+cell contains:
+
+1. a centre baffle of thickness `t_s` over the split-length segment;
+2. two cosine wall deflectors over an interaction length `L_c`;
+3. a thinner centre baffle of thickness `t_m` over the merge-length segment.
+
+The additional bias alternates between the top and bottom deflector. Its
+realized cell value is
+
+```text
+delta_i = delta + k * xhat_i
 ```
- inlet ──► [ split ] ──► [ shuffle ] ──► [ recombine ] ──► next cell ──► outlet
-```
 
-1. **Split** — a thin horizontal splitter wall (`thickness t_s`) divides the
-   channel into two subchannels of width `w_s` each.
-2. **Shuffle** — cosine-shaped deflectors on the top and bottom walls
-   (`height h_d = H/2 - w_s`) with a vertical offset `delta` redirect the
-   sub-streams so they swap positions.
-3. **Recombine** — a second thin splitter (`thickness t_m`) guides the
-   sub-streams back into a single channel, now with laminated interfaces.
+where `xhat_i` is the normalized streamwise midpoint of cell `i`.
 
-After `N` cells the number of laminae doubles with each cell, reducing striation
-thickness and accelerating diffusion.
-
-### Geometry parameters (`sar_mixer_cad.yaml`)
-
-All lengths are in normalised units where `H = 1`.  The `scale` factor converts
-to SI metres.
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `scale`   | `1e-3`  | 1 normalised unit = 1 mm |
-| `H`       | `1.0`   | channel height |
-| `L0`      | `2.0`   | inlet / outlet buffer length |
-| `N`       | `5`     | number of unit cells |
-| `L_cell`  | `4.0`   | unit-cell length |
-| `L_s`     | `1.4`   | split section length |
-| `L_m`     | `1.0`   | merge section length |
-| `w_s`     | `0.38`  | subchannel half-gap after split (fraction of H) |
-| `t_s`     | `0.10`  | splitter thickness — split section (fraction of H) |
-| `t_m`     | `0.05`  | splitter thickness — merge section (fraction of H) |
-| `delta`   | `0.08`  | top deflector vertical bias (fraction of H) |
-
-Edit `SplitAndRecombineMixer/SplitAndRecombineHydro/sar_mixer_cad.yaml` to
-change the geometry before running.
+The flow is steady and laminar (`simpleFoam`, `Re = 10`). Scalar transport uses
+`DT = 1e-9 m²/s` and bounded first-order upwind convection. The latter is
+robust but numerically diffusive, so the observed mixing should not be treated
+as mesh-independent physical validation without a discretization study.
 
 ## Prerequisites
 
-| Tool | Version tested |
-|------|---------------|
-| OpenFOAM | v2506 |
-| CADquery | 2.x |
-| cfMesh (cartesian2DMesh) | bundled with OpenFOAM-v2506 |
-| Snakemake | 8.x |
-| Python | 3.10+ |
+The case was developed with OpenFOAM v2506 and Python 3.10+. The Python
+environment must provide CadQuery, Snakemake, PyYAML, PyTorch, BoTorch,
+GPyTorch, NumPy, Matplotlib, and Pillow. ParaView batch mode is optional and is
+used only for field images.
 
-Source the OpenFOAM environment before building or running:
+Source the `etc/bashrc` belonging to the OpenFOAM installation you want to use;
+the repository does not assume where OpenFOAM is installed.
 
 ```bash
-source $HOME/OpenFOAM/OpenFOAM-v2506/etc/bashrc
+source /path/to/OpenFOAM/etc/bashrc
 ```
 
-## Build
+## Build and run
 
-Compile the custom function objects (`pressureDrop`, `patchMixingQuality`):
+From the repository root:
 
 ```bash
 ./Allwmake
+cd PlanarAlternatingDeflectorMixer
 ```
 
-This places `libbayesoptMixerFunctionObjects.so` under
-`platforms/$WM_OPTIONS/lib/`.
+The build is written under the repository's `platforms/$WM_OPTIONS/lib/`, and
+the Snakemake workflow loads the library from that relative location.
 
-## Running
-
-### Option A — Allrun / Allclean scripts
-
-Run both sub-cases sequentially from the mixer directory:
+Run one design:
 
 ```bash
-cd SplitAndRecombineMixer
-./Allrun
+snakemake --cores 4
 ```
 
-`Allrun` calls `SplitAndRecombineHydro/Allrun` first, then
-`SplitAndRecombineMixing/Allrun`.  The Mixing `Allrun` automatically copies
-the mesh and latest flow fields from the Hydro case before running scalar
-transport.
-
-Clean all generated files:
+Run sequential multi-objective Bayesian optimization:
 
 ```bash
-./Allclean
+python3 bayes_optimize_sequential.py
 ```
 
-Each sub-case also has its own `Allrun` and `Allclean` that can be run
-independently.  Running `SplitAndRecombineMixing/Allrun` directly requires the
-Hydro case to have been run first (the script checks for the Hydro mesh and
-exits with a clear error if it is missing).
+The default campaign uses eight Sobol samples followed by twenty sequential
+qLogNEHVI/qNEHVI suggestions. A rerun resumes completed samples and adds
+another configured BO batch.
 
-### Option B — Snakemake workflow
-
-The Snakefile in `SplitAndRecombineMixer/` orchestrates the full pipeline as a
-directed acyclic graph of rules, staging results under `results/` to keep
-template cases untouched.
+Clean generated data:
 
 ```bash
-cd SplitAndRecombineMixer
-snakemake -j 4          # run with 4 cores (used by mpirun for both solvers)
-snakemake -j 1 clean    # remove results/
+snakemake --cores 1 clean
 ```
 
-See `SplitAndRecombineMixer/QUICKSTART.md` for a concise reference.
+## Documentation deck
 
-The workflow proceeds as follows:
-
-```
-stage_template_cases
-        │
-        ├─► hydro_geometry      (CADquery: generate STL)      → log.sar_mixer_cad
-        │        │
-        │   hydro_mesh          (cartesian2DMesh)              → log.cartesian2DMesh
-        │        │
-        │   hydro_cell_volumes  (postProcess writeCellVolumes) → log.postProcess
-        │        │
-        │   hydro_decompose     (decomposePar, N = -j N)       → log.decomposePar
-        │        │
-        │   hydro_simpleFoam    (mpirun -np N simpleFoam)      → log.simpleFoam
-        │        │  also writes: pressureDrop.csv
-        │        │
-        │   hydro_reconstruct   (reconstructPar -latestTime)   → log.reconstructPar
-        │        │
-        │   copy_hydro_to_mixing
-        │        │
-        │   mixing_set_expr_fields  (setExprFields)            → log.setExprFields
-        │        │
-        │   mixing_decompose    (decomposePar, N = -j N)       → log.decomposePar
-        │        │
-        │   mixing_scalar_transport (mpirun -np N scalarTransportFoam) → log.scalarTransportFoam
-        │        │  also writes: mixing.csv
-        │        │
-        │   mixing_reconstruct  (reconstructPar -latestTime)   → log.reconstructPar
-        │        │
-        ├─► agglomerate         (postprocessing_agglomeration.py)
-        │        │  writes: objectives.csv
-        │
-        └─► create_foam_files   (.foam files for ParaView)
-```
-
-Every rule captures its application output via `tee log.<appname>` inside the
-results directory.  `pressureDrop.csv` and `mixing.csv` are declared Snakemake
-outputs of the respective solver rules — if a function object fails to write its
-CSV the rule fails immediately rather than silently producing empty results.
-
-### Option C — Bayesian optimisation loop
-
-Run the full multi-objective optimisation from `SplitAndRecombineMixer/`:
+The Reveal.js deck documents the actual geometry, parameter transforms,
+objectives, workflow, results, and limitations:
 
 ```bash
-python bayes_optimize.py --n-init 8 --n-bo 20 --cores 4
+cd PlanarAlternatingDeflectorMixer/docs
+python3 -m http.server 8000
 ```
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--n-init` | `8` | Sobol initial samples before GP is fit |
-| `--n-bo` | `20` | BO iterations after initialisation |
-| `--cores` | `4` | CPU cores passed to each Snakemake call |
-| `--results-dir` | `results/` | Root directory for per-sample results |
+Then open `http://localhost:8000/`.
 
-The loop assigns sequential zero-padded IDs (`00000`, `00001`, …).  For each
-candidate it:
+## Main outputs
 
-1. writes `results/{id}/sar_mixer_cad.yaml` (geometry parameters),
-2. calls Snakemake with `--snakefile`, `--directory results/{id}`, and
-   `--config results_dir=results/{id}` so each run is fully isolated
-   (`.snakemake/` metadata and all CFD outputs live under `results/{id}/`),
-3. reads `results/{id}/objectives.csv` and updates the BOTorch GP model.
-
-After all iterations `results/all_objectives.csv` aggregates every sample, and
-the Pareto-optimal designs are printed to stdout.
-
-The loop resumes automatically: if `results/` already contains completed
-samples they are loaded and counted toward the Sobol initialisation budget
-before any new Snakemake calls are made. Once the Sobol phase is complete,
-each fresh invocation launches another batch of BO iterations and appends new
-sample directories under `results/`.
-
-#### Manual batch invocation
-
-Each Snakemake run can also be triggered by hand for a specific parameter set:
-
-```bash
-# write sar_mixer_cad.yaml into the sample directory first, then:
-snakemake \
-  --snakefile SplitAndRecombineMixer/Snakefile \
-  --directory results/00042 \
-  --cores 4 \
-  --config results_dir=results/00042
+```text
+results/<sample_id>/
+├── FlowCase/pressureDrop.csv
+├── ScalarTransportCase/mixing.csv
+├── objectives.csv
+└── visualizations/<sample_id>_T.png   optional
 ```
 
-## Outputs
-
-| File | Location | Contents |
-|------|----------|----------|
-| `pressureDrop.csv` | Hydro case dir | time, inlet/outlet average pressure, `J_dp` |
-| `mixing.csv` | Mixing case dir | time, all mixing quality metrics |
-| `objectives.csv` | `results/` (or `samples/{id}/`) | single-row: geometry params + all objectives |
-| `log.sar_mixer_cad` | Hydro case dir | CADquery geometry script output |
-| `log.cartesian2DMesh` | Hydro case dir | cfMesh output |
-| `log.postProcess` | Hydro case dir | writeCellVolumes output |
-| `log.decomposePar` | Hydro / Mixing case dir | domain decomposition output |
-| `log.simpleFoam` | Hydro case dir | full simpleFoam stdout |
-| `log.setExprFields` | Mixing case dir | scalar field initialisation output |
-| `log.scalarTransportFoam` | Mixing case dir | full scalarTransportFoam stdout |
-| `log.reconstructPar` | Hydro / Mixing case dir | reconstruction output |
-| `*.foam` | Hydro / Mixing case dir | ParaView session files |
+`results/all_samples.csv` aggregates all completed samples and
+`results/pareto_front.png` summarizes the current non-dominated set.

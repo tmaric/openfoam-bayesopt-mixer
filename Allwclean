@@ -1,5 +1,13 @@
 #!/bin/bash
-set -o pipefail
-cd "${0%/*}" || exit 1
+set -euo pipefail
 
+ROOT_DIR="$(cd "${0%/*}" && pwd)"
+cd "$ROOT_DIR"
+
+if ! command -v wclean >/dev/null 2>&1 || [ -z "${WM_OPTIONS:-}" ]; then
+    echo "ERROR: OpenFOAM is not configured. Source its etc/bashrc first." >&2
+    exit 1
+fi
+
+export FOAM_USER_LIBBIN="$ROOT_DIR/platforms/$WM_OPTIONS/lib"
 wclean libso src/functionObjects

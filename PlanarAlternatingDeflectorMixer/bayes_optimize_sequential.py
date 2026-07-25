@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Sequential multi-objective Bayesian optimisation for the SAR mixer.
+"""Sequential multi-objective BO for the planar alternating-deflector mixer.
 
 Objectives (both minimised):
-    J_dp  - pressure drop (Pa)          pdrop_pressure_drop_Pa
+    J_dp  - kinematic pressure drop     pdrop_pressure_drop_m2_s2
     J_mix - intensity of segregation    mixing_intensity_of_segregation
 
 The BO works in a mesh-aware latent parameterisation:
     w_s, t_s, L_c           are sampled directly.
     t_m_ratio, L_s_ratio,
-    delta_ratio             are sampled on [0, 1] and mapped into CAD values
+    delta_ratio, k_ratio    are sampled on [0, 1] and mapped into CAD values
                             through interval-safe transforms.
 
 This keeps the CAD generator oblivious to the BO policy while ensuring the
@@ -17,6 +17,7 @@ cfMesh resolution assumptions.
 """
 
 import csv
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -42,14 +43,15 @@ CORES = int(CFG["cores"])
 
 RESULTS_DIR = CASE_ROOT / "results"
 SNAKEFILE = CASE_ROOT / "Snakefile"
-TEMPLATE_YAML = CASE_ROOT / "SplitAndRecombineHydro" / "sar_mixer_cad.yaml"
-MODEL_PATH = CASE_ROOT / "SplitAndRecombineMixer.pt"
+CAD_CONFIG_NAME = "alternating_deflector_cad.yaml"
+TEMPLATE_YAML = CASE_ROOT / "FlowCase" / CAD_CONFIG_NAME
+MODEL_PATH = CASE_ROOT / "PlanarAlternatingDeflectorMixer.pt"
 
 with open(TEMPLATE_YAML) as _f:
     TEMPLATE_GEO = yaml.safe_load(_f)
 
 BO_PARAM_NAMES = list(CFG["bo_parameters"].keys())
-GEO_PARAM_NAMES = ["w_s", "t_s", "t_m", "L_s", "L_m", "delta"]
+GEO_PARAM_NAMES = ["w_s", "t_s", "t_m", "L_s", "L_m", "delta", "k"]
 
 BOUNDS = torch.tensor([
     [float(CFG["bo_parameters"][name]["lower"]) for name in BO_PARAM_NAMES],
@@ -60,12 +62,18 @@ BO_LOWER = {name: float(CFG["bo_parameters"][name]["lower"]) for name in BO_PARA
 BO_UPPER = {name: float(CFG["bo_parameters"][name]["upper"]) for name in BO_PARAM_NAMES}
 
 L_CELL = float(TEMPLATE_GEO["L_cell"])
+L0 = float(TEMPLATE_GEO["L0"])
+N_CELLS = int(TEMPLATE_GEO["N"])
+TOTAL_L = 2.0 * L0 + N_CELLS * L_CELL
 
 MESH_FINE_H = float(CFG["mesh_safety"]["fine_cell_size_H"])
 T_M_MIN = MESH_FINE_H * float(CFG["mesh_safety"]["t_m_min_cells"])
 DELTA_MIN = MESH_FINE_H * float(CFG["mesh_safety"]["delta_min_cells"])
 SPLIT_GAP_MIN = MESH_FINE_H * float(CFG["mesh_safety"]["split_gap_min_cells"])
 TM_STEP_MIN = MESH_FINE_H * float(CFG["mesh_safety"]["splitter_step_min_cells"])
+DELTA_MESH_MIN = float(CFG["mesh_safety"]["delta_mesh_min"])
+DELTA_SPAN_MAX = float(CFG["mesh_safety"]["delta_span_max"])
+DELTA_RAMP_UP_MAX = float(CFG["mesh_safety"]["delta_ramp_up_max"])
 
 T_M_MAX = float(CFG["cad_parameter_bounds"]["t_m"]["upper"])
 L_S_MIN = float(CFG["cad_parameter_bounds"]["L_s"]["lower"])
@@ -77,7 +85,8 @@ DELTA_MAX = float(CFG["cad_parameter_bounds"]["delta"]["upper"])
 LC_MIN = BO_LOWER["L_c"]
 INEQ_CONSTRAINTS: list = []
 
-OBJ_PDROP = "pdrop_pressure_drop_Pa"
+OBJ_PDROP = "pdrop_pressure_drop_m2_s2"
+OBJ_PDROP_LEGACY = "pdrop_pressure_drop_Pa"
 OBJ_MIX = "mixing_intensity_of_segregation"
 
 PENALTY_PDROP = float(CFG["penalties"]["pdrop"])
@@ -106,6 +115,8 @@ def _within(value: float, lo: float, hi: float, tol: float = 1e-12) -> bool:
 
 
 def _validate_config() -> None:
+    if N_CELLS < 1:
+        raise ValueError("Invalid CAD template: N must be >= 1.")
     if BO_LOWER["t_s"] < T_M_MIN + TM_STEP_MIN:
         raise ValueError(
             "Invalid BO config: t_s.lower must be >= t_m_min + splitter_step_min."
@@ -125,6 +136,146 @@ def _validate_config() -> None:
             "Invalid BO config: L_c.lower is too small for the configured "
             "L_s/L_m upper bounds."
         )
+    if DELTA_MESH_MIN <= 0.0:
+        raise ValueError("Invalid BO config: delta_mesh_min must be > 0.")
+    if DELTA_SPAN_MAX <= 0.0:
+        raise ValueError("Invalid BO config: delta_span_max must be > 0.")
+    if DELTA_RAMP_UP_MAX <= 0.0:
+        raise ValueError("Invalid BO config: delta_ramp_up_max must be > 0.")
+    worst_delta_cap = min(
+        DELTA_MAX,
+        BO_LOWER["w_s"] - 0.5 * BO_UPPER["t_s"] - SPLIT_GAP_MIN,
+    )
+    if worst_delta_cap < DELTA_MESH_MIN - 1e-12:
+        raise ValueError(
+            "Invalid BO config: delta_mesh_min exceeds the smallest admissible "
+            "realized deflector-bias ceiling implied by the BO bounds."
+        )
+
+
+def _delta_cap(w_s: float, t_s: float) -> float:
+    return min(DELTA_MAX, w_s - 0.5 * t_s - SPLIT_GAP_MIN)
+
+
+def _interaction_midpoint_xhat(L_s: float, L_m: float, cell_idx: int) -> float:
+    L_c = L_CELL - L_s - L_m
+    x_mid = L0 + cell_idx * L_CELL + L_s + 0.5 * L_c
+    return x_mid / TOTAL_L
+
+
+def _cell_xhats(L_s: float, L_m: float) -> list[float]:
+    return [_interaction_midpoint_xhat(L_s, L_m, cell_idx) for cell_idx in range(N_CELLS)]
+
+
+def _slope_interval(L_s: float, L_m: float) -> tuple[float, float]:
+    """Return global slope limits imposed by span and upward-ramp caps."""
+    xhats = _cell_xhats(L_s, L_m)
+    if not xhats:
+        return 0.0, 0.0
+
+    ramp_dx = xhats[-1] - xhats[0]
+    if ramp_dx <= 1e-12:
+        return -float("inf"), float("inf")
+
+    span_abs_cap = DELTA_SPAN_MAX / ramp_dx
+    return -span_abs_cap, min(span_abs_cap, DELTA_RAMP_UP_MAX / ramp_dx)
+
+
+def _delta_interval(w_s: float, t_s: float, L_s: float, L_m: float) -> tuple[float, float]:
+    """Return base-bias limits for which at least one admissible slope exists.
+
+    The realized bias is ``delta + k*xhat``. Sampling ``delta`` from only its
+    nominal CAD bounds can leave the subsequent ``k`` interval empty near the
+    mesh-safety floor. Projecting the joint linear constraints onto ``delta``
+    makes every latent point transformable by construction.
+    """
+    delta_floor = DELTA_MESH_MIN
+    delta_cap = _delta_cap(w_s, t_s)
+    xhats = _cell_xhats(L_s, L_m)
+    k_lo, k_hi = _slope_interval(L_s, L_m)
+
+    delta_lo = DELTA_MIN
+    delta_hi = delta_cap
+    if xhats and math.isfinite(k_hi):
+        delta_lo = max(delta_lo, max(delta_floor - k_hi * xhat for xhat in xhats))
+    if xhats and math.isfinite(k_lo):
+        delta_hi = min(delta_hi, min(delta_cap - k_lo * xhat for xhat in xhats))
+
+    return delta_lo, delta_hi
+
+
+def _realized_deltas(delta: float, k: float, L_s: float, L_m: float) -> list[float]:
+    return [delta + k * xhat for xhat in _cell_xhats(L_s, L_m)]
+
+
+def _realized_geometry_metrics(w_s: float, delta: float, k: float, L_s: float, L_m: float) -> dict:
+    deltas = _realized_deltas(delta, k, L_s, L_m)
+    delta_first = deltas[0]
+    delta_last = deltas[-1]
+    delta_min = min(deltas)
+    delta_max = max(deltas)
+    h_d = 0.5 - w_s
+    return {
+        "realized_deltas": deltas,
+        "delta_first": delta_first,
+        "delta_last": delta_last,
+        "delta_min": delta_min,
+        "delta_max": delta_max,
+        "delta_span": delta_max - delta_min,
+        "ramp_up": delta_last - delta_first,
+        "peak_intrusion_max": h_d + delta_max,
+        "centerline_margin_min": w_s - delta_max,
+    }
+
+
+def _format_realized_geometry_metrics(metrics: dict) -> str:
+    return (
+        f"delta_first={metrics['delta_first']:.4f}, "
+        f"delta_last={metrics['delta_last']:.4f}, "
+        f"delta_span={metrics['delta_span']:.4f}, "
+        f"peak_intrusion_max={metrics['peak_intrusion_max']:.4f}, "
+        f"centerline_margin_min={metrics['centerline_margin_min']:.4f}"
+    )
+
+
+def _k_interval(delta: float, w_s: float, t_s: float, L_s: float, L_m: float) -> tuple[float, float]:
+    delta_floor = DELTA_MESH_MIN
+    delta_cap = _delta_cap(w_s, t_s)
+    xhats = _cell_xhats(L_s, L_m)
+    k_lo, k_hi = _slope_interval(L_s, L_m)
+
+    for xhat in xhats:
+        if xhat <= 1e-12:
+            continue
+        k_lo = max(k_lo, (delta_floor - delta) / xhat)
+        k_hi = min(k_hi, (delta_cap - delta) / xhat)
+
+    if not xhats:
+        return 0.0, 0.0
+
+    return k_lo, k_hi
+
+
+def _is_geo_feasible(geo: dict) -> bool:
+    """Return True when the realized geometry stays mesh-safe."""
+    w_s = float(geo["w_s"])
+    t_s = float(geo["t_s"])
+    t_m = float(geo["t_m"])
+    L_s = float(geo["L_s"])
+    L_m = float(geo["L_m"])
+    delta = float(geo["delta"])
+    k = float(geo["k"])
+    metrics = _realized_geometry_metrics(w_s, delta, k, L_s, L_m)
+    delta_cap = _delta_cap(w_s, t_s)
+
+    c1 = metrics["delta_min"] >= DELTA_MESH_MIN - 1e-12
+    c2 = metrics["delta_max"] <= delta_cap + 1e-12
+    c3 = metrics["delta_span"] <= DELTA_SPAN_MAX + 1e-12
+    c4 = metrics["ramp_up"] <= DELTA_RAMP_UP_MAX + 1e-12
+    c5 = L_s + L_m <= L_CELL - LC_MIN + 1e-12
+    c6 = t_s - t_m >= TM_STEP_MIN - 1e-12
+    c7 = t_m >= T_M_MIN - 1e-12
+    return c1 and c2 and c3 and c4 and c5 and c6 and c7
 
 
 def bo_to_geo(bo_params: dict) -> dict:
@@ -135,6 +286,7 @@ def bo_to_geo(bo_params: dict) -> dict:
     L_c = float(bo_params["L_c"])
     L_s_ratio = float(bo_params["L_s_ratio"])
     delta_ratio = float(bo_params["delta_ratio"])
+    k_ratio = float(bo_params["k_ratio"])
 
     t_m_lo = T_M_MIN
     t_m_hi = min(T_M_MAX, t_s - TM_STEP_MIN)
@@ -153,14 +305,21 @@ def bo_to_geo(bo_params: dict) -> dict:
     L_s = _lerp(L_s_lo, L_s_hi, L_s_ratio)
     L_m = L_CELL - L_c - L_s
 
-    delta_lo = DELTA_MIN
-    delta_hi = min(DELTA_MAX, w_s - 0.5 * t_s - SPLIT_GAP_MIN)
+    delta_lo, delta_hi = _delta_interval(w_s, t_s, L_s, L_m)
     if delta_hi < delta_lo - 1e-12:
         raise ValueError(
             "Empty delta interval for "
             f"w_s={w_s:.6f}, t_s={t_s:.6f}: [{delta_lo:.6f}, {delta_hi:.6f}]"
         )
     delta = _lerp(delta_lo, delta_hi, delta_ratio)
+    k_lo, k_hi = _k_interval(delta, w_s, t_s, L_s, L_m)
+    if k_hi < k_lo - 1e-12:
+        raise ValueError(
+            "Empty k interval for "
+            f"delta={delta:.6f}, w_s={w_s:.6f}, t_s={t_s:.6f}, "
+            f"L_s={L_s:.6f}, L_m={L_m:.6f}: [{k_lo:.6f}, {k_hi:.6f}]"
+        )
+    k = _lerp(k_lo, k_hi, k_ratio)
 
     geo = {
         "w_s": w_s,
@@ -169,6 +328,7 @@ def bo_to_geo(bo_params: dict) -> dict:
         "L_s": L_s,
         "L_m": L_m,
         "delta": delta,
+        "k": k,
     }
     return geo
 
@@ -181,6 +341,7 @@ def geo_to_bo(geo_params: dict) -> dict:
     L_s = float(geo_params["L_s"])
     L_m = float(geo_params["L_m"])
     delta = float(geo_params["delta"])
+    k = float(geo_params.get("k", 0.0))
 
     if not _within(w_s, BO_LOWER["w_s"], BO_UPPER["w_s"]):
         raise ValueError("w_s outside current BO bounds")
@@ -203,11 +364,14 @@ def geo_to_bo(geo_params: dict) -> dict:
         raise ValueError("L_s outside admissible dependent interval")
     L_s_ratio = _ratio(L_s, L_s_lo, L_s_hi)
 
-    delta_lo = DELTA_MIN
-    delta_hi = min(DELTA_MAX, w_s - 0.5 * t_s - SPLIT_GAP_MIN)
+    delta_lo, delta_hi = _delta_interval(w_s, t_s, L_s, L_m)
     if not _within(delta, delta_lo, delta_hi):
         raise ValueError("delta outside admissible dependent interval")
     delta_ratio = _ratio(delta, delta_lo, delta_hi)
+    k_lo, k_hi = _k_interval(delta, w_s, t_s, L_s, L_m)
+    if not _within(k, k_lo, k_hi):
+        raise ValueError("k outside admissible dependent interval")
+    k_ratio = _ratio(k, k_lo, k_hi)
 
     bo = {
         "w_s": w_s,
@@ -216,6 +380,7 @@ def geo_to_bo(geo_params: dict) -> dict:
         "L_c": L_c,
         "L_s_ratio": L_s_ratio,
         "delta_ratio": delta_ratio,
+        "k_ratio": k_ratio,
     }
     return bo
 
@@ -226,20 +391,7 @@ def is_feasible(bo_params: dict) -> bool:
         geo = bo_to_geo(bo_params)
     except ValueError:
         return False
-
-    w_s = geo["w_s"]
-    t_s = geo["t_s"]
-    t_m = geo["t_m"]
-    L_s = geo["L_s"]
-    L_m = geo["L_m"]
-    delta = geo["delta"]
-
-    c1 = w_s - 0.5 * t_s - delta >= SPLIT_GAP_MIN - 1e-12
-    c2 = L_s + L_m <= L_CELL - LC_MIN + 1e-12
-    c3 = t_s - t_m >= TM_STEP_MIN - 1e-12
-    c4 = t_m >= T_M_MIN - 1e-12
-    c5 = delta >= DELTA_MIN - 1e-12
-    return c1 and c2 and c3 and c4 and c5
+    return _is_geo_feasible(geo)
 
 
 def _annotation_fields(bo_params: dict, geo_params: dict) -> dict:
@@ -323,7 +475,10 @@ def plot_pareto_front(X: torch.Tensor, Y: torch.Tensor, n_init: int, title: str)
         order = px.argsort()
         ax.step(px[order], py[order], where="post", color="black", lw=1.5, alpha=0.8)
 
-    ax.set_xlabel(r"Pressure drop  $J_\mathrm{dp}$  (Pa, log scale)", fontsize=11)
+    ax.set_xlabel(
+        r"Kinematic pressure drop  $J_\mathrm{dp}$  (m$^2$/s$^2$, log scale)",
+        fontsize=11,
+    )
     ax.set_ylabel(r"Mixing quality  $1 - I_s$  (-)", fontsize=11)
     ax.set_xscale("log")
     ax.set_title(title, fontsize=11)
@@ -353,8 +508,15 @@ def plot_pareto_front(X: torch.Tensor, Y: torch.Tensor, n_init: int, title: str)
 
 def aggregate_all() -> None:
     """Rewrite results/all_samples.csv from all completed objectives.csv files."""
-    rows, all_fieldnames = [], []
-    seen_fields: set = set()
+    expected_fields = [
+        "sample_id",
+        "results_dir",
+        *[f"bo_{name}" for name in BO_PARAM_NAMES],
+        *[f"geo_{name}" for name in GEO_PARAM_NAMES],
+    ]
+    rows = []
+    all_fieldnames = list(expected_fields)
+    seen_fields: set = set(expected_fields)
     for d in sorted(RESULTS_DIR.iterdir()):
         if not (d.is_dir() and d.name.isdigit()):
             continue
@@ -367,7 +529,13 @@ def aggregate_all() -> None:
                 if field not in seen_fields:
                     all_fieldnames.append(field)
                     seen_fields.add(field)
-            rows.extend(reader)
+            for row in reader:
+                row = _normalize_objectives_row(row)
+                for field in row:
+                    if field not in seen_fields:
+                        all_fieldnames.append(field)
+                        seen_fields.add(field)
+                rows.append(row)
     if not rows:
         return
     out = RESULTS_DIR / "all_samples.csv"
@@ -393,7 +561,7 @@ def _write_penalty_objectives(sample_dir: Path, bo_params: dict, geo_params: dic
     """Write a minimal objectives.csv with penalty values for a failed sample."""
     row = {
         "sample_id": sample_dir.name,
-        "results_dir": str(sample_dir.resolve()),
+        "results_dir": sample_dir.name,
         "failed": "True",
         **_annotation_fields(bo_params, geo_params),
         OBJ_PDROP: PENALTY_PDROP,
@@ -407,24 +575,79 @@ def _write_penalty_objectives(sample_dir: Path, bo_params: dict, geo_params: dic
     print(f"[bo] penalty objectives.csv written -> {out}")
 
 
+def _extract_geo_from_row(row: dict) -> dict | None:
+    geo = {}
+    for name in GEO_PARAM_NAMES:
+        raw = row.get(f"geo_{name}", "")
+        if raw in ("", None):
+            if name == "k":
+                raw = 0.0
+            else:
+                return None
+        try:
+            geo[name] = float(raw)
+        except (TypeError, ValueError):
+            return None
+    return geo
+
+
+def _normalize_objectives_row(row: dict) -> dict:
+    normalized = dict(row)
+    if normalized.get("sample_id", "") not in ("", None):
+        normalized["results_dir"] = normalized["sample_id"]
+    if normalized.get(OBJ_PDROP, "") in ("", None):
+        legacy_pdrop = normalized.get(OBJ_PDROP_LEGACY, "")
+        if legacy_pdrop not in ("", None):
+            normalized[OBJ_PDROP] = legacy_pdrop
+    if normalized.get("geo_k", "") in ("", None):
+        normalized["geo_k"] = "0.0"
+
+    # Geometry is the physical source of truth. Always reproject it into the
+    # current latent coordinates so archived samples remain consistent after a
+    # constraint-preserving transform is tightened.
+    geo = _extract_geo_from_row(normalized)
+    if geo is not None:
+        try:
+            bo = geo_to_bo(geo)
+        except Exception:
+            bo = None
+        if bo is not None:
+            for name, value in bo.items():
+                normalized[f"bo_{name}"] = f"{value:.17g}"
+
+    return normalized
+
+
 def evaluate(bo_params: dict) -> tuple[float, float] | tuple[None, None]:
     """Write YAML, run Snakemake, return (J_dp, J_mix) or (None, None)."""
-    if not is_feasible(bo_params):
+    try:
+        geo_params = bo_to_geo(bo_params)
+    except ValueError:
+        print(f"[bo] SKIP infeasible params: {bo_params}", file=sys.stderr)
+        return None, None
+    if not _is_geo_feasible(geo_params):
         print(f"[bo] SKIP infeasible params: {bo_params}", file=sys.stderr)
         return None, None
 
-    geo_params = bo_to_geo(bo_params)
+    realized_metrics = _realized_geometry_metrics(
+        geo_params["w_s"],
+        geo_params["delta"],
+        geo_params["k"],
+        geo_params["L_s"],
+        geo_params["L_m"],
+    )
     sid = next_sample_id()
     sample_dir = RESULTS_DIR / sid
     sample_dir.mkdir(parents=True, exist_ok=True)
 
     geo_yaml = dict(TEMPLATE_GEO)
     geo_yaml.update(geo_params)
-    with open(sample_dir / "sar_mixer_cad.yaml", "w") as fh:
+    with open(sample_dir / CAD_CONFIG_NAME, "w") as fh:
         yaml.dump(geo_yaml, fh, default_flow_style=False, sort_keys=False)
 
     print(f"\n[bo] sample {sid}: bo={bo_params}")
     print(f"[bo] sample {sid}: geo={geo_params}")
+    print(f"[bo] sample {sid}: realized={_format_realized_geometry_metrics(realized_metrics)}")
 
     ret = subprocess.run(
         [
@@ -451,9 +674,13 @@ def evaluate(bo_params: dict) -> tuple[float, float] | tuple[None, None]:
 
     with open(obj_csv, newline="") as fh:
         for row in csv.DictReader(fh):
+            row = _normalize_objectives_row(row)
             j_dp = float(row[OBJ_PDROP])
             j_mix = float(row[OBJ_MIX])
-            print(f"[bo] {sid}: J_dp={j_dp:.4g} Pa  mixing quality={1.0 - j_mix:.4f}")
+            print(
+                f"[bo] {sid}: J_dp={j_dp:.4g} m^2/s^2  "
+                f"mixing quality={1.0 - j_mix:.4f}"
+            )
             return j_dp, j_mix
 
     return None, None
@@ -552,10 +779,10 @@ def next_candidate(model, X: torch.Tensor, Y: torch.Tensor) -> torch.Tensor:
 def collect_existing() -> tuple:
     """Load all completed samples from RESULTS_DIR.
 
-    New runs store bo_<name> and geo_<name> columns. Older result folders may
-    only contain geo_<name>; those are projected into the new latent variables
-    when possible. Samples that fall outside the new mesh-safe admissible box
-    are skipped.
+    New runs store bo_<name> and geo_<name> columns. Physical geometry columns
+    are always projected into the current latent transform, including for
+    archived rows created by an earlier transform. Samples outside the current
+    mesh-safe admissible box are skipped.
     """
     if not RESULTS_DIR.exists():
         return None, None, 0
@@ -571,11 +798,14 @@ def collect_existing() -> tuple:
 
         with open(obj_csv, newline="") as fh:
             for row in csv.DictReader(fh):
+                row = _normalize_objectives_row(row)
                 try:
                     if all(f"bo_{k}" in row and row[f"bo_{k}"] != "" for k in BO_PARAM_NAMES):
                         bo = {k: float(row[f"bo_{k}"]) for k in BO_PARAM_NAMES}
                     else:
-                        geo = {k: float(row[f"geo_{k}"]) for k in GEO_PARAM_NAMES}
+                        geo = _extract_geo_from_row(row)
+                        if geo is None:
+                            raise KeyError("missing geometry columns")
                         bo = geo_to_bo(geo)
                     j_dp = float(row[OBJ_PDROP])
                     j_mix = float(row[OBJ_MIX])
@@ -618,7 +848,7 @@ def main() -> None:
               f"({n_init_done} init, {n_bo_existing} BO)")
         aggregate_all()
         plot_pareto_front(X_obs, Y_obs, n_init_done,
-                          f"SAR mixer - resumed  [{n_existing} sample(s)]")
+                          f"PADM - resumed  [{n_existing} sample(s)]")
 
     n_init_needed = max(0, N_INIT - n_existing)
     if n_init_needed > 0:
@@ -644,7 +874,7 @@ def main() -> None:
                 X_obs,
                 Y_obs,
                 n_init_done,
-                f"SAR mixer - init {n_init_done}/{N_INIT}  [{X_obs.shape[0]} sample(s)]",
+                f"PADM - init {n_init_done}/{N_INIT}  [{X_obs.shape[0]} sample(s)]",
             )
 
     if X_obs is None or X_obs.shape[0] < 2:
@@ -686,21 +916,23 @@ def main() -> None:
             X_obs,
             Y_obs,
             n_init_done,
-            f"SAR mixer - BO iter {bo_iter}  [{X_obs.shape[0]} sample(s)]",
+            f"PADM - BO iter {bo_iter}  [{X_obs.shape[0]} sample(s)]",
         )
 
     from botorch.utils.multi_objective.pareto import is_non_dominated
 
     pareto = is_non_dominated(-Y_obs)
     print("\n[bo] Pareto-optimal designs:")
-    print(f"  {'w_s':>6}  {'t_s':>6}  {'t_m':>6}  {'L_s':>6}  {'L_m':>6}  {'delta':>6}"
-          f"  {'J_dp [Pa]':>12}  {'mix quality':>12}")
+    print(
+        f"  {'w_s':>6}  {'t_s':>6}  {'t_m':>6}  {'L_s':>6}  {'L_m':>6}  {'delta':>6}  {'k':>6}"
+        f"  {'J_dp [m2/s2]':>12}  {'mix quality':>12}"
+    )
     for x, y in zip(X_obs[pareto].tolist(), Y_obs[pareto].tolist()):
         bo_params = {k: float(x[j]) for j, k in enumerate(BO_PARAM_NAMES)}
         geo = bo_to_geo(bo_params)
         print(
             f"  {geo['w_s']:6.3f}  {geo['t_s']:6.3f}  {geo['t_m']:6.3f}"
-            f"  {geo['L_s']:6.3f}  {geo['L_m']:6.3f}  {geo['delta']:6.3f}"
+            f"  {geo['L_s']:6.3f}  {geo['L_m']:6.3f}  {geo['delta']:6.3f}  {geo['k']:6.3f}"
             f"  {y[0]:12.4g}  {1.0 - y[1]:12.4f}"
         )
 

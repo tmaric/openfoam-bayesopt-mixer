@@ -1,0 +1,12 @@
+#!/bin/bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "${0%/*}" && pwd)"
+
+"$ROOT_DIR/FlowCase/Allrun"
+"$ROOT_DIR/ScalarTransportCase/Allrun"
+
+touch "$ROOT_DIR/FlowCase/FlowCase.foam"
+touch "$ROOT_DIR/ScalarTransportCase/ScalarTransportCase.foam"
+
+echo "=== Done ==="

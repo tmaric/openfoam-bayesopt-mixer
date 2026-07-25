@@ -14,7 +14,7 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Normalized units matching sar_mixer_cad.py:
+// Normalized units matching alternating_deflector_cad.py:
 //   H      = 1.0         (channel height)
 //   L0     = 2.0         (inlet/outlet buffer)
 //   N      = 5           (unit cells)

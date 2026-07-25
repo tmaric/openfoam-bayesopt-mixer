@@ -40,6 +40,8 @@ log.*
 
 # Images
 *.png
+!PlanarAlternatingDeflectorMixer/docs/assets/*.png
+**/results/visualizations/*
 
 # IDE / tools
 .ccls-cache/

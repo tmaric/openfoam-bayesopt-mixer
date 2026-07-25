@@ -7,8 +7,10 @@
 #     appends new sample folders under results/.
 #
 # The BO no longer samples directly in the CAD variables t_m, L_s/L_m split,
-# or delta. Those are derived from interval-safe latent variables so every BO
-# point lands inside a mesh-aware admissible box before sar_mixer_cad.py sees it.
+# delta, or k. Those are derived from interval-safe latent variables so every
+# BO point lands inside a mesh-aware admissible box before
+# alternating_deflector_cad.py
+# sees it.
 
 n_init: 8
 n_bo:   20
@@ -33,6 +35,9 @@ bo_parameters:
   delta_ratio:
     lower: 0.0
     upper: 1.0
+  k_ratio:
+    lower: 0.0
+    upper: 1.0
 
 cad_parameter_bounds:
   t_m:
@@ -49,7 +54,7 @@ cad_parameter_bounds:
     upper: 0.15
 
 mesh_safety:
-  # From SplitAndRecombineHydro/system/meshDict:
+  # From FlowCase/system/meshDict:
   #   fine cell size = 1.25e-5 m
   # With H = 1.0e-3 m this is 0.0125 H.
   fine_cell_size_H: 0.0125
@@ -61,6 +66,12 @@ mesh_safety:
   delta_min_cells: 2.0
   split_gap_min_cells: 4.0
   splitter_step_min_cells: 1.0
+
+  # Meshability-first constraints on the realized deflector-bias profile
+  # delta_i = delta + k*xhat_i at the actual cell midpoints.
+  delta_mesh_min: 0.04
+  delta_span_max: 0.06
+  delta_ramp_up_max: 0.05
 
 penalties:
   pdrop: 1000.0

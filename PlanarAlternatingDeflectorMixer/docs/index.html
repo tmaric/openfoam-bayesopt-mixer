@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bayesian Optimization of a Planar Alternating-Deflector Micromixer</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+  <link rel="stylesheet" href="slides.css">
+</head>
+<body>
+  <div class="reveal">
+    <div class="slides">
+      <section class="title-slide">
+        <div class="eyebrow">CAD → CFD → Bayesian optimization</div>
+        <h1>Planar Alternating-Deflector<br>Micromixer</h1>
+        <p class="subtitle">What the geometry actually does, how the seven-dimensional design space is optimized, and what the 28-sample campaign supports.</p>
+        <svg class="geometry-strip" viewBox="0 0 1450 170" role="img" aria-label="Five-cell planar alternating-deflector channel">
+          <rect x="5" y="24" width="1440" height="122" fill="#fffdf8" stroke="#2f78a8" stroke-width="6"/>
+          <g fill="#f6b66e" stroke="#ad5c10" stroke-width="3">
+            <rect x="170" y="77" width="110" height="17"/><rect x="420" y="77" width="110" height="17"/><rect x="670" y="77" width="110" height="17"/><rect x="920" y="77" width="110" height="17"/><rect x="1170" y="77" width="110" height="17"/>
+          </g>
+          <g fill="#8bc1df" stroke="#2f78a8" stroke-width="3">
+            <path d="M280 146 Q335 78 390 146 Z"/><path d="M530 24 Q585 92 640 24 Z"/><path d="M780 146 Q835 78 890 146 Z"/><path d="M1030 24 Q1085 92 1140 24 Z"/><path d="M1280 146 Q1335 78 1390 146 Z"/>
+          </g>
+          <g fill="#8fc77c" stroke="#3a8f57" stroke-width="3">
+            <rect x="390" y="80" width="30" height="11"/><rect x="640" y="80" width="30" height="11"/><rect x="890" y="80" width="30" height="11"/><rect x="1140" y="80" width="30" height="11"/><rect x="1390" y="80" width="30" height="11"/>
+          </g>
+        </svg>
+        <div class="footline">Renamed from “SplitAndRecombineMixer” after geometry and field review</div>
+        <aside class="notes">[Sources] Current geometry generator: ../FlowCase/alternating_deflector_cad.py. Historical source deck: ../../docs/obsidian/02-Technical-Notes/Split-And-Recombine-Mixer-Explanation.pptx.</aside>
+      </section>
+
+      <section>
+        <h2>The computed device is not a true SAR mixer</h2>
+        <div class="two-col wide-right">
+          <div>
+            <p class="claim">The scalar interface bends and smears, but it does not multiply into four or eight lamellae.</p>
+            <ul>
+              <li>one strictly planar flow domain;</li>
+              <li>no out-of-plane branch exchange;</li>
+              <li>top and bottom streams retain their ordering;</li>
+              <li>mixing comes from interface stretching plus physical and numerical diffusion.</li>
+            </ul>
+          </div>
+          <div>
+            <img class="hero-field" src="assets/sample-00027-T.png" alt="Computed scalar concentration for the best-mixing sample">
+            <p class="image-caption">Best stored mixing sample 00027. The red/blue interface remains a single ordered transition across the outlet.</p>
+          </div>
+        </div>
+        <aside class="notes">[Sources] Field render: ../results/00027/visualizations/00027_T.png. Geometry topology: ../FlowCase/alternating_deflector_cad.py. The old four/eight-layer diagrams are in ../../docs/obsidian/03-Resources/.</aside>
+      </section>
+
+      <section>
+        <h2>Each cell combines a centre baffle with alternating wall bias</h2>
+        <svg class="geometry-svg" viewBox="0 0 1450 430" role="img" aria-label="Parameterization of one alternating-deflector cell">
+          <defs>
+            <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#5d7285"/></marker>
+          </defs>
+          <rect x="70" y="90" width="1310" height="220" fill="#fffdf8" stroke="#2f78a8" stroke-width="7"/>
+          <rect x="330" y="187" width="260" height="26" fill="#f6b66e" stroke="#ad5c10" stroke-width="4"/>
+          <path d="M590 310 Q725 136 860 310 Z" fill="#8bc1df" stroke="#2f78a8" stroke-width="4"/>
+          <path d="M590 90 Q725 210 860 90 Z" fill="#f3a2a2" stroke="#c84b4b" stroke-width="4"/>
+          <rect x="860" y="193" width="210" height="14" fill="#8fc77c" stroke="#3a8f57" stroke-width="4"/>
+          <line x1="330" x2="590" y1="55" y2="55" stroke="#5d7285" stroke-width="3" marker-start="url(#arrow)" marker-end="url(#arrow)"/><text x="460" y="44" text-anchor="middle" fill="#102a43" font-size="31">L<tspan baseline-shift="sub" font-size="21">s</tspan></text>
+          <line x1="590" x2="860" y1="55" y2="55" stroke="#5d7285" stroke-width="3" marker-start="url(#arrow)" marker-end="url(#arrow)"/><text x="725" y="44" text-anchor="middle" fill="#102a43" font-size="31">L<tspan baseline-shift="sub" font-size="21">c</tspan></text>
+          <line x1="860" x2="1070" y1="55" y2="55" stroke="#5d7285" stroke-width="3" marker-start="url(#arrow)" marker-end="url(#arrow)"/><text x="965" y="44" text-anchor="middle" fill="#102a43" font-size="31">L<tspan baseline-shift="sub" font-size="21">m</tspan></text>
+          <line x1="300" x2="300" y1="90" y2="310" stroke="#5d7285" stroke-width="3" marker-start="url(#arrow)" marker-end="url(#arrow)"/><text x="270" y="210" text-anchor="middle" fill="#102a43" font-size="31">H</text>
+          <line x1="405" x2="405" y1="187" y2="213" stroke="#102a43" stroke-width="4"/><text x="405" y="250" text-anchor="middle" fill="#102a43" font-size="28">t<tspan baseline-shift="sub" font-size="19">s</tspan></text>
+          <text x="725" y="250" text-anchor="middle" fill="#102a43" font-size="28">δ<tspan baseline-shift="sub" font-size="19">i</tspan> = δ + k x̂<tspan baseline-shift="sub" font-size="19">i</tspan></text>
+          <text x="965" y="242" text-anchor="middle" fill="#102a43" font-size="28">t<tspan baseline-shift="sub" font-size="19">m</tspan></text>
+          <text x="725" y="382" text-anchor="middle" fill="#5d7285" font-size="27">The stronger wall alternates top → bottom → top across five cells</text>
+        </svg>
+        <p class="evidence">The centre plate is continuous across adjacent merge/split segments; the wall-deflector bias is piecewise constant within each cell.</p>
+        <aside class="notes">[Sources] Exact construction and delta profile: ../FlowCase/alternating_deflector_cad.py, especially CELL_DELTAS and the obstacle_solids loops. Defaults: ../FlowCase/alternating_deflector_cad.yaml.</aside>
+      </section>
+
+      <section>
+        <h2>Seven latent coordinates map into seven CAD parameters</h2>
+        <div class="mapping">
+          <div>
+            <h3>BO coordinates</h3>
+            <ul><li><code>w_s</code>, <code>t_s</code>, <code>L_c</code> sampled directly</li><li><code>t_m_ratio</code>, <code>L_s_ratio</code></li><li><code>delta_ratio</code>, <code>k_ratio</code></li></ul>
+          </div>
+          <div class="arrow">→</div>
+          <div>
+            <h3>Realized CAD vector</h3>
+            <p class="formula">θ = (w<sub>s</sub>, t<sub>s</sub>, t<sub>m</sub>, L<sub>s</sub>, L<sub>m</sub>, δ, k)</p>
+            <p><code>L_s + L_c + L_m = L_cell = 4</code></p>
+          </div>
+        </div>
+        <table class="compact-table">
+          <thead><tr><th>Direct bound</th><th>Range</th><th>Dependent range</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>w_s</code></td><td>0.25–0.45</td><td><code>δ ≤ w_s − 0.5t_s − 0.05</code></td><td>preserve the split-side gap</td></tr>
+            <tr><td><code>t_s</code></td><td>0.04–0.15</td><td><code>0.025 ≤ t_m ≤ t_s − 0.0125</code></td><td>resolve the centre-plate step</td></tr>
+            <tr><td><code>L_c</code></td><td>0.40–2.40</td><td><code>0.8 ≤ L_s,L_m ≤ 1.8</code></td><td>keep every x-segment finite</td></tr>
+          </tbody>
+        </table>
+        <aside class="notes">[Sources] Current mappings and validation: ../bayes_optimize_sequential.py. Bounds: ../bayes_optimize_sequential.yaml.</aside>
+      </section>
+
+      <section>
+        <h2>Interval transforms make meshability part of the parameterization</h2>
+        <div class="two-col">
+          <div>
+            <p class="formula">δ<sub>i</sub> = δ + k x̂<sub>i</sub></p>
+            <p class="formula">0.04 ≤ min δ<sub>i</sub> ≤ max δ<sub>i</sub> ≤ δ<sub>cap</sub></p>
+            <p class="formula">max δ<sub>i</sub> − min δ<sub>i</sub> ≤ 0.06</p>
+            <p class="formula">δ<sub>last</sub> − δ<sub>first</sub> ≤ 0.05</p>
+          </div>
+          <div>
+            <p class="claim">The optimizer searches a latent box; every point is deterministically projected into a CAD-feasible interval.</p>
+            <ul>
+              <li>fine-cell size: <code>0.0125 H</code>;</li>
+              <li>minimum merge thickness: two fine cells;</li>
+              <li>minimum splitter-side gap: four fine cells;</li>
+              <li>CAD validation runs again before OpenCASCADE operations.</li>
+            </ul>
+          </div>
+        </div>
+        <aside class="notes">[Sources] BO constraints: ../bayes_optimize_sequential.yaml and ../bayes_optimize_sequential.py. CAD guards G0–G6: ../FlowCase/alternating_deflector_cad.py. Mesh resolution: ../FlowCase/system/meshDict.</aside>
+      </section>
+
+      <section>
+        <h2>The CFD model is steady, laminar, and convection dominated</h2>
+        <div class="two-col">
+          <div>
+            <h3>Flow</h3>
+            <p class="formula">∇·u = 0</p>
+            <p class="formula">(u·∇)u = −∇p + ν∇²u</p>
+            <ul>
+              <li><code>simpleFoam</code>, laminar;</li>
+              <li><code>ν = 10⁻⁶ m²/s</code>;</li>
+              <li><code>H = 1 mm</code>, mean inlet speed 0.01 m/s;</li>
+              <li><strong>Re = 10</strong>.</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Passive scalar</h3>
+            <p class="formula">u·∇T = D<sub>T</sub>∇²T</p>
+            <ul>
+              <li><code>scalarTransportFoam</code>;</li>
+              <li><code>D_T = 10⁻⁹ m²/s</code>, <strong>Sc = 1000</strong>;</li>
+              <li>bottom inlet half <code>T=1</code>, top half <code>T=0</code>;</li>
+              <li>bounded Gauss upwind for <code>div(phi,T)</code>.</li>
+            </ul>
+          </div>
+        </div>
+        <p class="caution">The first-order scalar scheme is robust but can smear the interface far more strongly than molecular diffusion at this cell size.</p>
+        <aside class="notes">[Sources] Flow dictionaries: ../FlowCase/0/U, ../FlowCase/constant/transportProperties, ../FlowCase/constant/turbulenceProperties. Scalar dictionaries: ../ScalarTransportCase/0/T, ../ScalarTransportCase/constant/transportProperties, ../ScalarTransportCase/system/fvSchemes.</aside>
+      </section>
+
+      <section>
+        <h2>One candidate becomes two objective values through an isolated workflow</h2>
+        <div class="pipeline">
+          <div class="stage"><strong>1 · Propose</strong><span>Sobol or qLogNEHVI in latent coordinates</span></div>
+          <div class="stage"><strong>2 · Generate</strong><span>CadQuery subtracts baffles from the channel slab</span></div>
+          <div class="stage"><strong>3 · Mesh</strong><span>cfMesh builds a uniform-fine 2-D mesh</span></div>
+          <div class="stage"><strong>4 · Flow</strong><span><code>simpleFoam</code> writes pressure-drop history</span></div>
+          <div class="stage"><strong>5 · Scalar</strong><span><code>scalarTransportFoam</code> writes outlet statistics</span></div>
+          <div class="stage"><strong>6 · Learn</strong><span>Last CSV rows update the GP and Pareto set</span></div>
+        </div>
+        <p class="evidence" style="margin-top:70px">Every sample runs under <code>results/&lt;id&gt;/</code>; the templates remain unchanged and failed workflows receive explicit penalty objectives.</p>
+        <aside class="notes">[Sources] Orchestration: ../Snakefile. Candidate execution, penalties, resume, and aggregation: ../bayes_optimize_sequential.py. CSV aggregation: ../postprocessing_agglomeration.py.</aside>
+      </section>
+
+      <section>
+        <h2>The goal is a Pareto set, not one “best” geometry</h2>
+        <div class="two-col">
+          <div>
+            <h3>Hydraulic objective</h3>
+            <p class="formula">J<sub>dp</sub>(θ) = ⟨p⟩<sub>in</sub> − ⟨p⟩<sub>out</sub></p>
+            <p>OpenFOAM stores <strong>kinematic pressure</strong>, so the native unit is <code>m²/s²</code>.</p>
+            <p class="evidence">Physical ΔP in pascals is ρJ<sub>dp</sub>. For water, the observed 0.0010–0.0026 m²/s² corresponds to roughly 1.0–2.6 Pa.</p>
+          </div>
+          <div>
+            <h3>Mixing objective</h3>
+            <p class="formula">J<sub>mix</sub>(θ) = I<sub>s</sub> = σ²<sub>T,out</sub> / 0.25</p>
+            <p><code>I_s = 1</code> preserves the inlet variance; <code>I_s = 0</code> is uniform.</p>
+            <p class="definition"><strong>Optimization:</strong> minimize <code>(J_dp, I_s)</code>. Plots use <code>1 − I_s</code> only because higher mixing quality is easier to read.</p>
+          </div>
+        </div>
+        <aside class="notes">[Sources] Pressure calculation: ../../src/functionObjects/pressureDrop/pressureDrop.C and ../FlowCase/0/p. Mixing calculation: ../../src/functionObjects/patchMixingQuality/patchMixingQuality.C. Objective column selection: ../bayes_optimize_sequential.py.</aside>
+      </section>
+
+      <section>
+        <h2>The implemented mixing objective is face-count weighted</h2>
+        <div class="two-col wide-left">
+          <div>
+            <p class="formula">T̄ = (1/N) Σ T<sub>i</sub></p>
+            <p class="formula">σ² = (1/N) Σ T²<sub>i</sub> − T̄²</p>
+            <p class="formula">I<sub>s</sub> = σ² / [0.5(1−0.5)]</p>
+            <p class="evidence">The function object also reports flux-weighted mean, variance, and intensity, but BO reads the unweighted <code>intensity_of_segregation</code> column.</p>
+          </div>
+          <div>
+            <p class="claim">This differs from the area integral stated in the original benchmark note.</p>
+            <ul>
+              <li>equal weighting per outlet face;</li>
+              <li>sensitive to nonuniform face spacing;</li>
+              <li>not a residence-time or mass-flux objective;</li>
+              <li>should be compared against area- and flux-weighted alternatives.</li>
+            </ul>
+          </div>
+        </div>
+        <aside class="notes">[Sources] Exact loops and formulas: ../../src/functionObjects/patchMixingQuality/patchMixingQuality.C. Original area-integral claim: ../../docs/obsidian/02-Technical-Notes/Benchmark-Problem-Specification.md. Current objective selection: ../bayes_optimize_sequential.py.</aside>
+      </section>
+
+      <section>
+        <h2>The BO engine maximizes hypervolume in the negated objective space</h2>
+        <div class="two-col">
+          <div>
+            <h3>Surrogate</h3>
+            <ul>
+              <li><code>SingleTaskGP(X, −Y)</code> with two outputs;</li>
+              <li>input normalization in seven dimensions;</li>
+              <li>output standardization;</li>
+              <li>exact marginal-likelihood fitting;</li>
+              <li>checkpointed hyperparameters warm-start later runs.</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Acquisition</h3>
+            <ul>
+              <li><code>qLogNoisyExpectedHypervolumeImprovement</code>;</li>
+              <li>fallback to <code>qNEHVI</code> for older BoTorch;</li>
+              <li><code>q = 1</code>, 10 restarts, 256 raw samples;</li>
+              <li>reference point = observed worst minus 10% of range;</li>
+              <li>8 Sobol starts + 20 sequential suggestions.</li>
+            </ul>
+          </div>
+        </div>
+        <aside class="notes">[Sources] Model and acquisition implementation: ../bayes_optimize_sequential.py, fit_model and next_candidate. Campaign size: ../bayes_optimize_sequential.yaml.</aside>
+      </section>
+
+      <section>
+        <h2>Twenty BO suggestions extended both ends of the trade-off</h2>
+        <svg id="pareto-chart" role="img" aria-label="Pareto scatter plot for 28 mixer samples"></svg>
+        <div class="legend"><span><i class="dot" style="background:#2f78a8"></i>Sobol initialization (8)</span><span><i class="dot" style="background:#f28e2b"></i>BO suggestions (20)</span><span>black outline/line = non-dominated (15)</span></div>
+        <aside class="notes">[Sources] All points and sample IDs: ../results/all_samples.csv (28 rows, generated 2026-04-11). Pareto definition matches ../visualize_results.py. Legacy pressure values are interpreted as kinematic pressure.</aside>
+      </section>
+
+      <section>
+        <h2>The two extremes preserve one interface at different thicknesses</h2>
+        <div class="field-compare">
+          <div>
+            <img src="assets/sample-00022-T.png" alt="Scalar field for lowest-pressure sample 00022">
+            <h3>00022 · lowest kinematic pressure drop</h3>
+            <p><strong>J<sub>dp</sub> = 1.00487×10⁻³ m²/s²</strong><br>I<sub>s</sub> = 0.880986 · mixing quality = 0.119014<br><code>w_s=.45, t_s=.15, t_m=.1375, δ=.15, k=0</code></p>
+          </div>
+          <div>
+            <img src="assets/sample-00027-T.png" alt="Scalar field for best-mixing sample 00027">
+            <h3>00027 · best stored mixing</h3>
+            <p><strong>I<sub>s</sub> = 0.499471</strong> · mixing quality = 0.500529<br>J<sub>dp</sub> = 1.98601×10⁻³ m²/s²<br><code>w_s=.45, t_s=.04, t_m=.025, δ=.15, k=−.09</code></p>
+          </div>
+        </div>
+        <aside class="notes">[Sources] Metrics and geometry coordinates: ../results/all_samples.csv. Images: ../results/00022/visualizations/00022_T.png and ../results/00027/visualizations/00027_T.png.</aside>
+      </section>
+
+      <section>
+        <h2>The optimizer is pressing against design-space boundaries</h2>
+        <div class="two-col">
+          <div>
+            <div class="metrics">
+              <div class="metric"><div class="value">0.45</div><div class="label">w<sub>s</sub> on the upper bound across much of the Pareto front</div></div>
+              <div class="metric"><div class="value">0.15</div><div class="label">δ at its upper bound for most non-dominated designs</div></div>
+              <div class="metric"><div class="value">15/28</div><div class="label">non-dominated points in a small campaign</div></div>
+            </div>
+          </div>
+          <div>
+            <p class="claim">The campaign identifies a useful trade-off, but it has not demonstrated an interior optimum.</p>
+            <ul>
+              <li>thicker centre baffles correlate with worse mixing;</li>
+              <li>larger gaps and wall bias generally reduce both objectives;</li>
+              <li>the best-mixing designs use thin baffles and a negative bias slope;</li>
+              <li>bounds and parameterization now define the next scientific question.</li>
+            </ul>
+          </div>
+        </div>
+        <aside class="notes">[Sources] Boundary values and the 15-point Pareto set were calculated from ../results/all_samples.csv. Correlation observations are exploratory, not causal: t_s versus Is r≈0.90; t_m versus Is r≈0.88 across 28 samples.</aside>
+      </section>
+
+      <section class="long-title">
+        <h2>The renamed study is portable across clone locations</h2>
+        <div class="two-col wide-left">
+          <pre class="repo-tree"><code>PlanarAlternatingDeflectorMixer/
+├── FlowCase/
+│   ├── alternating_deflector_cad.py
+│   └── alternating_deflector_cad.yaml
+├── ScalarTransportCase/
+├── docs/index.html
+├── Snakefile
+├── bayes_optimize_sequential.py
+└── results/&lt;sample_id&gt;/</code></pre>
+          <div>
+            <p class="claim">No project or OpenFOAM installation path is hard-coded.</p>
+            <ol>
+              <li>source the chosen OpenFOAM <code>etc/bashrc</code>;</li>
+              <li>run <code>./Allwmake</code> at repository root;</li>
+              <li>run <code>snakemake --cores N</code> or the BO script.</li>
+            </ol>
+            <p class="evidence">The custom library is built under repository-local <code>platforms/$WM_OPTIONS/lib</code>. Result CSVs store sample-relative locations.</p>
+          </div>
+        </div>
+        <aside class="notes">[Sources] Repository-local build: ../../Allwmake. Runtime library discovery and template staging: ../Snakefile. Relative result metadata: ../postprocessing_agglomeration.py and ../visualize_results.py.</aside>
+      </section>
+
+      <section class="closing">
+        <h2>The BO study is useful—once its claim matches its geometry</h2>
+        <p class="claim">Call it a Planar Alternating-Deflector Micromixer, report kinematic pressure correctly, and treat the current front as a numerical design study rather than validated SAR lamination.</p>
+        <div class="two-col">
+          <div>
+            <h3 style="color:white">Immediate validation</h3>
+            <ul>
+              <li>repeat selected points on refined meshes and higher-order scalar schemes;</li>
+              <li>compare face-, area-, and flux-weighted mixing objectives;</li>
+              <li>add a straight-channel and symmetric-deflector baseline;</li>
+              <li>report physical ΔP after multiplying by density.</li>
+            </ul>
+          </div>
+          <div>
+            <h3 style="color:white">If true SAR is the goal</h3>
+            <ul>
+              <li>introduce separate branches with a demonstrable permutation;</li>
+              <li>use a 3-D crossing/stacking topology or a planar network with distinct outlets/inlets;</li>
+              <li>verify layer multiplication from cross-sectional scalar fields;</li>
+              <li>then re-run BO on the new topology.</li>
+            </ul>
+          </div>
+        </div>
+        <aside class="notes">[Sources] Synthesis of the current generator, scalar fields, function-object implementation, and 28-sample campaign. Historical conceptual material is retained under ../../docs/obsidian/ for provenance.</aside>
+      </section>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/math/math.js"></script>
+  <script src="slides.js"></script>
+</body>
+</html>

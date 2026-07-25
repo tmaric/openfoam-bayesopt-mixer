@@ -6,6 +6,7 @@
 - [[Technical-Note-03-Phased-Asymmetric-SAR-Novel-Topology-for-2D-Laminar-Mixing]]
 - [[Technical-Note-04-Cascading-Airfoil-Mixer-CAM-Folding-Dominant-2D-Passive-Mixing]]
 - [[Technical-Note-05-Local-Lazy-Feasibility-Estimation-for-Constrained-Bayesian-Optimisation]]
+- [[Technical-Note-06-Candidate-Passive-Micromixer-Design-Families-for-Constrained-CAD-and-Bayesian-Optimisation]]
 
 ## Supporting Notes
 - [[Benchmark-Problem-Specification]]

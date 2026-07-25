@@ -2,16 +2,11 @@
 """Render the latest reconstructed mixing field with ParaView in batch mode."""
 
 import argparse
-import io
 from pathlib import Path
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 import vtk
-from matplotlib.colors import LinearSegmentedColormap, Normalize
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from vtk.util.numpy_support import vtk_to_numpy
 from paraview.simple import (
     ColorBy,
@@ -54,19 +49,19 @@ def set_rainbow_transfer_function(lut, field_min: float = 0.0, field_max: float 
     lut.RescaleTransferFunction(field_min, field_max)
 
 
-def rainbow_colormap() -> LinearSegmentedColormap:
-    """Matplotlib colormap matching the ParaView rainbow transfer function."""
-    return LinearSegmentedColormap.from_list(
-        "sar_rainbow",
-        [
-            (0.0, 0.0, 1.0),
-            (0.0, 1.0, 1.0),
-            (0.0, 1.0, 0.0),
-            (1.0, 1.0, 0.0),
-            (1.0, 0.0, 0.0),
-        ],
-        N=2048,
+def load_font(size: int, bold: bool = False):
+    """Load a common bundled Linux font with a Pillow fallback."""
+    name = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
+    candidates = (
+        Path("/usr/share/fonts/truetype/dejavu") / name,
+        Path("/usr/share/fonts/dejavu") / name,
     )
+    for candidate in candidates:
+        try:
+            return ImageFont.truetype(str(candidate), size=size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
 
 
 def set_xy_camera(render_view, bounds: tuple[float, ...]) -> None:
@@ -190,33 +185,50 @@ def append_colorbar(
     field_min: float = FIELD_MIN,
     field_max: float = FIELD_MAX,
 ) -> None:
-    """Append a crisp matplotlib colorbar below the rendered geometry image."""
+    """Append a colorbar below the geometry without a Matplotlib dependency."""
     geometry = Image.open(png_path).convert("RGB")
     width, _height = geometry.size
 
-    dpi = 200
-    bar_height_px = 420
-    fig = plt.figure(figsize=(width / dpi, bar_height_px / dpi), dpi=dpi, facecolor="white")
-    ax = fig.add_axes([0.10, 0.32, 0.80, 0.28])
+    bar_height_px = 340
+    colorbar = Image.new("RGB", (width, bar_height_px), "white")
+    draw = ImageDraw.Draw(colorbar)
 
-    sm = plt.cm.ScalarMappable(norm=Normalize(vmin=field_min, vmax=field_max), cmap=rainbow_colormap())
-    sm.set_array([])
-    cbar = fig.colorbar(sm, cax=ax, orientation="horizontal")
-    cbar.set_label(field_display_name(field), fontsize=52, fontweight="bold", labelpad=18)
-    cbar.ax.tick_params(labelsize=38, width=1.8, length=10, pad=8)
-    cbar.outline.set_linewidth(1.8)
-    ticks = np.linspace(field_min, field_max, 5)
-    cbar.set_ticks(ticks)
-    cbar.set_ticklabels([f"{tick:.2f}" for tick in ticks])
+    margin_x = max(120, int(0.08 * width))
+    gradient_width = max(2, width - 2 * margin_x)
+    gradient_height = 86
+    gradient_top = 38
 
-    buffer = io.BytesIO()
-    fig.savefig(buffer, format="png", dpi=dpi, facecolor="white")
-    plt.close(fig)
-    buffer.seek(0)
+    values = np.linspace(0.0, 1.0, gradient_width)
+    stops = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
+    red = np.interp(values, stops, [0.0, 0.0, 0.0, 1.0, 1.0])
+    green = np.interp(values, stops, [0.0, 1.0, 1.0, 1.0, 0.0])
+    blue = np.interp(values, stops, [1.0, 1.0, 0.0, 0.0, 0.0])
+    row = np.stack((red, green, blue), axis=1)
+    gradient = np.tile((255.0 * row).astype(np.uint8), (gradient_height, 1, 1))
+    gradient_image = Image.fromarray(gradient, mode="RGB")
+    colorbar.paste(gradient_image, (margin_x, gradient_top))
+    draw.rectangle(
+        (margin_x, gradient_top, margin_x + gradient_width - 1, gradient_top + gradient_height),
+        outline="black",
+        width=3,
+    )
 
-    colorbar = Image.open(buffer).convert("RGB")
-    if colorbar.width != width:
-        colorbar = colorbar.resize((width, colorbar.height), Image.Resampling.LANCZOS)
+    tick_font = load_font(38)
+    label_font = load_font(52, bold=True)
+    tick_values = np.linspace(field_min, field_max, 5)
+    tick_y = gradient_top + gradient_height
+    for fraction, tick in zip(np.linspace(0.0, 1.0, 5), tick_values):
+        x = margin_x + int(fraction * (gradient_width - 1))
+        draw.line((x, tick_y, x, tick_y + 14), fill="black", width=3)
+        label = f"{tick:.2f}"
+        bbox = draw.textbbox((0, 0), label, font=tick_font)
+        label_width = bbox[2] - bbox[0]
+        draw.text((x - label_width / 2, tick_y + 18), label, fill="black", font=tick_font)
+
+    title = field_display_name(field)
+    bbox = draw.textbbox((0, 0), title, font=label_font)
+    title_width = bbox[2] - bbox[0]
+    draw.text(((width - title_width) / 2, 245), title, fill="black", font=label_font)
 
     gap = 24
     combined = Image.new("RGB", (width, geometry.height + gap + colorbar.height), "white")

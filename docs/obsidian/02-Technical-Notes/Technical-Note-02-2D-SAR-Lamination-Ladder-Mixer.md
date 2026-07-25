@@ -1,5 +1,11 @@
 ﻿# Technical Note 02: 2D Split-and-Recombine (SAR) Lamination Ladder Mixer
 
+> [!warning] Superseded naming and mechanism claim
+> The current implementation is a planar alternating-deflector micromixer.
+> Its scalar fields show interface stretching and smearing, not verified SAR
+> layer multiplication. See `PlanarAlternatingDeflectorMixer/docs/index.html`
+> for the code-aligned geometry, objectives, BO parameterization, and results.
+
 ## Motivation and Design Principle
 Split-and-recombine (SAR) micromixers improve mixing by repeatedly splitting inlet streams into substreams and recombining them to laminate interfaces into thinner layers, which accelerates diffusion.
 
@@ -78,15 +84,24 @@ Cell `k` (`k = 1..N`):
 - `x_k = L0 + (k-1)L_cell`
 
 ### Parameter Vector
-- `theta = (w_s, t_s, L_s, L_m, delta, r)`
+- `theta = (w_s, t_s, L_s, L_m, delta, k, r)`
 
 Where:
 - `w_s`: nominal subchannel width after splitting
 - `t_s`: splitter thickness
 - `L_s`: split length
 - `L_m`: merge length
-- `delta`: shuffle offset controlling recombination misalignment
+- `delta`: base alternating wall-bias amplitude
+- `k`: linear slope in `delta_i = delta + k x_hat,i`
 - `r`: fillet radius at sharp corners
+
+with one realised deflector bias per cell:
+- `x_mid,i = L0 + (i-1)L_cell + L_s + 0.5 L_c`
+- `x_hat,i = x_mid,i / L`
+- `delta_i = delta + k x_hat,i`
+
+The first cell is biased on the top wall, the second on the bottom wall, and
+the pattern alternates thereafter.
 
 Remaining interaction length:
 - `L_c = L_cell - L_s - L_m`, with `L_c > 0`
@@ -97,7 +112,7 @@ Remaining interaction length:
 - `0.2L_cell <= L_s <= 0.45L_cell`
 - `0.2L_cell <= L_m <= 0.45L_cell`
 - `L_c = L_cell - L_s - L_m > 0`
-- `|delta| <= 0.15H`
+- `0 <= delta_i <= 0.15H` for every cell `i`
 - `0 <= r <= 0.05H`
 
 ### Obstacle Construction per Cell
@@ -114,17 +129,20 @@ Define splitter centerline at `y = H/2`.
 
 Bottom deflector `D_k_bot`:
 - `x in [x_k + L_s, x_k + L_s + L_c]`
-- `y in [0, h_d g(xi)]`
+- `y in [0, h_d g(xi) + delta_i]` for alternating bottom-shifted cells, else `delta_i = 0`
 
 Top deflector `D_k_top`:
 - `x in [x_k + L_s, x_k + L_s + L_c]`
-- `y in [H - h_d g(xi), H]`
-- apply vertical offset `delta` in CAD control points before surface creation and clipping.
+- `y in [H - h_d g(xi) - delta_i, H]` for alternating top-shifted cells, else `delta_i = 0`
 
 3. Merge splitter (`M_k`) on merge section:
 - `x in [x_k + L_s + L_c, x_k + L_cell]`
 - `y in [(H - t_m)/2, (H + t_m)/2]`
 - recommended `t_m = 0.05H` (or `t_m = t_s`)
+
+At each cell boundary, the merge plate of cell `k` and the split plate of
+cell `k+1` are represented as one connected polygon with a direct thickness
+step from `t_m` to `t_s`, so there is no artificial cavity between them.
 
 ### Final Fluid Domain
 Total solid set:

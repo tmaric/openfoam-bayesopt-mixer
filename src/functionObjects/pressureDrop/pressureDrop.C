@@ -109,9 +109,9 @@ bool Foam::functionObjects::pressureDrop::writeCsvHeader()
         << ",field"
         << ",patch1"
         << ",patch2"
-        << ",patch1_average_Pa"
-        << ",patch2_average_Pa"
-        << ",pressure_drop_Pa"
+        << ",patch1_average_m2_s2"
+        << ",patch2_average_m2_s2"
+        << ",pressure_drop_m2_s2"
         << '\n';
 
     csvHeaderWritten_ = true;
@@ -181,8 +181,8 @@ bool Foam::functionObjects::pressureDrop::write()
 
     Info<< type() << " " << name() << ": "
         << "avg(" << pressureFieldName_ << "," << patch1Name_ << ")=" << p1Average
-        << " Pa, avg(" << pressureFieldName_ << "," << patch2Name_ << ")=" << p2Average
-        << " Pa, deltaP=" << deltaP << " Pa"
+        << " m2/s2, avg(" << pressureFieldName_ << "," << patch2Name_ << ")=" << p2Average
+        << " m2/s2, deltaP=" << deltaP << " m2/s2"
         << nl;
 
     if (Pstream::master())

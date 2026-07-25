@@ -1,7 +1,7 @@
-# SAR Lamination Ladder Mixer - geometry parameters
+# Planar Alternating-Deflector Micromixer - geometry parameters
 # All dimensions are in normalised units (H_norm = 1).
 # SCALE converts to SI metres: 1 normalised unit = SCALE metres.
-# Script: sar_mixer_cad.py
+# Script: alternating_deflector_cad.py
 
 scale: 1.0e-3       # 1 normalised unit = 1 mm = 1e-3 m
 
@@ -16,4 +16,5 @@ w_s:    0.38        # subchannel half-gap after split  (fraction of H)
 t_s:    0.10        # splitter thickness – split section (fraction of H)
 t_m:    0.05        # splitter thickness – merge section (fraction of H)
 
-delta:  0.08        # top deflector vertical bias       (fraction of H)
+delta:  0.08        # base alternating deflector bias amplitude  (fraction of H)
+k:      0.0         # linear slope in delta(x)=delta+k*x_hat      (fraction of H)

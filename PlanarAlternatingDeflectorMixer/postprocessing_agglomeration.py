@@ -5,15 +5,15 @@ Agglomerate one BO sample into a single-row objectives CSV.
 Columns produced:
     sample_id        -- name of the results directory (set by the BO loop)
     results_dir      -- absolute path to the sample results directory
-    geo_<param>      -- geometry parameters from sar_mixer_cad.yaml
+    geo_<param>      -- geometry parameters from alternating_deflector_cad.yaml
     pdrop_<col>      -- all columns from pressureDrop.csv (last converged row)
     mixing_<col>     -- all columns from mixing.csv (last converged row)
 
 Usage:
     python postprocessing_agglomeration.py \
-        --yaml        <results>/SplitAndRecombineHydro/sar_mixer_cad.yaml \
-        --pdrop       <results>/SplitAndRecombineHydro/pressureDrop.csv   \
-        --mixing      <results>/SplitAndRecombineMixing/mixing.csv        \
+        --yaml        <results>/FlowCase/alternating_deflector_cad.yaml \
+        --pdrop       <results>/FlowCase/pressureDrop.csv                \
+        --mixing      <results>/ScalarTransportCase/mixing.csv           \
         --output      <results>/objectives.csv                            \
         --results-dir <results>
 """
@@ -42,7 +42,7 @@ def main() -> None:
         description="Agglomerate geometry + CFD objectives for one BO sample."
     )
     parser.add_argument("--yaml",        required=True, type=Path,
-                        help="Path to sar_mixer_cad.yaml in the staged Hydro case.")
+                        help="Path to alternating_deflector_cad.yaml in the staged flow case.")
     parser.add_argument("--pdrop",       required=True, type=Path,
                         help="Path to pressureDrop.csv.")
     parser.add_argument("--mixing",      required=True, type=Path,
@@ -59,6 +59,9 @@ def main() -> None:
     # --- geometry parameters ------------------------------------------------
     with open(args.yaml) as fh:
         raw = yaml.safe_load(fh)
+    raw.setdefault("k", 0.0)
+    # Historical sample YAMLs predate the linear-delta slope parameter.
+    # Normalise them to k = 0.0 so re-agglomerated result tables stay schema-stable.
     geo_params = {
         f"geo_{k}": v for k, v in raw.items()
         if isinstance(v, (int, float, str, bool))
@@ -74,7 +77,9 @@ def main() -> None:
     # --- assemble and write -------------------------------------------------
     row = {
         "sample_id":   sample_id,
-        "results_dir": str(results_dir),
+        # The sample directory name is portable; callers already know the
+        # results root and should not persist a machine-specific absolute path.
+        "results_dir": sample_id,
         **geo_params,
         **pdrop_cols,
         **mixing_cols,

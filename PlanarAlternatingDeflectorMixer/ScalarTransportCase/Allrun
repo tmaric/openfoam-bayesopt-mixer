@@ -1,0 +1,44 @@
+#!/bin/bash
+set -euo pipefail
+
+CASE_DIR="$(cd "${0%/*}" && pwd)"
+cd "$CASE_DIR" || exit 1
+
+if [ -z "${WM_PROJECT_DIR:-}" ]; then
+    echo "ERROR: OpenFOAM is not configured. Source its etc/bashrc first." >&2
+    exit 1
+fi
+
+set +u
+. "${WM_PROJECT_DIR}/bin/tools/RunFunctions"
+
+FLOW_DIR="$CASE_DIR/../FlowCase"
+
+[ -d "$FLOW_DIR/constant/polyMesh" ] \
+    || { echo "ERROR: missing flow mesh. Run FlowCase/Allrun first."; exit 1; }
+
+mkdir -p constant
+rm -rf constant/polyMesh
+cp -r "$FLOW_DIR/constant/polyMesh" constant/
+
+LATEST_TIME=$(
+    find "$FLOW_DIR" -maxdepth 1 -mindepth 1 -type d -regex '.*/[0-9]+' -printf '%f\n' \
+    | sort -n | tail -1
+)
+[ -n "$LATEST_TIME" ] || { echo "ERROR: could not determine latest flow time directory"; exit 1; }
+[ -f "$FLOW_DIR/$LATEST_TIME/U" ]   || { echo "ERROR: missing $FLOW_DIR/$LATEST_TIME/U";   exit 1; }
+[ -f "$FLOW_DIR/$LATEST_TIME/phi" ] || { echo "ERROR: missing $FLOW_DIR/$LATEST_TIME/phi"; exit 1; }
+
+cp "$FLOW_DIR/$LATEST_TIME/U"   0/
+cp "$FLOW_DIR/$LATEST_TIME/phi" 0/
+
+runApplication setExprFields -dict system/setExprFieldsDict -time 0
+runApplication decomposePar -force
+runParallel scalarTransportFoam
+runApplication reconstructPar -latestTime
+
+if [ ! -f mixing.csv ] && [ -f processor0/mixing.csv ]; then
+    cp processor0/mixing.csv mixing.csv
+fi
+
+[ -f mixing.csv ] || { echo "ERROR: mixing.csv not produced by patchMixingQuality FO"; exit 1; }

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-SAR Lamination Ladder Mixer - CADQuery geometry script.
+Planar Alternating-Deflector Micromixer - CADQuery geometry script.
 
-Generates the 2D mixer fluid-domain boundary (extruded to a thin slab) and
+Generates the planar mixer fluid-domain boundary (extruded to a thin slab) and
 exports it as a single ASCII STL file for use with cfMesh cartesian2DMesh:
 
-  constant/triSurface/sar_mixer.stl
+  constant/triSurface/alternating_deflector_mixer.stl
 
 The STL contains four named solid regions that cfMesh turns into patches:
   inlet       – face at x = 0
@@ -13,20 +13,25 @@ The STL contains four named solid regions that cfMesh turns into patches:
   walls       – channel top/bottom walls + all internal obstacle surfaces
   frontAndBack – slab faces at z = 0 and z = DEPTH  (type empty in 2-D)
 
-Parameter names follow the sketch in:
-  docs/obsidian/06 Resources/sar_lamination_ladder_mixer_sketch.py
+The device contains a centre baffle and alternating top/bottom cosine wall
+deflectors. It stretches and diffuses the inlet interface but does not route
+separate branches out of plane, so it is not described as a true SAR mixer.
 """
 
+import math
 import os
 import cadquery as cq
 import yaml
 
 # ---------------------------------------------------------------------------
-# Geometry parameters – loaded from sar_mixer_cad.yaml
+# Geometry parameters – loaded from alternating_deflector_cad.yaml
 # All values in the YAML are in normalised units (H_norm = 1).
 # SCALE converts to SI metres.
 # ---------------------------------------------------------------------------
-_yaml_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sar_mixer_cad.yaml")
+_yaml_path = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "alternating_deflector_cad.yaml",
+)
 with open(_yaml_path) as _f:
     _p = yaml.safe_load(_f)
 
@@ -44,21 +49,36 @@ t_s    = _p["t_s"]   * H
 t_m    = _p["t_m"]   * H
 
 delta  = _p["delta"] * H
+k_slope = _p.get("k", 0.0) * H
 
 # Extrusion depth (thin slab for 2-D OpenFOAM simulation).
 # Must satisfy span_z / span_x < ~0.001 for cfMesh cartesian2DMesh to
 # classify the surface as 2D.  With TOTAL_L = 24e-3 m the limit is
 # DEPTH < 2.4e-5 m.  0.01*H = 1e-5 m → ratio = 4.17e-4 (safe).
 DEPTH  = 0.01 * H
-# Small overshoot applied to all obstacle extrusions so that no obstacle face
-# is coplanar with a channel-box face.  OpenCASCADE Boolean cuts fail (null
-# TopoDS_Shape) when the tool and workpiece share an exactly coincident face.
+# Small boundary offset used in the 2-D profiles and shared z-span so the
+# fluid STL remains strictly planar while the y-wall closures avoid exact
+# coplanarity with the channel box.
 _EPS = DEPTH * 0.01
 
 L_c = L_cell - L_s - L_m
 h_d = 0.5 * H - w_s   # deflector intrusion height from each wall
 
 TOTAL_L = 2 * L0 + N * L_cell
+
+
+def interaction_midpoint_x(cell_idx: int) -> float:
+    """Return the global x-location of the cell's deflector midpoint."""
+    return L0 + cell_idx * L_cell + L_s + 0.5 * L_c
+
+
+def interaction_midpoint_xhat(cell_idx: int) -> float:
+    """Normalised midpoint used for the piecewise-constant delta profile."""
+    return interaction_midpoint_x(cell_idx) / TOTAL_L
+
+
+CELL_XHATS = [interaction_midpoint_xhat(idx) for idx in range(N)]
+CELL_DELTAS = [delta + k_slope * xhat for xhat in CELL_XHATS]
 
 # ---------------------------------------------------------------------------
 # Geometry validation  (runs before any OCC operation)
@@ -67,15 +87,6 @@ TOTAL_L = 2 * L0 + N * L_cell
 # is 1e-5 m (10 µm), which equals the wall-refinement cell size in meshDict
 # and is consistent with TM_MARGIN=0.01 used in bayes_optimize_sequential.py.
 _MESH_MIN = 0.01 * H
-
-# x-gap inserted between each merge-splitter outlet (x = xk) and the
-# following split-splitter inlet (x = xk + DELTA_X).  Without this gap,
-# both features share the exact face x = xk, creating a compound 270°
-# re-entrant corner where 3 STL triangles meet at one edge.  cfMesh
-# resolves that topology by duplicating a mesh vertex → zero-area faces.
-# Separating the two outlets by DELTA_X > 4 fine cells gives cfMesh two
-# independent single re-entrant corners, which it handles cleanly.
-DELTA_X = 4 * _MESH_MIN   # 4e-5 m  <<  L_s_min ≈ 8e-4 m
 
 def _check_geometry() -> None:
     """Validate all CAD parameters before any OCC operation is attempted.
@@ -100,14 +111,8 @@ def _check_geometry() -> None:
 
     G4  t_s - t_m >= _MESH_MIN
         Split splitter must be strictly wider than the merge splitter so
-        that the step at each cell boundary has positive y-extent.
-        The split and merge splitters are separated by DELTA_X = 4·_MESH_MIN
-        in x, so their STL boundaries never coincide.  Without this gap,
-        the compound 270° re-entrant corner (merge-end + split-start at the
-        same x) causes cfMesh to create duplicate mesh vertices → zero-area
-        faces.  The underlying rule: adjacent obstacle boundaries that are
-        within a few mesh cells of each other in y must be separated by
-        ≥ DELTA_X in x.  t_s > t_m ensures the step has real y-extent.
+        that the connected merge→split polygon has a real thickness step
+        at each cell boundary.
 
     G5  w_s - 0.5*t_s >= _MESH_MIN
         Minimum fluid gap in the split section between the deflector peak
@@ -116,21 +121,31 @@ def _check_geometry() -> None:
         split-splitter bottom face y = (H - t_s)/2.
         Gap = w_s - t_s/2.  Near-zero → channel pinches → meshing fails.
 
-    G6  2*w_s - delta >= 3*_MESH_MIN
+    G6a min(delta_i) >= 0
+        The alternating wall-bias amplitude is interpreted as an inward shift
+        magnitude. Negative realised values would reverse that meaning.
+
+    G6b 2*w_s - max(delta_i) >= 3*_MESH_MIN
         Minimum fluid gap between top and bottom deflectors at the peak of
         the cosine in the interaction region.
         The cosine bval has a floor of _MESH_MIN (see cosine_bump_points), so
-        the effective bottom deflector peak is h_d + _MESH_MIN, and the top
-        deflector minimum y is H - (h_d + _MESH_MIN) - delta.
-        Gap = H - 2*(h_d + _MESH_MIN) - delta = 2*w_s - delta - 2*_MESH_MIN.
-        For Gap >= _MESH_MIN:  2*w_s - delta >= 3*_MESH_MIN.
+        the effective peak intrusion is h_d + _MESH_MIN + delta_i on the
+        shifted wall. The worst case therefore depends on max(delta_i).
+        Gap = 2*w_s - max(delta_i) - 2*_MESH_MIN.
+        For Gap >= _MESH_MIN:  2*w_s - max(delta_i) >= 3*_MESH_MIN.
         Zero or negative → the two deflector solids overlap → self-intersection.
     """
     failures = []
+    min_delta = min(CELL_DELTAS) if CELL_DELTAS else delta
+    max_delta = max(CELL_DELTAS) if CELL_DELTAS else delta
 
     def _chk(ok: bool, label: str, detail: str) -> None:
         if not ok:
             failures.append(f"{label}: {detail}")
+
+    _chk(N >= 1,
+         "G0",
+         "number of unit cells N must be >= 1")
 
     _chk(L_c >= _MESH_MIN,
          "G1",
@@ -163,9 +178,14 @@ def _check_geometry() -> None:
          f"(need >= {_MESH_MIN:.2e} m = 0.01·H)  "
          f"→ fluid channel between deflector peak and splitter surface is too narrow")
 
-    _chk(2 * w_s - delta >= 3 * _MESH_MIN,
-         "G6",
-         f"deflector gap 2·w_s - delta - 2·_MESH_MIN = {(2*w_s - delta - 2*_MESH_MIN):.3e} m  "
+    _chk(min_delta >= 0.0,
+         "G6a",
+         f"minimum realised deflector bias min(delta_i) = {min_delta:.3e} m  "
+         f"(need >= 0)  → linear slope k drives at least one cell to a negative wall-bias amplitude")
+
+    _chk(2 * w_s - max_delta >= 3 * _MESH_MIN,
+         "G6b",
+         f"deflector gap 2·w_s - max(delta_i) - 2·_MESH_MIN = {(2*w_s - max_delta - 2*_MESH_MIN):.3e} m  "
          f"(need >= {_MESH_MIN:.2e} m = 0.01·H;  effective peak = h_d + _MESH_MIN)  "
          f"→ top and bottom deflectors overlap at peak of cosine in interaction region")
 
@@ -202,7 +222,6 @@ def cosine_bump_points(x_start, x_end, amp, from_top=False, bias=0.0):
     tessellates to zero-area faces → cfMesh creates zero-area mesh faces →
     OpenFOAM deltaCoeffs() raises a floating-point exception at solver start.
     """
-    import math
     Lc = x_end - x_start
     wall_y = (H + _EPS) if from_top else -_EPS
     pts = []
@@ -214,7 +233,7 @@ def cosine_bump_points(x_start, x_end, amp, from_top=False, bias=0.0):
         if from_top:
             y = H - min(bval + bias, H)
         else:
-            y = bval
+            y = min(bval + bias, H)
         pts.append((x, y))
     # Only add explicit closing wall points when the curve does not already
     # end on the wall (avoids zero-length edges that OCC rejects).
@@ -231,24 +250,57 @@ def cosine_bump_points(x_start, x_end, amp, from_top=False, bias=0.0):
 def make_extruded_polygon(points_2d, depth):
     """Extrude a closed 2-D polygon into a solid slab.
 
-    The workplane is shifted by -2*_EPS in z and the extrusion depth is
-    extended by 4*_EPS so the resulting solid spans z = -2·_EPS … depth+2·_EPS.
-    The channel box spans z = -_EPS … depth+_EPS (one _EPS inset on each side).
-    Obstacle z-faces therefore lie strictly outside the channel-box z-faces,
-    avoiding the coplanar-face failure in OpenCASCADE Boolean cuts.
-    After the Boolean cut the fluid-domain STL has exactly two distinct
-    z-values (-_EPS and depth+_EPS), satisfying cartesian2DMesh's 2D-surface
-    uniformity check and eliminating the "z coordinates not uniform" warning.
+    The obstacle slab spans the exact same z-range as the channel box:
+    z = -_EPS … depth+_EPS. This keeps the exported surface strictly 2-D,
+    with exactly two z-levels, which cartesian2DMesh can classify without
+    generating sliver triangles at the front/back planes.
     """
     wire = (cq.Workplane("XY")
-            .workplane(offset=-2 * _EPS)
+            .workplane(offset=-_EPS)
             .polyline(points_2d)
             .close())
-    return wire.extrude(depth + 4 * _EPS)
+    return wire.extrude(depth + 2 * _EPS)
 
 
 def rect_points(x0, x1, y0, y1):
     return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+
+
+def centered_band_points(x0, x1, thickness):
+    y0 = (H - thickness) / 2.0
+    y1 = (H + thickness) / 2.0
+    return rect_points(x0, x1, y0, y1)
+
+
+def centered_step_points(x0, x_step, x1, left_thickness, right_thickness):
+    """Connected polygon for a merge-to-next-split center plate transition.
+
+    The thickness transition is spread over a small x-ramp instead of a
+    zero-width vertical step. cfMesh repeatedly left inverted/zero-area
+    faces at the exact step corners, while a one-mesh-cell taper retains
+    topological connectivity and meshes robustly.
+    """
+    y0l = (H - left_thickness) / 2.0
+    y1l = (H + left_thickness) / 2.0
+    y0r = (H - right_thickness) / 2.0
+    y1r = (H + right_thickness) / 2.0
+    ramp_dx = min(
+        _MESH_MIN,
+        0.25 * max(x_step - x0, 0.0),
+        0.25 * max(x1 - x_step, 0.0),
+    )
+    xl = x_step - 0.5 * ramp_dx
+    xr = x_step + 0.5 * ramp_dx
+    return [
+        (x0, y0l),
+        (xl, y0l),
+        (xr, y0r),
+        (x1, y0r),
+        (x1, y1r),
+        (xr, y1r),
+        (xl, y1l),
+        (x0, y1l),
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -256,39 +308,51 @@ def rect_points(x0, x1, y0, y1):
 # ---------------------------------------------------------------------------
 obstacle_solids = []
 
-for k in range(N):
-    xk = L0 + k * L_cell
+# The center plate is built from connected polygons so there is never a
+# topological hole between the merge plate of cell i and the split plate of
+# cell i+1. The direct thickness step lives inside one polygon, not as two
+# adjacent rectangles with an x-gap.
+first_split_x0 = L0
+first_split_x1 = L0 + L_s
+obstacle_solids.append(
+    make_extruded_polygon(centered_band_points(first_split_x0, first_split_x1, t_s), DEPTH)
+)
 
-    # --- Split splitter (thin rectangle centred in channel) ---
-    xs0, xs1 = xk + DELTA_X, xk + L_s
-    y0s = (H - t_s) / 2.0
-    y1s = (H + t_s) / 2.0
-    pts = rect_points(xs0, xs1, y0s, y1s)
-    obstacle_solids.append(make_extruded_polygon(pts, DEPTH))
+for idx in range(N - 1):
+    boundary_x = L0 + (idx + 1) * L_cell
+    obstacle_solids.append(
+        make_extruded_polygon(
+            centered_step_points(boundary_x - L_m, boundary_x, boundary_x + L_s, t_m, t_s),
+            DEPTH,
+        )
+    )
 
-    # --- Bottom cosine deflector ---
+last_merge_x0 = L0 + (N - 1) * L_cell + L_s + L_c
+last_merge_x1 = L0 + N * L_cell
+obstacle_solids.append(
+    make_extruded_polygon(centered_band_points(last_merge_x0, last_merge_x1, t_m), DEPTH)
+)
+
+for idx in range(N):
+    xk = L0 + idx * L_cell
     xc0, xc1 = xk + L_s, xk + L_s + L_c
-    pts_bot = cosine_bump_points(xc0, xc1, h_d, from_top=False, bias=0.0)
+    delta_i = CELL_DELTAS[idx]
+    bot_bias = delta_i if idx % 2 == 1 else 0.0
+    top_bias = delta_i if idx % 2 == 0 else 0.0
+
+    pts_bot = cosine_bump_points(xc0, xc1, h_d, from_top=False, bias=bot_bias)
     obstacle_solids.append(make_extruded_polygon(pts_bot, DEPTH))
 
-    # --- Top cosine deflector (with delta bias) ---
-    pts_top = cosine_bump_points(xc0, xc1, h_d, from_top=True, bias=delta)
+    pts_top = cosine_bump_points(xc0, xc1, h_d, from_top=True, bias=top_bias)
     obstacle_solids.append(make_extruded_polygon(pts_top, DEPTH))
-
-    # --- Merge splitter (thin rectangle centred in channel) ---
-    xm0, xm1 = xk + L_s + L_c, xk + L_cell
-    y0m = (H - t_m) / 2.0
-    y1m = (H + t_m) / 2.0
-    pts = rect_points(xm0, xm1, y0m, y1m)
-    obstacle_solids.append(make_extruded_polygon(pts, DEPTH))
 
 
 # ---------------------------------------------------------------------------
 # Channel outer box and fluid domain
 # ---------------------------------------------------------------------------
-# Channel box spans z = -_EPS … DEPTH+_EPS so its z-faces sit between the
-# obstacle z-faces (z = -2·_EPS … DEPTH+2·_EPS).  After Boolean cuts the
-# fluid STL has exactly two z-values: -_EPS (front) and DEPTH+_EPS (back).
+# Channel box and obstacle slabs share the same z-span: z = -_EPS … DEPTH+_EPS.
+# The exported surface therefore has exactly two z-values, which lets cfMesh
+# detect it as a true 2-D x-y surface.
 channel_box = (
     cq.Workplane("XY")
     .box(TOTAL_L, H, DEPTH + 2 * _EPS)
@@ -374,7 +438,7 @@ for name, faces in patch_faces.items():
     print(f"  Patch '{name}': {len(faces)} face(s)")
     stl_parts.append(_stl_block(faces, name))
 
-stl_path = os.path.join(out_dir, "sar_mixer.stl")
+stl_path = os.path.join(out_dir, "alternating_deflector_mixer.stl")
 with open(stl_path, "w") as fh:
     fh.write("".join(stl_parts))
 print(f"  Written: {stl_path}")
@@ -389,6 +453,9 @@ print(f"  Unit-cell len      = {L_cell:.4f}")
 print(f"  Splitter thick t_s = {t_s:.4f}")
 print(f"  Splitter thick t_m = {t_m:.4f}")
 print(f"  Deflector height h_d = {h_d:.4f}")
-print(f"  Shuffle offset delta = {delta:.4f}")
+print(f"  Base deflector bias delta = {delta:.6e}")
+print(f"  Linear delta slope k = {k_slope:.6e}")
+print(f"  Realised delta_i range = [{min(CELL_DELTAS):.6e}, {max(CELL_DELTAS):.6e}]")
+print("  Wall bias pattern = top, bottom, top, ...")
 print(f"  Interaction length L_c = {L_c:.4f}")
 print("Done.")
