@@ -18,7 +18,12 @@ relative; the folder can be moved with the repository.
 
 Data provenance:
 
-- 28 stored samples in `../results/all_samples.csv`;
+- the archived 28-point campaign in `../results/all_samples.csv`;
+- verified pilot observations under the ignored
+  `../results/verified_flux_sequential_v2/` directory when generated locally;
 - scalar-field renders from samples `00022` and `00027`;
 - current geometry, mesh, solver, and BO source under the parent study folder;
 - historical SAR slide material under `../../docs/obsidian/02-Technical-Notes/`.
+
+The checked-in campaign configuration is strictly sequential (`q = 1`). See
+`RESEARCH_PLAN.md` for the numerical-verification and publication gates.

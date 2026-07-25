@@ -1,25 +1,44 @@
-# Configuration for bayes_optimize_sequential.py
+# Verified, resource-limited sequential research campaign.
 #
-# Resume semantics:
-#   - n_init is the total Sobol budget across the whole study.
-#   - once Sobol initialisation is complete, every fresh invocation of
-#     bayes_optimize_sequential.py launches n_bo additional BO iterations and
-#     appends new sample folders under results/.
-#
-# The BO no longer samples directly in the CAD variables t_m, L_s/L_m split,
-# delta, or k. Those are derived from interval-safe latent variables so every
-# BO point lands inside a mesh-aware admissible box before
-# alternating_deflector_cad.py
-# sees it.
+# n_init and n_bo are total campaign targets. Re-running the driver resumes
+# toward these targets; it does not add n_bo evaluations on every invocation.
+# Use --max-new-evaluations for a bounded pilot or maintenance run.
 
-n_init: 8
-n_bo:   20
-cores:  4
+campaign: verified_flux_sequential_v2
+results_dir: results/verified_flux_sequential_v2
+model_file: gp_checkpoint.pt
+
+n_init: 32
+n_bo:   80
+cores:  2
+torch_threads: 1
+sobol_seed: 20260725
+
+# Sequential BO is intentional. Parallel CFD ranks are controlled separately
+# by cores above; the acquisition must continue to propose one design at a time.
+q: 1
+
+acquisition:
+  num_restarts: 32
+  raw_samples: 1024
+
+# Fixed minimisation-space reference point. The acquisition receives its
+# negation because the BoTorch model is trained to maximise -Y.
+reference_point:
+  pdrop_m2_s2: 0.02
+  flux_intensity_of_segregation: 1.0
 
 bo_parameters:
-  w_s:
-    lower: 0.25
-    upper: 0.45
+  # Actual cosine amplitude on the weak wall, excluding the 0.01 H CAD floor.
+  a_weak:
+    lower: 0.00
+    upper: 0.12
+  # Maps to a_strong in [max(a_strong_min, a_weak + contrast_min),
+  # a_strong_max]. This directly represents the alternating asymmetry that the
+  # first campaign could reach only by driving both w_s and delta to bounds.
+  a_strong_ratio:
+    lower: 0.0
+    upper: 1.0
   t_s:
     lower: 0.04
     upper: 0.15
@@ -32,14 +51,12 @@ bo_parameters:
   L_s_ratio:
     lower: 0.0
     upper: 1.0
-  delta_ratio:
-    lower: 0.0
-    upper: 1.0
-  k_ratio:
-    lower: 0.0
-    upper: 1.0
 
 cad_parameter_bounds:
+  a_strong:
+    lower: 0.12
+    upper: 0.35
+  strong_weak_contrast_min: 0.04
   t_m:
     lower: 0.025
     upper: 0.15
@@ -49,9 +66,6 @@ cad_parameter_bounds:
   L_m:
     lower: 0.80
     upper: 1.80
-  delta:
-    lower: 0.025
-    upper: 0.15
 
 mesh_safety:
   # From FlowCase/system/meshDict:
@@ -63,16 +77,9 @@ mesh_safety:
   # These are the BO-side "interval arithmetic" guards that keep the sampled
   # CAD away from cfMesh-unresolvable sliver features.
   t_m_min_cells: 2.0
-  delta_min_cells: 2.0
   split_gap_min_cells: 4.0
   splitter_step_min_cells: 1.0
 
-  # Meshability-first constraints on the realized deflector-bias profile
-  # delta_i = delta + k*xhat_i at the actual cell midpoints.
-  delta_mesh_min: 0.04
-  delta_span_max: 0.06
-  delta_ramp_up_max: 0.05
-
-penalties:
-  pdrop: 1000.0
-  mix:   1.0
+# Failed CFD evaluations are recorded as failures and excluded from GP
+# fitting. Fictitious large objective penalties are deliberately not used.
+exclude_failed_evaluations: true

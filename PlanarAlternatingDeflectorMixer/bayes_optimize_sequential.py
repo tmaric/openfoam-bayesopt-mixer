@@ -2,20 +2,20 @@
 """Sequential multi-objective BO for the planar alternating-deflector mixer.
 
 Objectives (both minimised):
-    J_dp  - kinematic pressure drop     pdrop_pressure_drop_m2_s2
-    J_mix - intensity of segregation    mixing_intensity_of_segregation
+    J_dp  - kinematic pressure drop          pdrop_pressure_drop_m2_s2
+    J_mix - flux-weighted segregation        mixing_flux_weighted_intensity_of_segregation
 
-The BO works in a mesh-aware latent parameterisation:
-    w_s, t_s, L_c           are sampled directly.
-    t_m_ratio, L_s_ratio,
-    delta_ratio, k_ratio    are sampled on [0, 1] and mapped into CAD values
-                            through interval-safe transforms.
+The BO works in a mesh-aware physical parameterisation. The weak-wall cosine
+amplitude is sampled directly and a_strong_ratio maps to an admissible strong
+amplitude. This replaces the correlated w_s/delta coordinates used by the
+pilot campaign. Splitter and section lengths retain interval-safe transforms.
 
 This keeps the CAD generator oblivious to the BO policy while ensuring the
 optimiser never proposes thin-feature combinations that violate the current
 cfMesh resolution assumptions.
 """
 
+import argparse
 import csv
 import math
 import subprocess
@@ -40,18 +40,26 @@ with open(CFG_PATH) as _f:
 N_INIT = int(CFG["n_init"])
 N_BO = int(CFG["n_bo"])
 CORES = int(CFG["cores"])
+Q_BATCH = int(CFG.get("q", 1))
+SOBOL_SEED = int(CFG.get("sobol_seed", 0))
+TORCH_THREADS = int(CFG.get("torch_threads", 1))
+torch.set_num_threads(TORCH_THREADS)
 
-RESULTS_DIR = CASE_ROOT / "results"
+_results_path = Path(CFG.get("results_dir", "results"))
+RESULTS_DIR = (_results_path if _results_path.is_absolute() else CASE_ROOT / _results_path).resolve()
 SNAKEFILE = CASE_ROOT / "Snakefile"
 CAD_CONFIG_NAME = "alternating_deflector_cad.yaml"
 TEMPLATE_YAML = CASE_ROOT / "FlowCase" / CAD_CONFIG_NAME
-MODEL_PATH = CASE_ROOT / "PlanarAlternatingDeflectorMixer.pt"
+MODEL_PATH = RESULTS_DIR / str(CFG.get("model_file", "gp_checkpoint.pt"))
 
 with open(TEMPLATE_YAML) as _f:
     TEMPLATE_GEO = yaml.safe_load(_f)
 
 BO_PARAM_NAMES = list(CFG["bo_parameters"].keys())
-GEO_PARAM_NAMES = ["w_s", "t_s", "t_m", "L_s", "L_m", "delta", "k"]
+GEO_PARAM_NAMES = [
+    "w_s", "t_s", "t_m", "L_s", "L_m", "delta", "k",
+    "a_weak", "a_strong",
+]
 
 BOUNDS = torch.tensor([
     [float(CFG["bo_parameters"][name]["lower"]) for name in BO_PARAM_NAMES],
@@ -68,29 +76,32 @@ TOTAL_L = 2.0 * L0 + N_CELLS * L_CELL
 
 MESH_FINE_H = float(CFG["mesh_safety"]["fine_cell_size_H"])
 T_M_MIN = MESH_FINE_H * float(CFG["mesh_safety"]["t_m_min_cells"])
-DELTA_MIN = MESH_FINE_H * float(CFG["mesh_safety"]["delta_min_cells"])
 SPLIT_GAP_MIN = MESH_FINE_H * float(CFG["mesh_safety"]["split_gap_min_cells"])
 TM_STEP_MIN = MESH_FINE_H * float(CFG["mesh_safety"]["splitter_step_min_cells"])
-DELTA_MESH_MIN = float(CFG["mesh_safety"]["delta_mesh_min"])
-DELTA_SPAN_MAX = float(CFG["mesh_safety"]["delta_span_max"])
-DELTA_RAMP_UP_MAX = float(CFG["mesh_safety"]["delta_ramp_up_max"])
 
 T_M_MAX = float(CFG["cad_parameter_bounds"]["t_m"]["upper"])
+A_STRONG_MIN = float(CFG["cad_parameter_bounds"]["a_strong"]["lower"])
+A_STRONG_MAX = float(CFG["cad_parameter_bounds"]["a_strong"]["upper"])
+STRONG_WEAK_CONTRAST_MIN = float(
+    CFG["cad_parameter_bounds"]["strong_weak_contrast_min"]
+)
 L_S_MIN = float(CFG["cad_parameter_bounds"]["L_s"]["lower"])
 L_S_MAX = float(CFG["cad_parameter_bounds"]["L_s"]["upper"])
 L_M_MIN = float(CFG["cad_parameter_bounds"]["L_m"]["lower"])
 L_M_MAX = float(CFG["cad_parameter_bounds"]["L_m"]["upper"])
-DELTA_MAX = float(CFG["cad_parameter_bounds"]["delta"]["upper"])
-
 LC_MIN = BO_LOWER["L_c"]
 INEQ_CONSTRAINTS: list = []
 
 OBJ_PDROP = "pdrop_pressure_drop_m2_s2"
 OBJ_PDROP_LEGACY = "pdrop_pressure_drop_Pa"
-OBJ_MIX = "mixing_intensity_of_segregation"
+OBJ_MIX = "mixing_flux_weighted_intensity_of_segregation"
 
-PENALTY_PDROP = float(CFG["penalties"]["pdrop"])
-PENALTY_MIX = float(CFG["penalties"]["mix"])
+ACQ_NUM_RESTARTS = int(CFG["acquisition"]["num_restarts"])
+ACQ_RAW_SAMPLES = int(CFG["acquisition"]["raw_samples"])
+REF_POINT_MIN = torch.tensor([
+    float(CFG["reference_point"]["pdrop_m2_s2"]),
+    float(CFG["reference_point"]["flux_intensity_of_segregation"]),
+])
 
 
 def _clamp01(value: float) -> float:
@@ -98,14 +109,14 @@ def _clamp01(value: float) -> float:
 
 
 def _lerp(lo: float, hi: float, alpha: float) -> float:
-    if hi <= lo:
+    if hi - lo <= 1e-12:
         return lo
     a = _clamp01(alpha)
     return lo + a * (hi - lo)
 
 
 def _ratio(value: float, lo: float, hi: float) -> float:
-    if hi <= lo:
+    if hi - lo <= 1e-12:
         return 0.0
     return _clamp01((value - lo) / (hi - lo))
 
@@ -115,17 +126,28 @@ def _within(value: float, lo: float, hi: float, tol: float = 1e-12) -> bool:
 
 
 def _validate_config() -> None:
+    try:
+        RESULTS_DIR.relative_to(CASE_ROOT)
+    except ValueError as exc:
+        raise ValueError("results_dir must remain inside the study directory") from exc
+    if Q_BATCH != 1:
+        raise ValueError("This research campaign requires strictly sequential BO (q = 1).")
+    if CORES < 1 or CORES > 2:
+        raise ValueError("cores must be 1 or 2 for the resource-limited campaign.")
+    if TORCH_THREADS != 1:
+        raise ValueError("torch_threads must be 1 for the resource-limited campaign.")
     if N_CELLS < 1:
         raise ValueError("Invalid CAD template: N must be >= 1.")
     if BO_LOWER["t_s"] < T_M_MIN + TM_STEP_MIN:
         raise ValueError(
             "Invalid BO config: t_s.lower must be >= t_m_min + splitter_step_min."
         )
-    if BO_LOWER["w_s"] - 0.5 * BO_UPPER["t_s"] - SPLIT_GAP_MIN < DELTA_MIN:
-        raise ValueError(
-            "Invalid BO config: delta interval becomes empty at worst-case "
-            "w_s/t_s bounds."
-        )
+    if A_STRONG_MAX <= A_STRONG_MIN:
+        raise ValueError("a_strong upper bound must exceed its lower bound.")
+    if A_STRONG_MAX <= BO_UPPER["a_weak"] + STRONG_WEAK_CONTRAST_MIN:
+        raise ValueError("a_strong bounds cannot satisfy the maximum weak amplitude.")
+    if 1.0 - BO_UPPER["a_weak"] - A_STRONG_MAX - 2.0 * 0.01 < SPLIT_GAP_MIN:
+        raise ValueError("worst-case strong/weak deflectors leave too little peak gap.")
     if BO_UPPER["L_c"] > L_CELL - L_S_MIN - L_M_MIN:
         raise ValueError(
             "Invalid BO config: L_c.upper exceeds the interval implied by "
@@ -136,25 +158,10 @@ def _validate_config() -> None:
             "Invalid BO config: L_c.lower is too small for the configured "
             "L_s/L_m upper bounds."
         )
-    if DELTA_MESH_MIN <= 0.0:
-        raise ValueError("Invalid BO config: delta_mesh_min must be > 0.")
-    if DELTA_SPAN_MAX <= 0.0:
-        raise ValueError("Invalid BO config: delta_span_max must be > 0.")
-    if DELTA_RAMP_UP_MAX <= 0.0:
-        raise ValueError("Invalid BO config: delta_ramp_up_max must be > 0.")
-    worst_delta_cap = min(
-        DELTA_MAX,
-        BO_LOWER["w_s"] - 0.5 * BO_UPPER["t_s"] - SPLIT_GAP_MIN,
-    )
-    if worst_delta_cap < DELTA_MESH_MIN - 1e-12:
-        raise ValueError(
-            "Invalid BO config: delta_mesh_min exceeds the smallest admissible "
-            "realized deflector-bias ceiling implied by the BO bounds."
-        )
-
-
-def _delta_cap(w_s: float, t_s: float) -> float:
-    return min(DELTA_MAX, w_s - 0.5 * t_s - SPLIT_GAP_MIN)
+    if ACQ_NUM_RESTARTS < 1 or ACQ_RAW_SAMPLES < ACQ_NUM_RESTARTS:
+        raise ValueError("invalid acquisition restart/raw-sample configuration")
+    if torch.any(REF_POINT_MIN <= 0):
+        raise ValueError("reference-point objectives must be positive")
 
 
 def _interaction_midpoint_xhat(L_s: float, L_m: float, cell_idx: int) -> float:
@@ -165,43 +172,6 @@ def _interaction_midpoint_xhat(L_s: float, L_m: float, cell_idx: int) -> float:
 
 def _cell_xhats(L_s: float, L_m: float) -> list[float]:
     return [_interaction_midpoint_xhat(L_s, L_m, cell_idx) for cell_idx in range(N_CELLS)]
-
-
-def _slope_interval(L_s: float, L_m: float) -> tuple[float, float]:
-    """Return global slope limits imposed by span and upward-ramp caps."""
-    xhats = _cell_xhats(L_s, L_m)
-    if not xhats:
-        return 0.0, 0.0
-
-    ramp_dx = xhats[-1] - xhats[0]
-    if ramp_dx <= 1e-12:
-        return -float("inf"), float("inf")
-
-    span_abs_cap = DELTA_SPAN_MAX / ramp_dx
-    return -span_abs_cap, min(span_abs_cap, DELTA_RAMP_UP_MAX / ramp_dx)
-
-
-def _delta_interval(w_s: float, t_s: float, L_s: float, L_m: float) -> tuple[float, float]:
-    """Return base-bias limits for which at least one admissible slope exists.
-
-    The realized bias is ``delta + k*xhat``. Sampling ``delta`` from only its
-    nominal CAD bounds can leave the subsequent ``k`` interval empty near the
-    mesh-safety floor. Projecting the joint linear constraints onto ``delta``
-    makes every latent point transformable by construction.
-    """
-    delta_floor = DELTA_MESH_MIN
-    delta_cap = _delta_cap(w_s, t_s)
-    xhats = _cell_xhats(L_s, L_m)
-    k_lo, k_hi = _slope_interval(L_s, L_m)
-
-    delta_lo = DELTA_MIN
-    delta_hi = delta_cap
-    if xhats and math.isfinite(k_hi):
-        delta_lo = max(delta_lo, max(delta_floor - k_hi * xhat for xhat in xhats))
-    if xhats and math.isfinite(k_lo):
-        delta_hi = min(delta_hi, min(delta_cap - k_lo * xhat for xhat in xhats))
-
-    return delta_lo, delta_hi
 
 
 def _realized_deltas(delta: float, k: float, L_s: float, L_m: float) -> list[float]:
@@ -238,55 +208,46 @@ def _format_realized_geometry_metrics(metrics: dict) -> str:
     )
 
 
-def _k_interval(delta: float, w_s: float, t_s: float, L_s: float, L_m: float) -> tuple[float, float]:
-    delta_floor = DELTA_MESH_MIN
-    delta_cap = _delta_cap(w_s, t_s)
-    xhats = _cell_xhats(L_s, L_m)
-    k_lo, k_hi = _slope_interval(L_s, L_m)
-
-    for xhat in xhats:
-        if xhat <= 1e-12:
-            continue
-        k_lo = max(k_lo, (delta_floor - delta) / xhat)
-        k_hi = min(k_hi, (delta_cap - delta) / xhat)
-
-    if not xhats:
-        return 0.0, 0.0
-
-    return k_lo, k_hi
-
-
 def _is_geo_feasible(geo: dict) -> bool:
     """Return True when the realized geometry stays mesh-safe."""
-    w_s = float(geo["w_s"])
+    a_weak = float(geo["a_weak"])
+    a_strong = float(geo["a_strong"])
     t_s = float(geo["t_s"])
     t_m = float(geo["t_m"])
     L_s = float(geo["L_s"])
     L_m = float(geo["L_m"])
-    delta = float(geo["delta"])
     k = float(geo["k"])
-    metrics = _realized_geometry_metrics(w_s, delta, k, L_s, L_m)
-    delta_cap = _delta_cap(w_s, t_s)
 
-    c1 = metrics["delta_min"] >= DELTA_MESH_MIN - 1e-12
-    c2 = metrics["delta_max"] <= delta_cap + 1e-12
-    c3 = metrics["delta_span"] <= DELTA_SPAN_MAX + 1e-12
-    c4 = metrics["ramp_up"] <= DELTA_RAMP_UP_MAX + 1e-12
-    c5 = L_s + L_m <= L_CELL - LC_MIN + 1e-12
-    c6 = t_s - t_m >= TM_STEP_MIN - 1e-12
-    c7 = t_m >= T_M_MIN - 1e-12
-    return c1 and c2 and c3 and c4 and c5 and c6 and c7
+    peak_gap = 1.0 - a_weak - a_strong - 2.0 * 0.01
+    split_gap = 0.5 - a_weak - 0.5 * t_s
+    checks = (
+        _within(a_weak, BO_LOWER["a_weak"], BO_UPPER["a_weak"]),
+        _within(a_strong, max(A_STRONG_MIN, a_weak + STRONG_WEAK_CONTRAST_MIN), A_STRONG_MAX),
+        abs(k) <= 1e-12,
+        peak_gap >= SPLIT_GAP_MIN - 1e-12,
+        split_gap >= SPLIT_GAP_MIN - 1e-12,
+        L_s + L_m <= L_CELL - LC_MIN + 1e-12,
+        t_s - t_m >= TM_STEP_MIN - 1e-12,
+        t_m >= T_M_MIN - 1e-12,
+    )
+    return all(checks)
 
 
 def bo_to_geo(bo_params: dict) -> dict:
     """Map BO parameters into actual CAD parameters."""
-    w_s = float(bo_params["w_s"])
+    a_weak = float(bo_params["a_weak"])
+    a_strong_ratio = float(bo_params["a_strong_ratio"])
     t_s = float(bo_params["t_s"])
     t_m_ratio = float(bo_params["t_m_ratio"])
     L_c = float(bo_params["L_c"])
     L_s_ratio = float(bo_params["L_s_ratio"])
-    delta_ratio = float(bo_params["delta_ratio"])
-    k_ratio = float(bo_params["k_ratio"])
+
+    a_strong_lo = max(A_STRONG_MIN, a_weak + STRONG_WEAK_CONTRAST_MIN)
+    if a_strong_lo > A_STRONG_MAX + 1e-12:
+        raise ValueError(
+            f"Empty strong-amplitude interval for a_weak={a_weak:.6f}"
+        )
+    a_strong = _lerp(a_strong_lo, A_STRONG_MAX, a_strong_ratio)
 
     t_m_lo = T_M_MIN
     t_m_hi = min(T_M_MAX, t_s - TM_STEP_MIN)
@@ -305,21 +266,9 @@ def bo_to_geo(bo_params: dict) -> dict:
     L_s = _lerp(L_s_lo, L_s_hi, L_s_ratio)
     L_m = L_CELL - L_c - L_s
 
-    delta_lo, delta_hi = _delta_interval(w_s, t_s, L_s, L_m)
-    if delta_hi < delta_lo - 1e-12:
-        raise ValueError(
-            "Empty delta interval for "
-            f"w_s={w_s:.6f}, t_s={t_s:.6f}: [{delta_lo:.6f}, {delta_hi:.6f}]"
-        )
-    delta = _lerp(delta_lo, delta_hi, delta_ratio)
-    k_lo, k_hi = _k_interval(delta, w_s, t_s, L_s, L_m)
-    if k_hi < k_lo - 1e-12:
-        raise ValueError(
-            "Empty k interval for "
-            f"delta={delta:.6f}, w_s={w_s:.6f}, t_s={t_s:.6f}, "
-            f"L_s={L_s:.6f}, L_m={L_m:.6f}: [{k_lo:.6f}, {k_hi:.6f}]"
-        )
-    k = _lerp(k_lo, k_hi, k_ratio)
+    w_s = 0.5 - a_weak
+    delta = a_strong - a_weak
+    k = 0.0
 
     geo = {
         "w_s": w_s,
@@ -329,6 +278,8 @@ def bo_to_geo(bo_params: dict) -> dict:
         "L_m": L_m,
         "delta": delta,
         "k": k,
+        "a_weak": a_weak,
+        "a_strong": a_strong,
     }
     return geo
 
@@ -342,9 +293,17 @@ def geo_to_bo(geo_params: dict) -> dict:
     L_m = float(geo_params["L_m"])
     delta = float(geo_params["delta"])
     k = float(geo_params.get("k", 0.0))
+    a_weak = float(geo_params.get("a_weak", 0.5 - w_s))
+    a_strong = float(geo_params.get("a_strong", a_weak + delta))
 
-    if not _within(w_s, BO_LOWER["w_s"], BO_UPPER["w_s"]):
-        raise ValueError("w_s outside current BO bounds")
+    if abs(k) > 1e-12:
+        raise ValueError("the verified campaign uses a constant strong amplitude (k=0)")
+    if not _within(a_weak, BO_LOWER["a_weak"], BO_UPPER["a_weak"]):
+        raise ValueError("a_weak outside current BO bounds")
+    a_strong_lo = max(A_STRONG_MIN, a_weak + STRONG_WEAK_CONTRAST_MIN)
+    if not _within(a_strong, a_strong_lo, A_STRONG_MAX):
+        raise ValueError("a_strong outside admissible dependent interval")
+    a_strong_ratio = _ratio(a_strong, a_strong_lo, A_STRONG_MAX)
     if not _within(t_s, BO_LOWER["t_s"], BO_UPPER["t_s"]):
         raise ValueError("t_s outside current BO bounds")
 
@@ -364,23 +323,13 @@ def geo_to_bo(geo_params: dict) -> dict:
         raise ValueError("L_s outside admissible dependent interval")
     L_s_ratio = _ratio(L_s, L_s_lo, L_s_hi)
 
-    delta_lo, delta_hi = _delta_interval(w_s, t_s, L_s, L_m)
-    if not _within(delta, delta_lo, delta_hi):
-        raise ValueError("delta outside admissible dependent interval")
-    delta_ratio = _ratio(delta, delta_lo, delta_hi)
-    k_lo, k_hi = _k_interval(delta, w_s, t_s, L_s, L_m)
-    if not _within(k, k_lo, k_hi):
-        raise ValueError("k outside admissible dependent interval")
-    k_ratio = _ratio(k, k_lo, k_hi)
-
     bo = {
-        "w_s": w_s,
+        "a_weak": a_weak,
+        "a_strong_ratio": a_strong_ratio,
         "t_s": t_s,
         "t_m_ratio": t_m_ratio,
         "L_c": L_c,
         "L_s_ratio": L_s_ratio,
-        "delta_ratio": delta_ratio,
-        "k_ratio": k_ratio,
     }
     return bo
 
@@ -442,7 +391,9 @@ def plot_pareto_front(X: torch.Tensor, Y: torch.Tensor, n_init: int, title: str)
     from botorch.utils.multi_objective.pareto import is_non_dominated
 
     j_dp = Y[:, 0].numpy()
-    mq = 1.0 - Y[:, 1].numpy()
+    # Literature-compatible relative-standard-deviation mixing index. The BO
+    # still minimises I_s; this monotone transform is used only for reporting.
+    mq = 1.0 - Y[:, 1].clamp(min=0.0).sqrt().numpy()
 
     n = len(j_dp)
     colors = ["steelblue" if i < n_init else "darkorange" for i in range(n)]
@@ -479,7 +430,7 @@ def plot_pareto_front(X: torch.Tensor, Y: torch.Tensor, n_init: int, title: str)
         r"Kinematic pressure drop  $J_\mathrm{dp}$  (m$^2$/s$^2$, log scale)",
         fontsize=11,
     )
-    ax.set_ylabel(r"Mixing quality  $1 - I_s$  (-)", fontsize=11)
+    ax.set_ylabel(r"Flux-weighted mixing index  $1 - \sqrt{I_s^\phi}$  (-)", fontsize=11)
     ax.set_xscale("log")
     ax.set_title(title, fontsize=11)
     ax.grid(True, which="both", alpha=0.3)
@@ -557,22 +508,22 @@ def next_sample_id() -> str:
     return f"{(max(ids) + 1 if ids else 0):05d}"
 
 
-def _write_penalty_objectives(sample_dir: Path, bo_params: dict, geo_params: dict) -> None:
-    """Write a minimal objectives.csv with penalty values for a failed sample."""
+def _write_failure_objectives(sample_dir: Path, bo_params: dict, geo_params: dict) -> None:
+    """Record a failed evaluation without introducing fictitious GP targets."""
     row = {
         "sample_id": sample_dir.name,
         "results_dir": sample_dir.name,
         "failed": "True",
         **_annotation_fields(bo_params, geo_params),
-        OBJ_PDROP: PENALTY_PDROP,
-        OBJ_MIX: PENALTY_MIX,
+        OBJ_PDROP: "",
+        OBJ_MIX: "",
     }
     out = sample_dir / "objectives.csv"
     with open(out, "w", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=list(row.keys()))
         writer.writeheader()
         writer.writerow(row)
-    print(f"[bo] penalty objectives.csv written -> {out}")
+    print(f"[bo] failure record written -> {out}")
 
 
 def _extract_geo_from_row(row: dict) -> dict | None:
@@ -618,6 +569,26 @@ def _normalize_objectives_row(row: dict) -> dict:
     return normalized
 
 
+def _bo_from_row(row: dict) -> dict:
+    """Recover current BO coordinates from an objective row."""
+    if all(f"bo_{name}" in row and row[f"bo_{name}"] != "" for name in BO_PARAM_NAMES):
+        return {name: float(row[f"bo_{name}"]) for name in BO_PARAM_NAMES}
+
+    geo = _extract_geo_from_row(row)
+    if geo is None:
+        raise KeyError("missing geometry columns")
+    return geo_to_bo(geo)
+
+
+def _candidate_key(bo: dict) -> tuple:
+    """Hash a candidate in normalized coordinates for exact-repeat avoidance."""
+    values = []
+    for name in BO_PARAM_NAMES:
+        width = BO_UPPER[name] - BO_LOWER[name]
+        values.append(round((float(bo[name]) - BO_LOWER[name]) / width, 12))
+    return tuple(values)
+
+
 def evaluate(bo_params: dict) -> tuple[float, float] | tuple[None, None]:
     """Write YAML, run Snakemake, return (J_dp, J_mix) or (None, None)."""
     try:
@@ -655,20 +626,22 @@ def evaluate(bo_params: dict) -> tuple[float, float] | tuple[None, None]:
             "--snakefile", str(SNAKEFILE),
             "--directory", str(sample_dir),
             "--cores", str(CORES),
-            "--config", f"results_dir={sample_dir}",
+            "--config",
+            f"results_dir={sample_dir}",
+            f"python_bin={Path(sys.executable).resolve()}",
         ]
     )
     if ret.returncode != 0:
-        print(f"[bo] WARNING: sample {sid} failed - penalising", file=sys.stderr)
-        _write_penalty_objectives(sample_dir, bo_params, geo_params)
-        return PENALTY_PDROP, PENALTY_MIX
+        print(f"[bo] WARNING: sample {sid} failed - excluded from GP", file=sys.stderr)
+        _write_failure_objectives(sample_dir, bo_params, geo_params)
+        return None, None
 
     obj_csv = sample_dir / "objectives.csv"
     if not obj_csv.exists():
-        print(f"[bo] WARNING: objectives.csv missing for {sid} - penalising",
+        print(f"[bo] WARNING: objectives.csv missing for {sid} - excluded from GP",
               file=sys.stderr)
-        _write_penalty_objectives(sample_dir, bo_params, geo_params)
-        return PENALTY_PDROP, PENALTY_MIX
+        _write_failure_objectives(sample_dir, bo_params, geo_params)
+        return None, None
 
     _annotate_objectives_csv(sample_dir, bo_params, geo_params)
 
@@ -679,7 +652,7 @@ def evaluate(bo_params: dict) -> tuple[float, float] | tuple[None, None]:
             j_mix = float(row[OBJ_MIX])
             print(
                 f"[bo] {sid}: J_dp={j_dp:.4g} m^2/s^2  "
-                f"mixing quality={1.0 - j_mix:.4f}"
+                f"flux-weighted MI={1.0 - math.sqrt(max(0.0, j_mix)):.4f}"
             )
             return j_dp, j_mix
 
@@ -695,13 +668,24 @@ def fit_model(X: torch.Tensor, Y: torch.Tensor, warm_start: dict | None = None):
     from botorch.models import SingleTaskGP
     from botorch.models.transforms.input import Normalize
     from botorch.models.transforms.outcome import Standardize
+    from gpytorch.kernels import MaternKernel, ScaleKernel
     from gpytorch.mlls import ExactMarginalLogLikelihood
 
+    output_batch = torch.Size([Y.shape[-1]])
+    covar_module = ScaleKernel(
+        MaternKernel(
+            nu=2.5,
+            ard_num_dims=X.shape[-1],
+            batch_shape=output_batch,
+        ),
+        batch_shape=output_batch,
+    )
     model = SingleTaskGP(
         X,
         -Y,
         input_transform=Normalize(d=X.shape[-1]),
         outcome_transform=Standardize(m=Y.shape[-1]),
+        covar_module=covar_module,
     )
     if warm_start is not None:
         try:
@@ -750,9 +734,7 @@ def next_candidate(model, X: torch.Tensor, Y: torch.Tensor) -> torch.Tensor:
         acqf_name = "qNoisyExpectedHypervolumeImprovement"
     from botorch.optim import optimize_acqf
 
-    Y_neg = -Y
-    Y_range = (Y_neg.max(0).values - Y_neg.min(0).values).clamp(min=1e-6)
-    ref_point = Y_neg.min(0).values - 0.1 * Y_range
+    ref_point = -REF_POINT_MIN
 
     print(f"[bo] acquisition: {acqf_name}")
 
@@ -762,14 +744,36 @@ def next_candidate(model, X: torch.Tensor, Y: torch.Tensor) -> torch.Tensor:
 
     opt_kwargs = {
         "bounds": BOUNDS,
-        "q": 1,
-        "num_restarts": 10,
-        "raw_samples": 256,
+        "q": Q_BATCH,
+        "num_restarts": ACQ_NUM_RESTARTS,
+        "raw_samples": ACQ_RAW_SAMPLES,
     }
     if INEQ_CONSTRAINTS:
         opt_kwargs["inequality_constraints"] = INEQ_CONSTRAINTS
     cand, _ = optimize_acqf(acqf, **opt_kwargs)
     return cand.squeeze(0)
+
+
+def fallback_novel_candidate(attempted_keys: set[tuple]) -> torch.Tensor:
+    """Return a deterministic Sobol fallback not already attempted.
+
+    Failed evaluations are deliberately absent from GP training. Without this
+    guard, a deterministic acquisition optimizer can immediately select the
+    same failed point again because the fitted model has not changed.
+    """
+    engine = torch.quasirandom.SobolEngine(
+        dimension=len(BO_PARAM_NAMES), scramble=True, seed=SOBOL_SEED + 104729
+    )
+    batch_size = max(256, len(attempted_keys) + 1)
+    for _ in range(16):
+        unit = engine.draw(batch_size).to(dtype=BOUNDS.dtype)
+        candidates = BOUNDS[0] + unit * (BOUNDS[1] - BOUNDS[0])
+        for candidate in candidates:
+            bo = {name: float(candidate[j]) for j, name in enumerate(BO_PARAM_NAMES)}
+            if _candidate_key(bo) not in attempted_keys:
+                print("[bo] acquisition repeated an attempted point; using novel Sobol fallback")
+                return candidate
+    raise RuntimeError("could not find a novel fallback candidate")
 
 
 # ---------------------------------------------------------------------------
@@ -788,6 +792,7 @@ def collect_existing() -> tuple:
         return None, None, 0
 
     xs, ys = [], []
+    seen_success: set[tuple] = set()
     skipped_legacy = 0
     for d in sorted(RESULTS_DIR.iterdir()):
         if not (d.is_dir() and d.name.isdigit()):
@@ -800,13 +805,7 @@ def collect_existing() -> tuple:
             for row in csv.DictReader(fh):
                 row = _normalize_objectives_row(row)
                 try:
-                    if all(f"bo_{k}" in row and row[f"bo_{k}"] != "" for k in BO_PARAM_NAMES):
-                        bo = {k: float(row[f"bo_{k}"]) for k in BO_PARAM_NAMES}
-                    else:
-                        geo = _extract_geo_from_row(row)
-                        if geo is None:
-                            raise KeyError("missing geometry columns")
-                        bo = geo_to_bo(geo)
+                    bo = _bo_from_row(row)
                     j_dp = float(row[OBJ_PDROP])
                     j_mix = float(row[OBJ_MIX])
                 except (KeyError, ValueError):
@@ -818,6 +817,14 @@ def collect_existing() -> tuple:
                 if not is_feasible(bo):
                     skipped_legacy += 1
                     continue
+                key = _candidate_key(bo)
+                if key in seen_success:
+                    print(
+                        f"[bo] WARNING: ignoring duplicate successful design in sample {d.name}",
+                        file=sys.stderr,
+                    )
+                    continue
+                seen_success.add(key)
                 xs.append([float(bo[k]) for k in BO_PARAM_NAMES])
                 ys.append([j_dp, j_mix])
 
@@ -833,14 +840,62 @@ def collect_existing() -> tuple:
     return torch.tensor(xs), torch.tensor(ys), len(xs)
 
 
+def collect_attempted_keys() -> set[tuple]:
+    """Load successful and failed candidate locations from the campaign."""
+    keys: set[tuple] = set()
+    if not RESULTS_DIR.exists():
+        return keys
+
+    for sample_dir in sorted(RESULTS_DIR.iterdir()):
+        if not (sample_dir.is_dir() and sample_dir.name.isdigit()):
+            continue
+        obj_csv = sample_dir / "objectives.csv"
+        if not obj_csv.exists():
+            continue
+        with open(obj_csv, newline="") as handle:
+            for row in csv.DictReader(handle):
+                try:
+                    bo = _bo_from_row(_normalize_objectives_row(row))
+                except Exception:
+                    continue
+                if is_feasible(bo):
+                    keys.add(_candidate_key(bo))
+    return keys
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--max-new-evaluations",
+        type=int,
+        default=None,
+        help="cap new CFD evaluations in this invocation while preserving total targets",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = _parse_args()
+    if args.max_new_evaluations is not None and args.max_new_evaluations < 1:
+        raise ValueError("--max-new-evaluations must be positive")
+
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    remaining_this_run = args.max_new_evaluations
+
+    def budget_available() -> bool:
+        return remaining_this_run is None or remaining_this_run > 0
+
+    def consume_budget() -> None:
+        nonlocal remaining_this_run
+        if remaining_this_run is not None:
+            remaining_this_run -= 1
 
     X_obs, Y_obs, n_existing = collect_existing()
+    attempted_keys = collect_attempted_keys()
     n_init_done = min(n_existing, N_INIT)
     if n_existing > 0:
         n_bo_existing = max(0, n_existing - N_INIT)
@@ -850,16 +905,30 @@ def main() -> None:
         plot_pareto_front(X_obs, Y_obs, n_init_done,
                           f"PADM - resumed  [{n_existing} sample(s)]")
 
-    n_init_needed = max(0, N_INIT - n_existing)
+    n_init_needed = max(0, N_INIT - n_init_done)
     if n_init_needed > 0:
         from botorch.utils.sampling import draw_sobol_samples
 
         print(f"[bo] === Sobol initialisation: {n_init_needed} remaining of {N_INIT} ===")
-        sobol_X = draw_sobol_samples(bounds=BOUNDS, n=n_init_needed, q=1).squeeze(1)
+        # Use attempted (successful + failed) locations as the Sobol sequence
+        # offset. A failed point is not training data, but it is never retried
+        # indefinitely on the next bounded invocation.
+        n_init_attempted = len(attempted_keys)
+        n_proposals = N_INIT - n_init_done
+        sobol_X = draw_sobol_samples(
+            bounds=BOUNDS,
+            n=n_init_attempted + n_proposals,
+            q=1,
+            seed=SOBOL_SEED,
+        ).squeeze(1)[n_init_attempted:]
 
         for x in sobol_X:
+            if not budget_available():
+                break
             bo_params = {k: float(x[j]) for j, k in enumerate(BO_PARAM_NAMES)}
             j_dp, j_mix = evaluate(bo_params)
+            attempted_keys.add(_candidate_key(bo_params))
+            consume_budget()
             if j_dp is None:
                 continue
 
@@ -877,14 +946,24 @@ def main() -> None:
                 f"PADM - init {n_init_done}/{N_INIT}  [{X_obs.shape[0]} sample(s)]",
             )
 
-    if X_obs is None or X_obs.shape[0] < 2:
-        sys.exit("[bo] not enough successful samples to fit a GP - aborting")
+    if n_init_done < N_INIT:
+        print(
+            f"[bo] paused after bounded sequential run: "
+            f"{n_init_done}/{N_INIT} initial designs complete"
+        )
+        return
 
-    n_bo_done = max(0, n_existing - N_INIT)
-    n_bo_to_run = N_BO
+    if X_obs is None or X_obs.shape[0] < 2:
+        print("[bo] not enough successful samples to fit a GP")
+        return
+
+    n_bo_done = max(0, X_obs.shape[0] - N_INIT)
+    n_bo_to_run = max(0, N_BO - n_bo_done)
+    if remaining_this_run is not None:
+        n_bo_to_run = min(n_bo_to_run, remaining_this_run)
     print(
         f"\n[bo] === Sequential BO: launching {n_bo_to_run} new iteration(s) "
-        f"(existing BO samples: {n_bo_done}) ==="
+        f"toward total target {N_BO} (existing BO samples: {n_bo_done}, q=1) ==="
     )
 
     warm_start = load_model_hyperparams()
@@ -901,8 +980,13 @@ def main() -> None:
         warm_start = {k: v.detach().clone() for k, v in model.named_parameters()}
         x_next = next_candidate(model, X_obs, Y_obs)
         bo_params = {k: float(x_next[j]) for j, k in enumerate(BO_PARAM_NAMES)}
+        if _candidate_key(bo_params) in attempted_keys:
+            x_next = fallback_novel_candidate(attempted_keys)
+            bo_params = {k: float(x_next[j]) for j, k in enumerate(BO_PARAM_NAMES)}
 
         j_dp, j_mix = evaluate(bo_params)
+        attempted_keys.add(_candidate_key(bo_params))
+        consume_budget()
         if j_dp is None:
             continue
 
@@ -924,16 +1008,17 @@ def main() -> None:
     pareto = is_non_dominated(-Y_obs)
     print("\n[bo] Pareto-optimal designs:")
     print(
-        f"  {'w_s':>6}  {'t_s':>6}  {'t_m':>6}  {'L_s':>6}  {'L_m':>6}  {'delta':>6}  {'k':>6}"
-        f"  {'J_dp [m2/s2]':>12}  {'mix quality':>12}"
+        f"  {'a_weak':>7}  {'a_strong':>8}  {'t_s':>6}  {'t_m':>6}  {'L_s':>6}  {'L_m':>6}"
+        f"  {'J_dp [m2/s2]':>12}  {'flux MI':>9}"
     )
     for x, y in zip(X_obs[pareto].tolist(), Y_obs[pareto].tolist()):
         bo_params = {k: float(x[j]) for j, k in enumerate(BO_PARAM_NAMES)}
         geo = bo_to_geo(bo_params)
         print(
-            f"  {geo['w_s']:6.3f}  {geo['t_s']:6.3f}  {geo['t_m']:6.3f}"
-            f"  {geo['L_s']:6.3f}  {geo['L_m']:6.3f}  {geo['delta']:6.3f}  {geo['k']:6.3f}"
-            f"  {y[0]:12.4g}  {1.0 - y[1]:12.4f}"
+            f"  {geo['a_weak']:7.3f}  {geo['a_strong']:8.3f}"
+            f"  {geo['t_s']:6.3f}  {geo['t_m']:6.3f}"
+            f"  {geo['L_s']:6.3f}  {geo['L_m']:6.3f}"
+            f"  {y[0]:12.4g}  {1.0 - math.sqrt(max(0.0, y[1])):9.4f}"
         )
 
     print("\n[bo] done.")

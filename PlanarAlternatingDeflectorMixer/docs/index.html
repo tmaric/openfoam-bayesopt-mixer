@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bayesian Optimization of a Planar Alternating-Deflector Micromixer</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
-  <link rel="stylesheet" href="slides.css">
+  <link rel="stylesheet" href="slides.css?v=20260725">
 </head>
 <body>
   <div class="reveal">
@@ -13,7 +13,7 @@
       <section class="title-slide">
         <div class="eyebrow">CAD → CFD → Bayesian optimization</div>
         <h1>Planar Alternating-Deflector<br>Micromixer</h1>
-        <p class="subtitle">What the geometry actually does, how the seven-dimensional design space is optimized, and what the 28-sample campaign supports.</p>
+        <p class="subtitle">What the geometry actually does, why the original 28-point front is only exploratory, and how the verified six-dimensional sequential campaign is run.</p>
         <svg class="geometry-strip" viewBox="0 0 1450 170" role="img" aria-label="Five-cell planar alternating-deflector channel">
           <rect x="5" y="24" width="1440" height="122" fill="#fffdf8" stroke="#2f78a8" stroke-width="6"/>
           <g fill="#f6b66e" stroke="#ad5c10" stroke-width="3">
@@ -66,7 +66,7 @@
           <line x1="860" x2="1070" y1="55" y2="55" stroke="#5d7285" stroke-width="3" marker-start="url(#arrow)" marker-end="url(#arrow)"/><text x="965" y="44" text-anchor="middle" fill="#102a43" font-size="31">L<tspan baseline-shift="sub" font-size="21">m</tspan></text>
           <line x1="300" x2="300" y1="90" y2="310" stroke="#5d7285" stroke-width="3" marker-start="url(#arrow)" marker-end="url(#arrow)"/><text x="270" y="210" text-anchor="middle" fill="#102a43" font-size="31">H</text>
           <line x1="405" x2="405" y1="187" y2="213" stroke="#102a43" stroke-width="4"/><text x="405" y="250" text-anchor="middle" fill="#102a43" font-size="28">t<tspan baseline-shift="sub" font-size="19">s</tspan></text>
-          <text x="725" y="250" text-anchor="middle" fill="#102a43" font-size="28">δ<tspan baseline-shift="sub" font-size="19">i</tspan> = δ + k x̂<tspan baseline-shift="sub" font-size="19">i</tspan></text>
+          <text x="725" y="250" text-anchor="middle" fill="#102a43" font-size="28">a<tspan baseline-shift="sub" font-size="19">strong</tspan> − a<tspan baseline-shift="sub" font-size="19">weak</tspan> = δ</text>
           <text x="965" y="242" text-anchor="middle" fill="#102a43" font-size="28">t<tspan baseline-shift="sub" font-size="19">m</tspan></text>
           <text x="725" y="382" text-anchor="middle" fill="#5d7285" font-size="27">The stronger wall alternates top → bottom → top across five cells</text>
         </svg>
@@ -75,38 +75,39 @@
       </section>
 
       <section>
-        <h2>Seven latent coordinates map into seven CAD parameters</h2>
+        <h2>Six BO coordinates expose amplitude and contrast</h2>
         <div class="mapping">
           <div>
             <h3>BO coordinates</h3>
-            <ul><li><code>w_s</code>, <code>t_s</code>, <code>L_c</code> sampled directly</li><li><code>t_m_ratio</code>, <code>L_s_ratio</code></li><li><code>delta_ratio</code>, <code>k_ratio</code></li></ul>
+            <ul><li><code>a_weak</code>, <code>a_strong_ratio</code></li><li><code>t_s</code>, <code>t_m_ratio</code></li><li><code>L_c</code>, <code>L_s_ratio</code></li></ul>
           </div>
           <div class="arrow">→</div>
           <div>
             <h3>Realized CAD vector</h3>
-            <p class="formula">θ = (w<sub>s</sub>, t<sub>s</sub>, t<sub>m</sub>, L<sub>s</sub>, L<sub>m</sub>, δ, k)</p>
-            <p><code>L_s + L_c + L_m = L_cell = 4</code></p>
+            <p class="formula">θ = (a<sub>weak</sub>, a<sub>strong</sub>, t<sub>s</sub>, t<sub>m</sub>, L<sub>s</sub>, L<sub>c</sub>, L<sub>m</sub>)</p>
+            <p><code>w_s = 0.5 − a_weak</code>, <code>δ = a_strong − a_weak</code>, <code>k = 0</code></p>
           </div>
         </div>
         <table class="compact-table">
-          <thead><tr><th>Direct bound</th><th>Range</th><th>Dependent range</th><th>Purpose</th></tr></thead>
+          <thead><tr><th>Coordinate</th><th>Range</th><th>Dependent range</th><th>Purpose</th></tr></thead>
           <tbody>
-            <tr><td><code>w_s</code></td><td>0.25–0.45</td><td><code>δ ≤ w_s − 0.5t_s − 0.05</code></td><td>preserve the split-side gap</td></tr>
+            <tr><td><code>a_weak</code></td><td>0–0.12</td><td><code>w_s = 0.5 − a_weak</code></td><td>include an almost flat weak wall</td></tr>
+            <tr><td><code>a_strong_ratio</code></td><td>0–1</td><td><code>max(0.12,a_weak+0.04) ≤ a_strong ≤ 0.35</code></td><td>search strength and contrast directly</td></tr>
             <tr><td><code>t_s</code></td><td>0.04–0.15</td><td><code>0.025 ≤ t_m ≤ t_s − 0.0125</code></td><td>resolve the centre-plate step</td></tr>
-            <tr><td><code>L_c</code></td><td>0.40–2.40</td><td><code>0.8 ≤ L_s,L_m ≤ 1.8</code></td><td>keep every x-segment finite</td></tr>
+            <tr><td><code>L_c</code></td><td>0.40–2.40</td><td><code>0.8 ≤ L_s,L_m ≤ 1.8</code></td><td>keep every streamwise segment finite</td></tr>
           </tbody>
         </table>
         <aside class="notes">[Sources] Current mappings and validation: ../bayes_optimize_sequential.py. Bounds: ../bayes_optimize_sequential.yaml.</aside>
       </section>
 
       <section>
-        <h2>Interval transforms make meshability part of the parameterization</h2>
+        <h2>Interval transforms make contrast and meshability explicit</h2>
         <div class="two-col">
           <div>
-            <p class="formula">δ<sub>i</sub> = δ + k x̂<sub>i</sub></p>
-            <p class="formula">0.04 ≤ min δ<sub>i</sub> ≤ max δ<sub>i</sub> ≤ δ<sub>cap</sub></p>
-            <p class="formula">max δ<sub>i</sub> − min δ<sub>i</sub> ≤ 0.06</p>
-            <p class="formula">δ<sub>last</sub> − δ<sub>first</sub> ≤ 0.05</p>
+            <p class="formula">0 ≤ a<sub>weak</sub> ≤ 0.12</p>
+            <p class="formula">0.12 ≤ a<sub>strong</sub> ≤ 0.35</p>
+            <p class="formula">a<sub>strong</sub> − a<sub>weak</sub> ≥ 0.04</p>
+            <p class="formula">k = 0: all five cells share one amplitude pair</p>
           </div>
           <div>
             <p class="claim">The optimizer searches a latent box; every point is deterministically projected into a CAD-feasible interval.</p>
@@ -114,7 +115,8 @@
               <li>fine-cell size: <code>0.0125 H</code>;</li>
               <li>minimum merge thickness: two fine cells;</li>
               <li>minimum splitter-side gap: four fine cells;</li>
-              <li>CAD validation runs again before OpenCASCADE operations.</li>
+              <li>CAD validation runs again before OpenCASCADE operations;</li>
+              <li>the old weak/strong ambiguity and downstream slope are removed.</li>
             </ul>
           </div>
         </div>
@@ -142,16 +144,17 @@
               <li><code>scalarTransportFoam</code>;</li>
               <li><code>D_T = 10⁻⁹ m²/s</code>, <strong>Sc = 1000</strong>;</li>
               <li>bottom inlet half <code>T=1</code>, top half <code>T=0</code>;</li>
-              <li>bounded Gauss upwind for <code>div(phi,T)</code>.</li>
+              <li>bounded Gauss <code>limitedLinear 1</code> for <code>div(phi,T)</code>;</li>
+              <li>PBiCGStab/DILU with equation relaxation 0.7.</li>
             </ul>
           </div>
         </div>
-        <p class="caution">The first-order scalar scheme is robust but can smear the interface far more strongly than molecular diffusion at this cell size.</p>
+        <p class="caution">Every candidate runs for 200–600 scalar iterations and must keep the final-50 flux mean and intensity spans below 10⁻⁴.</p>
         <aside class="notes">[Sources] Flow dictionaries: ../FlowCase/0/U, ../FlowCase/constant/transportProperties, ../FlowCase/constant/turbulenceProperties. Scalar dictionaries: ../ScalarTransportCase/0/T, ../ScalarTransportCase/constant/transportProperties, ../ScalarTransportCase/system/fvSchemes.</aside>
       </section>
 
       <section>
-        <h2>One candidate becomes two objective values through an isolated workflow</h2>
+        <h2>Each candidate yields two objectives in an isolated workflow</h2>
         <div class="pipeline">
           <div class="stage"><strong>1 · Propose</strong><span>Sobol or qLogNEHVI in latent coordinates</span></div>
           <div class="stage"><strong>2 · Generate</strong><span>CadQuery subtracts baffles from the channel slab</span></div>
@@ -160,8 +163,8 @@
           <div class="stage"><strong>5 · Scalar</strong><span><code>scalarTransportFoam</code> writes outlet statistics</span></div>
           <div class="stage"><strong>6 · Learn</strong><span>Last CSV rows update the GP and Pareto set</span></div>
         </div>
-        <p class="evidence" style="margin-top:70px">Every sample runs under <code>results/&lt;id&gt;/</code>; the templates remain unchanged and failed workflows receive explicit penalty objectives.</p>
-        <aside class="notes">[Sources] Orchestration: ../Snakefile. Candidate execution, penalties, resume, and aggregation: ../bayes_optimize_sequential.py. CSV aggregation: ../postprocessing_agglomeration.py.</aside>
+        <p class="evidence" style="margin-top:70px">Every sample runs under its campaign directory. Failed or unconverged workflows retain blank targets and are excluded from the GP—no fictitious penalty observations.</p>
+        <aside class="notes">[Sources] Orchestration and convergence gates: ../Snakefile and ../verify_scalar_convergence.py. Candidate execution, resume, and aggregation: ../bayes_optimize_sequential.py.</aside>
       </section>
 
       <section>
@@ -175,30 +178,30 @@
           </div>
           <div>
             <h3>Mixing objective</h3>
-            <p class="formula">J<sub>mix</sub>(θ) = I<sub>s</sub> = σ²<sub>T,out</sub> / 0.25</p>
+            <p class="formula">J<sub>mix</sub>(θ) = I<sub>s,flux</sub> = σ²<sub>T,flux</sub> / 0.25</p>
             <p><code>I_s = 1</code> preserves the inlet variance; <code>I_s = 0</code> is uniform.</p>
-            <p class="definition"><strong>Optimization:</strong> minimize <code>(J_dp, I_s)</code>. Plots use <code>1 − I_s</code> only because higher mixing quality is easier to read.</p>
+            <p class="definition"><strong>Optimization:</strong> minimize <code>(J_dp, I_s,flux)</code>. Plots use the literature-comparable index <code>1 − sqrt(I_s,flux)</code>.</p>
           </div>
         </div>
         <aside class="notes">[Sources] Pressure calculation: ../../src/functionObjects/pressureDrop/pressureDrop.C and ../FlowCase/0/p. Mixing calculation: ../../src/functionObjects/patchMixingQuality/patchMixingQuality.C. Objective column selection: ../bayes_optimize_sequential.py.</aside>
       </section>
 
       <section>
-        <h2>The implemented mixing objective is face-count weighted</h2>
+        <h2>Flux weighting measures the transported outlet stream</h2>
         <div class="two-col wide-left">
           <div>
-            <p class="formula">T̄ = (1/N) Σ T<sub>i</sub></p>
-            <p class="formula">σ² = (1/N) Σ T²<sub>i</sub> − T̄²</p>
-            <p class="formula">I<sub>s</sub> = σ² / [0.5(1−0.5)]</p>
-            <p class="evidence">The function object also reports flux-weighted mean, variance, and intensity, but BO reads the unweighted <code>intensity_of_segregation</code> column.</p>
+            <p class="formula">T̄<sub>q</sub> = Σ q<sub>i</sub>T<sub>i</sub> / Σ q<sub>i</sub></p>
+            <p class="formula">σ²<sub>q</sub> = Σ q<sub>i</sub>(T<sub>i</sub>−T̄<sub>q</sub>)² / Σ q<sub>i</sub></p>
+            <p class="formula">I<sub>s,q</sub> = σ²<sub>q</sub> / [0.5(1−0.5)]</p>
+            <p class="evidence">The BO reads <code>flux_weighted_intensity_of_segregation</code>; unweighted statistics remain diagnostics.</p>
           </div>
           <div>
-            <p class="claim">This differs from the area integral stated in the original benchmark note.</p>
+            <p class="claim">This asks how mixed the transported outlet stream is, not how many mesh faces carry each concentration.</p>
             <ul>
-              <li>equal weighting per outlet face;</li>
-              <li>sensitive to nonuniform face spacing;</li>
-              <li>not a residence-time or mass-flux objective;</li>
-              <li>should be compared against area- and flux-weighted alternatives.</li>
+              <li>positive outlet flux supplies the weights;</li>
+              <li>the mean follows the realized inlet stream ratio;</li>
+              <li>the reported RSD index is <code>1 − sqrt(I_s,q)</code>;</li>
+              <li>literature comparisons still require matched definitions and conditions.</li>
             </ul>
           </div>
         </div>
@@ -206,13 +209,13 @@
       </section>
 
       <section>
-        <h2>The BO engine maximizes hypervolume in the negated objective space</h2>
+        <h2>Sequential BO maximizes hypervolume one point at a time</h2>
         <div class="two-col">
           <div>
             <h3>Surrogate</h3>
             <ul>
               <li><code>SingleTaskGP(X, −Y)</code> with two outputs;</li>
-              <li>input normalization in seven dimensions;</li>
+              <li>input normalization in six dimensions;</li>
               <li>output standardization;</li>
               <li>exact marginal-likelihood fitting;</li>
               <li>checkpointed hyperparameters warm-start later runs.</li>
@@ -223,9 +226,9 @@
             <ul>
               <li><code>qLogNoisyExpectedHypervolumeImprovement</code>;</li>
               <li>fallback to <code>qNEHVI</code> for older BoTorch;</li>
-              <li><code>q = 1</code>, 10 restarts, 256 raw samples;</li>
-              <li>reference point = observed worst minus 10% of range;</li>
-              <li>8 Sobol starts + 20 sequential suggestions.</li>
+              <li><code>q = 1</code>, 32 restarts, 1024 raw samples;</li>
+              <li>fixed reference point: <code>(0.02, 1.0)</code> in minimization units;</li>
+              <li>32 Sobol starts + 80 strictly sequential suggestions.</li>
             </ul>
           </div>
         </div>
@@ -233,31 +236,53 @@
       </section>
 
       <section>
-        <h2>Twenty BO suggestions extended both ends of the trade-off</h2>
+        <h2>Two pilots verify resume and convergence gates</h2>
+        <table class="compact-table">
+          <thead><tr><th>Pilot</th><th>J<sub>dp</sub> (m²/s²)</th><th>Flux I<sub>s</sub></th><th>1−√I<sub>s</sub></th><th>Final-50 span</th></tr></thead>
+          <tbody>
+            <tr><td>first Sobol</td><td>0.00141115</td><td>0.780094</td><td>0.1168</td><td>3.8×10⁻⁵</td></tr>
+            <tr><td>second Sobol</td><td>0.00119273</td><td>0.889416</td><td>0.0569</td><td>2.0×10⁻⁶</td></tr>
+          </tbody>
+        </table>
+        <div class="two-col" style="margin-top:45px">
+          <div>
+            <p class="claim">A pilot is a workflow test, not a Pareto-front estimate.</p>
+            <p>Both flow solves converged explicitly. Both scalar results satisfy the engineering stability window.</p>
+          </div>
+          <div>
+            <p>The second geometry exposed a GAMG coarse-grid singularity. PBiCGStab/DILU completed the exact same high-Péclet case.</p>
+            <p class="evidence"><code>--max-new-evaluations 1</code> advances the campaign by only one candidate.</p>
+          </div>
+        </div>
+        <aside class="notes">[Sources] Pilot output: ../results/verified_flux_sequential_v2/00002 and 00003 (ignored by Git). Stability rule: ../verify_scalar_convergence.py. Solver: ../ScalarTransportCase/system/fvSolution.</aside>
+      </section>
+
+      <section>
+        <h2>The legacy front cannot seed the verified campaign</h2>
         <svg id="pareto-chart" role="img" aria-label="Pareto scatter plot for 28 mixer samples"></svg>
-        <div class="legend"><span><i class="dot" style="background:#2f78a8"></i>Sobol initialization (8)</span><span><i class="dot" style="background:#f28e2b"></i>BO suggestions (20)</span><span>black outline/line = non-dominated (15)</span></div>
+        <div class="legend"><span><i class="dot" style="background:#2f78a8"></i>legacy Sobol (8)</span><span><i class="dot" style="background:#f28e2b"></i>legacy BO (20)</span><span>different scheme, variables, and objective</span></div>
         <aside class="notes">[Sources] All points and sample IDs: ../results/all_samples.csv (28 rows, generated 2026-04-11). Pareto definition matches ../visualize_results.py. Legacy pressure values are interpreted as kinematic pressure.</aside>
       </section>
 
       <section>
-        <h2>The two extremes preserve one interface at different thicknesses</h2>
+        <h2>Legacy extremes retain one ordered scalar interface</h2>
         <div class="field-compare">
           <div>
             <img src="assets/sample-00022-T.png" alt="Scalar field for lowest-pressure sample 00022">
             <h3>00022 · lowest kinematic pressure drop</h3>
-            <p><strong>J<sub>dp</sub> = 1.00487×10⁻³ m²/s²</strong><br>I<sub>s</sub> = 0.880986 · mixing quality = 0.119014<br><code>w_s=.45, t_s=.15, t_m=.1375, δ=.15, k=0</code></p>
+            <p><strong>J<sub>dp</sub> = 1.00487×10⁻³ m²/s²</strong><br>legacy face-count <code>1−I_s</code> = 0.119014<br><code>w_s=.45, t_s=.15, t_m=.1375, δ=.15, k=0</code></p>
           </div>
           <div>
             <img src="assets/sample-00027-T.png" alt="Scalar field for best-mixing sample 00027">
-            <h3>00027 · best stored mixing</h3>
-            <p><strong>I<sub>s</sub> = 0.499471</strong> · mixing quality = 0.500529<br>J<sub>dp</sub> = 1.98601×10⁻³ m²/s²<br><code>w_s=.45, t_s=.04, t_m=.025, δ=.15, k=−.09</code></p>
+            <h3>00027 · best legacy objective</h3>
+            <p><strong>I<sub>s</sub> = 0.499471</strong> · legacy face-count <code>1−I_s</code> = 0.500529<br>J<sub>dp</sub> = 1.98601×10⁻³ m²/s²<br><code>w_s=.45, t_s=.04, t_m=.025, δ=.15, k=−.09</code></p>
           </div>
         </div>
         <aside class="notes">[Sources] Metrics and geometry coordinates: ../results/all_samples.csv. Images: ../results/00022/visualizations/00022_T.png and ../results/00027/visualizations/00027_T.png.</aside>
       </section>
 
       <section>
-        <h2>The optimizer is pressing against design-space boundaries</h2>
+        <h2>Legacy bound-seeking motivated new coordinates</h2>
         <div class="two-col">
           <div>
             <div class="metrics">
@@ -267,12 +292,12 @@
             </div>
           </div>
           <div>
-            <p class="claim">The campaign identifies a useful trade-off, but it has not demonstrated an interior optimum.</p>
+            <p class="claim">The archived campaign suggested where to redesign the variables; it did not demonstrate a global or interior optimum.</p>
             <ul>
               <li>thicker centre baffles correlate with worse mixing;</li>
               <li>larger gaps and wall bias generally reduce both objectives;</li>
               <li>the best-mixing designs use thin baffles and a negative bias slope;</li>
-              <li>bounds and parameterization now define the next scientific question.</li>
+              <li>the new amplitude/contrast coordinates test those boundary trends directly.</li>
             </ul>
           </div>
         </div>
@@ -296,7 +321,7 @@
             <ol>
               <li>source the chosen OpenFOAM <code>etc/bashrc</code>;</li>
               <li>run <code>./Allwmake</code> at repository root;</li>
-              <li>run <code>snakemake --cores N</code> or the BO script.</li>
+              <li>advance with <code>python bayes_optimize_sequential.py --max-new-evaluations 1</code>.</li>
             </ol>
             <p class="evidence">The custom library is built under repository-local <code>platforms/$WM_OPTIONS/lib</code>. Result CSVs store sample-relative locations.</p>
           </div>
@@ -306,15 +331,15 @@
 
       <section class="closing">
         <h2>The BO study is useful—once its claim matches its geometry</h2>
-        <p class="claim">Call it a Planar Alternating-Deflector Micromixer, report kinematic pressure correctly, and treat the current front as a numerical design study rather than validated SAR lamination.</p>
+        <p class="claim">The methodology is now aligned with the geometry; the scientific claim still depends on completing the sequential campaign and its numerical and comparative validation.</p>
         <div class="two-col">
           <div>
             <h3 style="color:white">Immediate validation</h3>
             <ul>
-              <li>repeat selected points on refined meshes and higher-order scalar schemes;</li>
-              <li>compare face-, area-, and flux-weighted mixing objectives;</li>
+              <li>complete or defensibly stop the 32 + 80 sequential campaign;</li>
+              <li>repeat selected Pareto points on three refined meshes;</li>
               <li>add a straight-channel and symmetric-deflector baseline;</li>
-              <li>report physical ΔP after multiplying by density.</li>
+              <li>quantify uncertainty and report dimensional ΔP.</li>
             </ul>
           </div>
           <div>
@@ -327,7 +352,7 @@
             </ul>
           </div>
         </div>
-        <aside class="notes">[Sources] Synthesis of the current generator, scalar fields, function-object implementation, and 28-sample campaign. Historical conceptual material is retained under ../../docs/obsidian/ for provenance.</aside>
+        <aside class="notes">[Sources] Research gates and bounded execution plan: RESEARCH_PLAN.md. Historical conceptual material and the legacy campaign are retained for provenance, not pooled with the verified objectives.</aside>
       </section>
     </div>
   </div>
@@ -335,6 +360,6 @@
   <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/math/math.js"></script>
-  <script src="slides.js"></script>
+<script src="slides.js?v=20260725"></script>
 </body>
 </html>

@@ -1,0 +1,12 @@
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.py text eol=lf
+Snakefile text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.C text eol=lf
+*.H text eol=lf

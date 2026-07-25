@@ -101,9 +101,10 @@ def _check_geometry() -> None:
         Interaction region must have positive x-extent.
         Violated → 'assert L_c > 0' fires, or degenerate cosine polygon.
 
-    G2  h_d >= _MESH_MIN
-        Deflector intrusion height h_d = H/2 - w_s must be positive.
-        Near-zero h_d → cosine bump polygon has near-zero area → OCC error.
+    G2  h_d >= 0
+        The analytic cosine amplitude may be zero because
+        cosine_bump_points() adds a mesh-resolved floor. Negative amplitudes
+        are invalid.
 
     G3a t_s >= _MESH_MIN
     G3b t_m >= _MESH_MIN
@@ -152,10 +153,10 @@ def _check_geometry() -> None:
          f"interaction length L_c = {L_c:.3e} m  (need >= {_MESH_MIN:.2e} m = 0.01·H)  "
          f"→ reduce L_s+L_m in normalised units to < {(L_cell - _MESH_MIN) / SCALE:.4f}")
 
-    _chk(h_d >= _MESH_MIN,
+    _chk(h_d >= 0.0,
          "G2",
-         f"deflector height h_d = {h_d:.3e} m  (need >= {_MESH_MIN:.2e} m = 0.01·H)  "
-         f"→ w_s must be < {(0.5 * H - _MESH_MIN) / SCALE:.4f} normalised  "
+         f"deflector height h_d = {h_d:.3e} m  (need >= 0)  "
+         f"→ w_s must be <= {0.5 * H / SCALE:.4f} normalised  "
          f"(currently w_s = {w_s / SCALE:.4f})")
 
     _chk(t_s >= _MESH_MIN,

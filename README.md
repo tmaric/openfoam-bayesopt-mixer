@@ -16,8 +16,8 @@ layer multiplication claimed by a true split-and-recombine mixer.
 The study minimizes two objectives:
 
 - kinematic pressure drop, `J_dp = <p>_in - <p>_out`, in `m²/s²`;
-- outlet intensity of segregation, `J_mix = I_s`, where zero is perfectly
-  mixed and one retains the inlet variance.
+- flux-weighted outlet intensity of segregation, `J_mix = I_s,flux`, where
+  zero is perfectly mixed and one retains the inlet variance.
 
 For water, physical pressure drop in pascals is `rho * J_dp`. The original CSV
 column suffix `_Pa` was dimensionally incorrect; new runs use `_m2_s2`, while
@@ -54,19 +54,24 @@ cell contains:
 2. two cosine wall deflectors over an interaction length `L_c`;
 3. a thinner centre baffle of thickness `t_m` over the merge-length segment.
 
-The additional bias alternates between the top and bottom deflector. Its
-realized cell value is
+The verified BO coordinates sample the weak-wall amplitude directly and map a
+ratio into an admissible strong-wall amplitude:
 
 ```text
-delta_i = delta + k * xhat_i
+w_s = 0.5 - a_weak
+delta = a_strong - a_weak
+k = 0
 ```
 
-where `xhat_i` is the normalized streamwise midpoint of cell `i`.
+The strong wall alternates between the top and bottom across the five cells.
+The constant-amplitude choice removes the old downstream slope until evidence
+supports adding it back.
 
 The flow is steady and laminar (`simpleFoam`, `Re = 10`). Scalar transport uses
-`DT = 1e-9 m²/s` and bounded first-order upwind convection. The latter is
-robust but numerically diffusive, so the observed mixing should not be treated
-as mesh-independent physical validation without a discretization study.
+`DT = 1e-9 m²/s`, bounded second-order `limitedLinear 1` convection, and a
+PBiCGStab/DILU scalar solve. Outlet objectives must satisfy a final-window
+stability test. Results still require a mesh/scheme study before physical
+publication claims.
 
 ## Prerequisites
 
@@ -94,21 +99,23 @@ cd PlanarAlternatingDeflectorMixer
 The build is written under the repository's `platforms/$WM_OPTIONS/lib/`, and
 the Snakemake workflow loads the library from that relative location.
 
-Run one design:
+Run one explicitly configured design with no more than two MPI ranks:
 
 ```bash
-snakemake --cores 4
+snakemake --cores 2 --config results_dir=results/manual_00
 ```
 
-Run sequential multi-objective Bayesian optimization:
+Advance the sequential multi-objective campaign by one evaluation:
 
 ```bash
-python3 bayes_optimize_sequential.py
+python3 bayes_optimize_sequential.py --max-new-evaluations 1
 ```
 
-The default campaign uses eight Sobol samples followed by twenty sequential
-qLogNEHVI/qNEHVI suggestions. A rerun resumes completed samples and adds
-another configured BO batch.
+The verified campaign targets 32 successful Sobol designs followed by 80
+strictly sequential (`q = 1`) qLogNEHVI suggestions. A rerun resumes toward
+those totals; it does not add a fresh 80-point batch. OpenFOAM uses two MPI
+ranks and Torch uses one thread. Failed cases are retained in the audit trail,
+excluded from GP fitting, and never converted into fictitious penalties.
 
 Clean generated data:
 
@@ -131,12 +138,14 @@ Then open `http://localhost:8000/`.
 ## Main outputs
 
 ```text
-results/<sample_id>/
+results/verified_flux_sequential_v2/<sample_id>/
 ├── FlowCase/pressureDrop.csv
 ├── ScalarTransportCase/mixing.csv
 ├── objectives.csv
 └── visualizations/<sample_id>_T.png   optional
 ```
 
-`results/all_samples.csv` aggregates all completed samples and
-`results/pareto_front.png` summarizes the current non-dominated set.
+The campaign directory contains `all_samples.csv`, `pareto_front.png`, and the
+GP checkpoint. Generated results are ignored by Git. See
+`PlanarAlternatingDeflectorMixer/docs/RESEARCH_PLAN.md` for the staged
+verification and publication gates.

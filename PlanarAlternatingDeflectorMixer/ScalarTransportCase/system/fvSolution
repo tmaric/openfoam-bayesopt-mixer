@@ -18,10 +18,12 @@ solvers
 {
     T
     {
-        solver          GAMG;
+        // The non-symmetric, high-Peclet scalar matrix can make the GAMG
+        // coarsest-level solve singular for otherwise valid geometries.
+        solver          PBiCGStab;
+        preconditioner  DILU;
         tolerance       1e-08;
         relTol          0.01;
-        smoother        GaussSeidel;
     }
 }
 
@@ -39,7 +41,7 @@ relaxationFactors
 {
     equations
     {
-        T               0.9;
+        T               0.7;
     }
 }
 

@@ -6,10 +6,10 @@ shell.executable("/bin/bash")
 
 CASE_ROOT = Path(workflow.basedir).resolve()
 REPO_ROOT = CASE_ROOT.parent
-PYTHON_BIN = sys.executable
+PYTHON_BIN = str(Path(config.get("python_bin", sys.executable)).resolve())
 
 # results_dir can be overridden per sample:
-#   snakemake --cores 4 --config results_dir=samples/00
+#   snakemake --cores 2 --config results_dir=results/manual_00
 # Default is the single-run layout used by Allrun.
 RESULTS_ROOT = Path(config.get("results_dir", str(CASE_ROOT / "results"))).resolve()
 WORKFLOW = RESULTS_ROOT / ".workflow"
@@ -217,6 +217,10 @@ rule hydro_simpleFoam:
         mkdir -p "{WORKFLOW}"
         cd "{HYDRO}"
         mpirun -np {threads} simpleFoam -parallel 2>&1 | tee log.simpleFoam
+        grep -q "SIMPLE solution converged" log.simpleFoam || {{
+            echo "ERROR: simpleFoam reached endTime without satisfying residualControl" >&2
+            exit 1
+        }}
         if [ ! -f pressureDrop.csv ] && [ -f processor0/pressureDrop.csv ]; then
             cp processor0/pressureDrop.csv pressureDrop.csv
         fi
@@ -306,7 +310,8 @@ rule mixing_decompose:
 rule mixing_scalar_transport:
     threads: NPROCS
     input:
-        str(WORKFLOW / "mixing_decompose.done"),
+        decomposed = str(WORKFLOW / "mixing_decompose.done"),
+        verifier = str(CASE_ROOT / "verify_scalar_convergence.py"),
     output:
         done    = str(WORKFLOW / "mixing_scalar_transport.done"),
         csv     = str(MIXING / "mixing.csv"),
@@ -320,6 +325,8 @@ rule mixing_scalar_transport:
             cp processor0/mixing.csv mixing.csv
         fi
         [ -f mixing.csv ] || {{ echo "ERROR: mixing.csv not produced by patchMixingQuality FO"; exit 1; }}
+        "{PYTHON_BIN}" "{input.verifier}" mixing.csv \
+            --window 50 --min-rows 200 --intensity-tol 1e-4 --mean-tol 1e-4
         touch "{output.done}"
         """
 

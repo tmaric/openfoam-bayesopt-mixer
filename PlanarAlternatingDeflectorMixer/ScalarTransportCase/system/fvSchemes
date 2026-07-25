@@ -28,8 +28,9 @@ divSchemes
 {
     default         none;
 
-    // Upwind for high-Pe scalar transport (Sc=1000, Pe >> 1)
-    div(phi,T)      bounded Gauss upwind;
+    // Bounded second-order convection. The previous first-order upwind scheme
+    // produced excessive artificial mixing at cell Peclet numbers O(100).
+    div(phi,T)      bounded Gauss limitedLinear 1;
 }
 
 laplacianSchemes
