@@ -2,8 +2,13 @@
 """Sequential multi-objective BO for the planar alternating-deflector mixer.
 
 Objectives (both minimised):
-    J_dp  - kinematic pressure drop          pdrop_pressure_drop_m2_s2
-    J_mix - flux-weighted segregation        mixing_flux_weighted_intensity_of_segregation
+    J_dp  - pressure ratio relative to the validated straight channel
+    J_mix - flux-weighted segregation intensity
+
+The raw kinematic and dimensional pressure drops, flow rate, pumping power and
+literature-style mixing index are retained in every objective record.  The
+default stage executes only the corrected 12-point feasibility screen.  Full
+BO must be requested explicitly and is guarded by the predeclared screen.
 
 The BO works in a mesh-aware physical parameterisation. The weak-wall cosine
 amplitude is sampled directly and a_strong_ratio maps to an admissible strong
@@ -17,6 +22,7 @@ cfMesh resolution assumptions.
 
 import argparse
 import csv
+import json
 import math
 import subprocess
 import sys
@@ -37,6 +43,7 @@ CFG_PATH = CASE_ROOT / "bayes_optimize_sequential.yaml"
 with open(CFG_PATH) as _f:
     CFG = yaml.safe_load(_f)
 
+SCREENING_N_INIT = int(CFG["screening_n_init"])
 N_INIT = int(CFG["n_init"])
 N_BO = int(CFG["n_bo"])
 CORES = int(CFG["cores"])
@@ -51,6 +58,11 @@ SNAKEFILE = CASE_ROOT / "Snakefile"
 CAD_CONFIG_NAME = "alternating_deflector_cad.yaml"
 TEMPLATE_YAML = CASE_ROOT / "FlowCase" / CAD_CONFIG_NAME
 MODEL_PATH = RESULTS_DIR / str(CFG.get("model_file", "gp_checkpoint.pt"))
+_baseline_path = Path(CFG["baseline_summary"])
+BASELINE_SUMMARY = (
+    _baseline_path if _baseline_path.is_absolute() else CASE_ROOT / _baseline_path
+).resolve()
+SCREENING_GATE_PATH = RESULTS_DIR / "screening_gate.json"
 
 with open(TEMPLATE_YAML) as _f:
     TEMPLATE_GEO = yaml.safe_load(_f)
@@ -92,16 +104,18 @@ L_M_MAX = float(CFG["cad_parameter_bounds"]["L_m"]["upper"])
 LC_MIN = BO_LOWER["L_c"]
 INEQ_CONSTRAINTS: list = []
 
-OBJ_PDROP = "pdrop_pressure_drop_m2_s2"
+OBJ_PDROP_RAW = "pdrop_pressure_drop_m2_s2"
 OBJ_PDROP_LEGACY = "pdrop_pressure_drop_Pa"
+OBJ_PRESSURE_PA = "metric_pressure_drop_Pa"
+OBJ_PRESSURE_RATIO = "metric_pressure_ratio_to_straight"
 OBJ_MIX = "mixing_flux_weighted_intensity_of_segregation"
 
 ACQ_NUM_RESTARTS = int(CFG["acquisition"]["num_restarts"])
 ACQ_RAW_SAMPLES = int(CFG["acquisition"]["raw_samples"])
-REF_POINT_MIN = torch.tensor([
-    float(CFG["reference_point"]["pdrop_m2_s2"]),
-    float(CFG["reference_point"]["flux_intensity_of_segregation"]),
-])
+REF_PRESSURE_PA = float(CFG["reference_point"]["pressure_drop_Pa"])
+REF_MIX = float(CFG["reference_point"]["flux_intensity_of_segregation"])
+SCREENING_MIN_MIXING_INDEX = float(CFG["screening_gate"]["minimum_mixing_index"])
+SCREENING_MAX_FAILED_FRACTION = float(CFG["screening_gate"]["maximum_failed_fraction"])
 
 
 def _clamp01(value: float) -> float:
@@ -130,6 +144,12 @@ def _validate_config() -> None:
         RESULTS_DIR.relative_to(CASE_ROOT)
     except ValueError as exc:
         raise ValueError("results_dir must remain inside the study directory") from exc
+    try:
+        BASELINE_SUMMARY.relative_to(CASE_ROOT)
+    except ValueError as exc:
+        raise ValueError("baseline_summary must remain inside the study directory") from exc
+    if not (2 <= SCREENING_N_INIT <= N_INIT):
+        raise ValueError("screening_n_init must be between 2 and n_init")
     if Q_BATCH != 1:
         raise ValueError("This research campaign requires strictly sequential BO (q = 1).")
     if CORES < 1 or CORES > 2:
@@ -146,7 +166,7 @@ def _validate_config() -> None:
         raise ValueError("a_strong upper bound must exceed its lower bound.")
     if A_STRONG_MAX <= BO_UPPER["a_weak"] + STRONG_WEAK_CONTRAST_MIN:
         raise ValueError("a_strong bounds cannot satisfy the maximum weak amplitude.")
-    if 1.0 - BO_UPPER["a_weak"] - A_STRONG_MAX - 2.0 * 0.01 < SPLIT_GAP_MIN:
+    if 1.0 - BO_UPPER["a_weak"] - A_STRONG_MAX - 4.0 * 0.01 < SPLIT_GAP_MIN:
         raise ValueError("worst-case strong/weak deflectors leave too little peak gap.")
     if BO_UPPER["L_c"] > L_CELL - L_S_MIN - L_M_MIN:
         raise ValueError(
@@ -160,8 +180,18 @@ def _validate_config() -> None:
         )
     if ACQ_NUM_RESTARTS < 1 or ACQ_RAW_SAMPLES < ACQ_NUM_RESTARTS:
         raise ValueError("invalid acquisition restart/raw-sample configuration")
-    if torch.any(REF_POINT_MIN <= 0):
+    if REF_PRESSURE_PA <= 0 or REF_MIX <= 0:
         raise ValueError("reference-point objectives must be positive")
+    if not (0.0 <= SCREENING_MIN_MIXING_INDEX <= 1.0):
+        raise ValueError("screening minimum_mixing_index must lie in [0, 1]")
+    if not (0.0 <= SCREENING_MAX_FAILED_FRACTION < 1.0):
+        raise ValueError("screening maximum_failed_fraction must lie in [0, 1)")
+    transforms = CFG.get("objective_transforms", {})
+    if any(value != "linear" for value in transforms.values()):
+        raise ValueError(
+            "objective transforms remain linear until corrected screening data "
+            "justify and test an explicit model-space transform"
+        )
 
 
 def _interaction_midpoint_xhat(L_s: float, L_m: float, cell_idx: int) -> float:
@@ -218,7 +248,7 @@ def _is_geo_feasible(geo: dict) -> bool:
     L_m = float(geo["L_m"])
     k = float(geo["k"])
 
-    peak_gap = 1.0 - a_weak - a_strong - 2.0 * 0.01
+    peak_gap = 1.0 - a_weak - a_strong - 4.0 * 0.01
     split_gap = 0.5 - a_weak - 0.5 * t_s
     checks = (
         _within(a_weak, BO_LOWER["a_weak"], BO_UPPER["a_weak"]),
@@ -350,6 +380,61 @@ def _annotation_fields(bo_params: dict, geo_params: dict) -> dict:
     }
 
 
+def _straight_baseline() -> dict:
+    """Return the validated straight-channel row required for normalization."""
+    if not BASELINE_SUMMARY.exists():
+        raise FileNotFoundError(
+            "validated straight-channel baseline is missing. Run "
+            "`python run_baselines.py --max-new-evaluations 1` until "
+            f"{BASELINE_SUMMARY} exists before launching corrected BO."
+        )
+    with open(BASELINE_SUMMARY, newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    required = {"straight", "symmetric_deflector", "strong_alternating"}
+    completed = {row.get("baseline") for row in rows}
+    missing = required.difference(completed)
+    if missing:
+        raise ValueError(
+            "complete all corrected baselines before BO; missing "
+            + ", ".join(sorted(missing))
+        )
+    for row in rows:
+        if row.get("baseline") != "straight":
+            continue
+        if str(row.get("analytical_check_passed", "")).lower() != "true":
+            raise ValueError(
+                "straight-channel baseline has not passed its analytical pressure check"
+            )
+        pressure_pa = float(row["pressure_drop_Pa"])
+        if pressure_pa <= 0.0:
+            raise ValueError("straight-channel pressure drop must be positive")
+        return {**row, "pressure_drop_Pa": pressure_pa}
+    raise ValueError("baseline summary contains no validated straight-channel row")
+
+
+def _add_pressure_normalization(row: dict) -> dict:
+    """Add dimensional pressure and straight-channel-normalized pressure."""
+    normalized = dict(row)
+    baseline = _straight_baseline()
+    pressure_pa_raw = normalized.get(OBJ_PRESSURE_PA, "")
+    if pressure_pa_raw in ("", None):
+        # The workflow writes dimensional pressure for all corrected samples.
+        # This fallback only supports manually agglomerated corrected rows.
+        raw = normalized.get(OBJ_PDROP_RAW, "")
+        if raw in ("", None):
+            legacy = normalized.get(OBJ_PDROP_LEGACY, "")
+            raw = legacy
+        if raw not in ("", None):
+            research = yaml.safe_load((CASE_ROOT / "research_config.yaml").read_text())
+            density = float(research["operating_point"]["fluid_density_kg_m3"])
+            normalized[OBJ_PRESSURE_PA] = density * float(raw)
+    if normalized.get(OBJ_PRESSURE_PA, "") not in ("", None):
+        normalized[OBJ_PRESSURE_RATIO] = (
+            float(normalized[OBJ_PRESSURE_PA]) / baseline["pressure_drop_Pa"]
+        )
+    return normalized
+
+
 def _annotate_objectives_csv(sample_dir: Path, bo_params: dict, geo_params: dict) -> None:
     """Add BO and geometry coordinates to a generated objectives.csv."""
     obj_csv = sample_dir / "objectives.csv"
@@ -362,16 +447,19 @@ def _annotate_objectives_csv(sample_dir: Path, bo_params: dict, geo_params: dict
         fieldnames = list(reader.fieldnames or [])
 
     extra = _annotation_fields(bo_params, geo_params)
-    for key in extra:
-        if key not in fieldnames:
-            fieldnames.append(key)
+    updated_rows = []
     for row in rows:
         row.update(extra)
+        updated_rows.append(_add_pressure_normalization(row))
+    for row in updated_rows:
+        for key in row:
+            if key not in fieldnames:
+                fieldnames.append(key)
 
     with open(obj_csv, "w", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(updated_rows)
 
 
 _validate_config()
@@ -390,12 +478,12 @@ def plot_pareto_front(X: torch.Tensor, Y: torch.Tensor, n_init: int, title: str)
     from matplotlib.lines import Line2D
     from botorch.utils.multi_objective.pareto import is_non_dominated
 
-    j_dp = Y[:, 0].numpy()
+    pressure_ratio = Y[:, 0].numpy()
     # Literature-compatible relative-standard-deviation mixing index. The BO
     # still minimises I_s; this monotone transform is used only for reporting.
     mq = 1.0 - Y[:, 1].clamp(min=0.0).sqrt().numpy()
 
-    n = len(j_dp)
+    n = len(pressure_ratio)
     colors = ["steelblue" if i < n_init else "darkorange" for i in range(n)]
     pareto = is_non_dominated(-Y).numpy()
 
@@ -403,7 +491,7 @@ def plot_pareto_front(X: torch.Tensor, Y: torch.Tensor, n_init: int, title: str)
 
     if (~pareto).any():
         ax.scatter(
-            j_dp[~pareto],
+            pressure_ratio[~pareto],
             mq[~pareto],
             c=[colors[i] for i in range(n) if not pareto[i]],
             alpha=0.5,
@@ -412,7 +500,7 @@ def plot_pareto_front(X: torch.Tensor, Y: torch.Tensor, n_init: int, title: str)
 
     if pareto.any():
         ax.scatter(
-            j_dp[pareto],
+            pressure_ratio[pareto],
             mq[pareto],
             c=[colors[i] for i in range(n) if pareto[i]],
             s=90,
@@ -422,12 +510,12 @@ def plot_pareto_front(X: torch.Tensor, Y: torch.Tensor, n_init: int, title: str)
         )
 
     if pareto.sum() > 1:
-        px, py = j_dp[pareto], mq[pareto]
+        px, py = pressure_ratio[pareto], mq[pareto]
         order = px.argsort()
         ax.step(px[order], py[order], where="post", color="black", lw=1.5, alpha=0.8)
 
     ax.set_xlabel(
-        r"Kinematic pressure drop  $J_\mathrm{dp}$  (m$^2$/s$^2$, log scale)",
+        r"Pressure ratio  $\Delta p/\Delta p_\mathrm{straight}$  (-, log scale)",
         fontsize=11,
     )
     ax.set_ylabel(r"Flux-weighted mixing index  $1 - \sqrt{I_s^\phi}$  (-)", fontsize=11)
@@ -515,7 +603,9 @@ def _write_failure_objectives(sample_dir: Path, bo_params: dict, geo_params: dic
         "results_dir": sample_dir.name,
         "failed": "True",
         **_annotation_fields(bo_params, geo_params),
-        OBJ_PDROP: "",
+        OBJ_PDROP_RAW: "",
+        OBJ_PRESSURE_PA: "",
+        OBJ_PRESSURE_RATIO: "",
         OBJ_MIX: "",
     }
     out = sample_dir / "objectives.csv"
@@ -546,10 +636,10 @@ def _normalize_objectives_row(row: dict) -> dict:
     normalized = dict(row)
     if normalized.get("sample_id", "") not in ("", None):
         normalized["results_dir"] = normalized["sample_id"]
-    if normalized.get(OBJ_PDROP, "") in ("", None):
+    if normalized.get(OBJ_PDROP_RAW, "") in ("", None):
         legacy_pdrop = normalized.get(OBJ_PDROP_LEGACY, "")
         if legacy_pdrop not in ("", None):
-            normalized[OBJ_PDROP] = legacy_pdrop
+            normalized[OBJ_PDROP_RAW] = legacy_pdrop
     if normalized.get("geo_k", "") in ("", None):
         normalized["geo_k"] = "0.0"
 
@@ -566,6 +656,8 @@ def _normalize_objectives_row(row: dict) -> dict:
             for name, value in bo.items():
                 normalized[f"bo_{name}"] = f"{value:.17g}"
 
+    if normalized.get(OBJ_PDROP_RAW, "") not in ("", None):
+        normalized = _add_pressure_normalization(normalized)
     return normalized
 
 
@@ -590,7 +682,7 @@ def _candidate_key(bo: dict) -> tuple:
 
 
 def evaluate(bo_params: dict) -> tuple[float, float] | tuple[None, None]:
-    """Write YAML, run Snakemake, return (J_dp, J_mix) or (None, None)."""
+    """Run one CFD case and return (pressure ratio, segregation intensity)."""
     try:
         geo_params = bo_to_geo(bo_params)
     except ValueError:
@@ -648,13 +740,15 @@ def evaluate(bo_params: dict) -> tuple[float, float] | tuple[None, None]:
     with open(obj_csv, newline="") as fh:
         for row in csv.DictReader(fh):
             row = _normalize_objectives_row(row)
-            j_dp = float(row[OBJ_PDROP])
+            pressure_ratio = float(row[OBJ_PRESSURE_RATIO])
+            pressure_pa = float(row[OBJ_PRESSURE_PA])
             j_mix = float(row[OBJ_MIX])
             print(
-                f"[bo] {sid}: J_dp={j_dp:.4g} m^2/s^2  "
+                f"[bo] {sid}: dp={pressure_pa:.4g} Pa, "
+                f"dp/dp_straight={pressure_ratio:.4g}, "
                 f"flux-weighted MI={1.0 - math.sqrt(max(0.0, j_mix)):.4f}"
             )
-            return j_dp, j_mix
+            return pressure_ratio, j_mix
 
     return None, None
 
@@ -734,7 +828,11 @@ def next_candidate(model, X: torch.Tensor, Y: torch.Tensor) -> torch.Tensor:
         acqf_name = "qNoisyExpectedHypervolumeImprovement"
     from botorch.optim import optimize_acqf
 
-    ref_point = -REF_POINT_MIN
+    baseline = _straight_baseline()
+    ref_point_min = torch.tensor(
+        [REF_PRESSURE_PA / baseline["pressure_drop_Pa"], REF_MIX]
+    )
+    ref_point = -ref_point_min
 
     print(f"[bo] acquisition: {acqf_name}")
 
@@ -806,7 +904,7 @@ def collect_existing() -> tuple:
                 row = _normalize_objectives_row(row)
                 try:
                     bo = _bo_from_row(row)
-                    j_dp = float(row[OBJ_PDROP])
+                    pressure_ratio = float(row[OBJ_PRESSURE_RATIO])
                     j_mix = float(row[OBJ_MIX])
                 except (KeyError, ValueError):
                     continue
@@ -826,7 +924,7 @@ def collect_existing() -> tuple:
                     continue
                 seen_success.add(key)
                 xs.append([float(bo[k]) for k in BO_PARAM_NAMES])
-                ys.append([j_dp, j_mix])
+                ys.append([pressure_ratio, j_mix])
 
     if skipped_legacy > 0:
         print(
@@ -863,6 +961,74 @@ def collect_attempted_keys() -> set[tuple]:
     return keys
 
 
+def _attempt_counts() -> tuple[int, int]:
+    """Return (attempted, failed) from persisted objective rows."""
+    attempted = 0
+    failed = 0
+    if not RESULTS_DIR.exists():
+        return attempted, failed
+    for sample_dir in sorted(RESULTS_DIR.iterdir()):
+        if not (sample_dir.is_dir() and sample_dir.name.isdigit()):
+            continue
+        path = sample_dir / "objectives.csv"
+        if not path.exists():
+            continue
+        with open(path, newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        if not rows:
+            continue
+        attempted += 1
+        row = rows[-1]
+        if str(row.get("failed", "false")).lower() == "true" or row.get(OBJ_MIX, "") in ("", None):
+            failed += 1
+    return attempted, failed
+
+
+def write_screening_gate(Y: torch.Tensor | None) -> dict:
+    """Evaluate and persist the predeclared topology feasibility gate."""
+    attempted, failed = _attempt_counts()
+    successful = 0 if Y is None else int(Y.shape[0])
+    best_mixing_index = (
+        None
+        if Y is None or successful == 0
+        else float((1.0 - Y[:, 1].clamp(min=0.0).sqrt()).max())
+    )
+    failed_fraction = failed / attempted if attempted else 0.0
+    enough_successes = successful >= SCREENING_N_INIT
+    mixing_passed = (
+        best_mixing_index is not None
+        and best_mixing_index >= SCREENING_MIN_MIXING_INDEX
+    )
+    failure_rate_passed = failed_fraction <= SCREENING_MAX_FAILED_FRACTION
+    passed = enough_successes and mixing_passed and failure_rate_passed
+    report = {
+        "schema_version": 1,
+        "campaign": CFG["campaign"],
+        "passed": passed,
+        "successful_designs": successful,
+        "required_successful_designs": SCREENING_N_INIT,
+        "attempted_designs": attempted,
+        "failed_designs": failed,
+        "failed_fraction": failed_fraction,
+        "maximum_failed_fraction": SCREENING_MAX_FAILED_FRACTION,
+        "best_flux_weighted_mixing_index": best_mixing_index,
+        "minimum_mixing_index": SCREENING_MIN_MIXING_INDEX,
+        "decision": (
+            "continue_to_full_sequential_bo"
+            if passed
+            else "adapt_topology_before_full_sequential_bo"
+        ),
+    }
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    SCREENING_GATE_PATH.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    print(
+        f"[bo] screening gate: {'PASS' if passed else 'NO-GO'}; "
+        f"best MI={best_mixing_index}, failed fraction={failed_fraction:.1%}"
+    )
+    print(f"[bo] screening report -> {SCREENING_GATE_PATH}")
+    return report
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -875,6 +1041,17 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="cap new CFD evaluations in this invocation while preserving total targets",
     )
+    parser.add_argument(
+        "--stage",
+        choices=("screening", "optimization"),
+        default="screening",
+        help="default stops at the 12-point feasibility gate; optimization requests the full campaign",
+    )
+    parser.add_argument(
+        "--override-screening-gate",
+        action="store_true",
+        help="continue despite a recorded no-go decision (the override is printed and remains explicit)",
+    )
     return parser.parse_args()
 
 
@@ -883,8 +1060,12 @@ def main() -> None:
     if args.max_new_evaluations is not None and args.max_new_evaluations < 1:
         raise ValueError("--max-new-evaluations must be positive")
 
+    # A corrected BO result is meaningful only relative to a validated
+    # straight-channel baseline at the same operating point.
+    _straight_baseline()
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     remaining_this_run = args.max_new_evaluations
+    target_init = SCREENING_N_INIT if args.stage == "screening" else N_INIT
 
     def budget_available() -> bool:
         return remaining_this_run is None or remaining_this_run > 0
@@ -896,25 +1077,41 @@ def main() -> None:
 
     X_obs, Y_obs, n_existing = collect_existing()
     attempted_keys = collect_attempted_keys()
-    n_init_done = min(n_existing, N_INIT)
+    if args.stage == "optimization" and n_existing < SCREENING_N_INIT:
+        raise RuntimeError(
+            f"complete the corrected {SCREENING_N_INIT}-design screening stage "
+            "before requesting full optimization"
+        )
+    n_init_done = min(n_existing, target_init)
     if n_existing > 0:
         n_bo_existing = max(0, n_existing - N_INIT)
         print(f"[bo] resuming: {n_existing} completed sample(s) found "
               f"({n_init_done} init, {n_bo_existing} BO)")
         aggregate_all()
-        plot_pareto_front(X_obs, Y_obs, n_init_done,
+        plot_pareto_front(X_obs, Y_obs, min(n_existing, N_INIT),
                           f"PADM - resumed  [{n_existing} sample(s)]")
 
-    n_init_needed = max(0, N_INIT - n_init_done)
+    if args.stage == "optimization" and n_existing >= SCREENING_N_INIT:
+        gate = write_screening_gate(Y_obs)
+        if not gate["passed"] and not args.override_screening_gate:
+            raise RuntimeError(
+                "corrected screening gate is NO-GO. Adapt the topology before the "
+                "full BO campaign, or use --override-screening-gate to record an "
+                "explicit methodological override."
+            )
+        if not gate["passed"]:
+            print("[bo] WARNING: screening no-go explicitly overridden", file=sys.stderr)
+
+    n_init_needed = max(0, target_init - n_init_done)
     if n_init_needed > 0:
         from botorch.utils.sampling import draw_sobol_samples
 
-        print(f"[bo] === Sobol initialisation: {n_init_needed} remaining of {N_INIT} ===")
+        print(f"[bo] === Sobol initialisation: {n_init_needed} remaining of {target_init} ===")
         # Use attempted (successful + failed) locations as the Sobol sequence
         # offset. A failed point is not training data, but it is never retried
         # indefinitely on the next bounded invocation.
         n_init_attempted = len(attempted_keys)
-        n_proposals = N_INIT - n_init_done
+        n_proposals = target_init - n_init_done
         sobol_X = draw_sobol_samples(
             bounds=BOUNDS,
             n=n_init_attempted + n_proposals,
@@ -943,13 +1140,21 @@ def main() -> None:
                 X_obs,
                 Y_obs,
                 n_init_done,
-                f"PADM - init {n_init_done}/{N_INIT}  [{X_obs.shape[0]} sample(s)]",
+                f"PADM - init {n_init_done}/{target_init}  [{X_obs.shape[0]} sample(s)]",
             )
 
-    if n_init_done < N_INIT:
+    if n_init_done < target_init:
         print(
             f"[bo] paused after bounded sequential run: "
-            f"{n_init_done}/{N_INIT} initial designs complete"
+            f"{n_init_done}/{target_init} initial designs complete"
+        )
+        return
+
+    if args.stage == "screening":
+        write_screening_gate(Y_obs)
+        print(
+            "[bo] corrected feasibility screen complete; full optimization was "
+            "not launched automatically"
         )
         return
 
@@ -1009,7 +1214,7 @@ def main() -> None:
     print("\n[bo] Pareto-optimal designs:")
     print(
         f"  {'a_weak':>7}  {'a_strong':>8}  {'t_s':>6}  {'t_m':>6}  {'L_s':>6}  {'L_m':>6}"
-        f"  {'J_dp [m2/s2]':>12}  {'flux MI':>9}"
+        f"  {'dp/dp0':>12}  {'flux MI':>9}"
     )
     for x, y in zip(X_obs[pareto].tolist(), Y_obs[pareto].tolist()):
         bo_params = {k: float(x[j]) for j, k in enumerate(BO_PARAM_NAMES)}

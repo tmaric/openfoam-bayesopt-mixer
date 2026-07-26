@@ -36,6 +36,7 @@ openfoam-bayesopt-mixer/
     ├── FlowCase/                    CadQuery + mesh + simpleFoam template
     ├── ScalarTransportCase/         scalarTransportFoam template
     ├── Snakefile                    isolated CAD-to-objectives workflow
+    ├── research_sequence.py         gated, one-step research driver
     ├── bayes_optimize_sequential.py sequential multi-objective BO
     ├── bayes_optimize_sequential.yaml
     ├── QUICKSTART.md
@@ -76,9 +77,10 @@ publication claims.
 ## Prerequisites
 
 The case was developed with OpenFOAM v2506 and Python 3.10+. The Python
-environment must provide CadQuery, Snakemake, PyYAML, PyTorch, BoTorch,
-GPyTorch, NumPy, Matplotlib, and Pillow. ParaView batch mode is optional and is
-used only for field images.
+environment must provide CadQuery, Snakemake, foamlib, Python VTK, PyYAML,
+PyTorch, BoTorch, GPyTorch, NumPy, Matplotlib, and Pillow. Per-sample field
+images are rendered directly in Python without ParaView, OpenGL, or a display
+server.
 
 Source the `etc/bashrc` belonging to the OpenFOAM installation you want to use;
 the repository does not assume where OpenFOAM is installed.
@@ -108,14 +110,21 @@ snakemake --cores 2 --config results_dir=results/manual_00
 Advance the sequential multi-objective campaign by one evaluation:
 
 ```bash
-python3 bayes_optimize_sequential.py --max-new-evaluations 1
+python3 research_sequence.py status
+python3 research_sequence.py next --max-new-evaluations 1
 ```
 
-The verified campaign targets 32 successful Sobol designs followed by 80
+The corrected campaign first requires three matched baselines and a 12-point
+feasibility screen. After a pass it targets 32 total Sobol designs followed by 80
 strictly sequential (`q = 1`) qLogNEHVI suggestions. A rerun resumes toward
 those totals; it does not add a fresh 80-point batch. OpenFOAM uses two MPI
 ranks and Torch uses one thread. Failed cases are retained in the audit trail,
 excluded from GP fitting, and never converted into fictitious penalties.
+
+The corrected screen completed on 2026-07-26 with 12/12 numerically successful
+designs but a scientific NO-GO: the best mixing index was 0.1698 versus the
+required 0.60, at 34.060 Pa. Full BO is intentionally blocked until a new
+topology with an interface-multiplication mechanism passes the same screen.
 
 Clean generated data:
 
@@ -138,7 +147,7 @@ Then open `http://localhost:8000/`.
 ## Main outputs
 
 ```text
-results/verified_flux_sequential_v2/<sample_id>/
+results/corrected_boundary_v3/<sample_id>/
 ├── FlowCase/pressureDrop.csv
 ├── ScalarTransportCase/mixing.csv
 ├── objectives.csv

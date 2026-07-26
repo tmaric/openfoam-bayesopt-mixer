@@ -1,0 +1,58 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2506                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volVectorField;
+    object      U;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+dimensions      [0 1 -1 0 0 0 0];
+
+// A mean-flow initial guess reduces startup iterations; walls and inlet still
+// impose the exact no-slip and parabolic conditions.
+internalField   uniform (0.01 0 0);
+
+boundaryField
+{
+    inlet
+    {
+        // Fully-developed 2D Poiseuille profile: U(y) = 6*U_mean*y*(H-y)/H^2
+        // U_mean = Re*nu/H = 10*1e-6/1e-3 = 0.01 m/s,  U_max = 1.5*U_mean = 0.015 m/s
+        // Polynomial expansion: 60*y - 60000*y^2   (SI units, y in metres)
+        type            fixedProfile;
+        profile         polynomial
+        (
+            ((60 0 0)       (1 0 0))    // 60 * y^1
+            ((-60000 0 0)   (2 0 0))    // -60000 * y^2
+        );
+        direction       (0 1 0);
+        origin          0;
+        value           uniform (0.01 0 0);
+    }
+
+    outlet
+    {
+        type            zeroGradient;
+    }
+
+    walls
+    {
+        type            noSlip;
+    }
+
+    frontAndBack
+    {
+        type            empty;
+    }
+}
+
+
+// ************************************************************************* //

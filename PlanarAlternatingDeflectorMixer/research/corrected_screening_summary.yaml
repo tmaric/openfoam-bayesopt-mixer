@@ -1,0 +1,42 @@
+schema_version: 1
+campaign: corrected_boundary_v3
+completed: 2026-07-26
+operating_point:
+  reynolds_number: 10
+  schmidt_number: 1000
+  channel_height_m: 0.001
+  channel_length_m: 0.024
+gate:
+  decision: adapt_topology_before_full_sequential_bo
+  passed: false
+  successful_designs: 12
+  failed_designs: 0
+  failed_fraction: 0.0
+  required_successful_designs: 12
+  required_mixing_index: 0.60
+  best_mixing_index: 0.16975605994382592
+  pressure_budget_Pa: 20.0
+samples:
+  - {id: "00000", pressure_drop_Pa: 13.18492434, pressure_ratio: 4.588154380017159, mixing_index: 0.10482292254548875}
+  - {id: "00001", pressure_drop_Pa: 21.25227692, pressure_ratio: 7.395471139718014, mixing_index: 0.1151644220534529}
+  - {id: "00002", pressure_drop_Pa: 13.62692730, pressure_ratio: 4.741964729216671, mixing_index: 0.07851804141372365}
+  - {id: "00003", pressure_drop_Pa: 16.46890252, pressure_ratio: 5.730929149284267, mixing_index: 0.11258690566343343}
+  - {id: "00004", pressure_drop_Pa: 11.11575556, pressure_ratio: 3.868114920090174, mixing_index: 0.09550069098976088}
+  - {id: "00005", pressure_drop_Pa: 15.39663608, pressure_ratio: 5.3577966354854505, mixing_index: 0.09814635333664035}
+  - {id: "00006", pressure_drop_Pa: 12.87887622, pressure_ratio: 4.481654260178472, mixing_index: 0.09212335639691671}
+  - {id: "00007", pressure_drop_Pa: 34.05958220, pressure_ratio: 11.852219794572175, mixing_index: 0.16975605994382592}
+  - {id: "00008", pressure_drop_Pa: 13.36200502, pressure_ratio: 4.649775780080378, mixing_index: 0.08903622464995897}
+  - {id: "00009", pressure_drop_Pa: 14.62752298, pressure_ratio: 5.090156901839958, mixing_index: 0.10363790798584083}
+  - {id: "00010", pressure_drop_Pa: 12.32237972, pressure_ratio: 4.288001889630307, mixing_index: 0.10327707735332203}
+  - {id: "00011", pressure_drop_Pa: 19.06322432, pressure_ratio: 6.6337139224765265, mixing_index: 0.10534699463982122}
+pareto_sample_ids_including_straight_baseline:
+  - straight
+  - "00010"
+  - "00000"
+  - "00003"
+  - "00001"
+  - "00007"
+notes:
+  - All designs passed mesh, flow, mass-balance, scalar-stability, and rendering checks.
+  - The best design below the 20 Pa budget was 00003 with mixing index 0.11258690566343343 at 16.46890252 Pa.
+  - Do not start full BO on this topology; implement and screen a topology with a genuine interface-multiplication mechanism.

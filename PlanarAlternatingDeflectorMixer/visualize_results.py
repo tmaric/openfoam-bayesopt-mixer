@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Visualise BO results using ParaView-rendered per-sample PNGs."""
+"""Visualise BO results using the per-sample Python-rendered field PNGs."""
 
 import argparse
 import csv
@@ -53,7 +53,7 @@ def find_sample_png(
     sample_id: str,
     extra_search_dirs: tuple[Path, ...] = (),
 ) -> Path | None:
-    """Return the per-sample ParaView PNG, or None if not found."""
+    """Return the per-sample field PNG, or None if not found."""
     search_dirs = [*extra_search_dirs, sample_results_dir / "visualizations"]
     for directory in search_dirs:
         png_path = directory / f"{sample_id}_T.png"
@@ -91,7 +91,7 @@ def build_field_title(sample: dict) -> str:
 
 
 def draw_missing_panel(ax, title: str, message: str) -> None:
-    """Draw a placeholder panel when no ParaView PNG is available."""
+    """Draw a placeholder panel when no field PNG is available."""
     ax.axis("off")
     ax.set_title(title, fontsize=9)
     ax.text(
@@ -116,7 +116,7 @@ def collect_per_sample_pngs(
         src = find_sample_png(sample_dir, sid)
         if src is None:
             print(
-                f"  WARNING: {sid}: ParaView PNG missing - animation panel will be blank",
+                f"  WARNING: {sid}: field PNG missing - animation panel will be blank",
                 file=sys.stderr,
             )
             continue
@@ -228,7 +228,7 @@ def create_pareto_animation(
             ax_field.axis("off")
             ax_field.set_title(title, fontsize=9)
         else:
-            draw_missing_panel(ax_field, title, "ParaView field PNG not available")
+            draw_missing_panel(ax_field, title, "Field PNG not available")
 
     ani = animation.FuncAnimation(fig, update, frames=len(samples), interval=700)
 
@@ -250,12 +250,12 @@ def create_pareto_animation(
 
 
 def copy_single_sample_png(results_root: Path, output_dir: Path, sample_id: str) -> None:
-    """Copy one already-rendered ParaView PNG into *output_dir* when present."""
+    """Copy one already-rendered field PNG into *output_dir* when present."""
     output_dir.mkdir(parents=True, exist_ok=True)
     src = find_sample_png(results_root, sample_id, extra_search_dirs=(output_dir,))
     if src is None:
         print(
-            f"WARNING: {sample_id}: ParaView PNG not found under {results_root / 'visualizations'}",
+            f"WARNING: {sample_id}: field PNG not found under {results_root / 'visualizations'}",
             file=sys.stderr,
         )
         return
@@ -303,7 +303,7 @@ def main() -> None:
     print(f"Loaded {len(samples)} samples from {all_csv}")
 
     print()
-    print("[1/2] Collecting per-sample ParaView PNGs ...")
+    print("[1/2] Collecting per-sample field PNGs ...")
     collect_per_sample_pngs(samples, results_root, output_dir)
 
     print()

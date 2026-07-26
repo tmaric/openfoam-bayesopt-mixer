@@ -1,5 +1,4 @@
 from pathlib import Path
-import shutil
 import sys
 
 shell.executable("/bin/bash")
@@ -16,6 +15,10 @@ WORKFLOW = RESULTS_ROOT / ".workflow"
 
 CAD_CONFIG_NAME = "alternating_deflector_cad.yaml"
 CAD_SCRIPT_NAME = "alternating_deflector_cad.py"
+RESEARCH_CONFIG = CASE_ROOT / "research_config.yaml"
+MESH_VALIDATOR = CASE_ROOT / "validate_mesh_patches.py"
+FLOW_VALIDATOR = CASE_ROOT / "validate_flow_balance.py"
+FLOW_CONVERGENCE_VERIFIER = CASE_ROOT / "verify_flow_convergence.py"
 
 TEMPLATE_HYDRO = CASE_ROOT / "FlowCase"
 TEMPLATE_MIXING = CASE_ROOT / "ScalarTransportCase"
@@ -23,10 +26,17 @@ HYDRO = RESULTS_ROOT / "FlowCase"
 MIXING = RESULTS_ROOT / "ScalarTransportCase"
 HYDRO_FOAM  = str(HYDRO  / f"{HYDRO.name}.foam")
 MIXING_FOAM = str(MIXING / f"{MIXING.name}.foam")
+GEOMETRY_MANIFEST = HYDRO / "constant/triSurface/geometry_manifest.json"
+MESH_VALIDATION = HYDRO / "mesh_validation.json"
+FLOW_VALIDATION = HYDRO / "flow_validation.json"
 
 # Explicit source inputs make edits to the template cases invalidate the
 # staging rule. The optional per-sample config is included when BO creates it.
 STAGE_INPUTS = [
+    str(RESEARCH_CONFIG),
+    str(MESH_VALIDATOR),
+    str(FLOW_VALIDATOR),
+    str(FLOW_CONVERGENCE_VERIFIER),
     str(TEMPLATE_HYDRO / CAD_CONFIG_NAME),
     str(TEMPLATE_HYDRO / CAD_SCRIPT_NAME),
     str(TEMPLATE_HYDRO / "0/U"),
@@ -43,19 +53,12 @@ if SAMPLE_CONFIG.exists():
 
 NPROCS = max(1, int(workflow.cores))
 
-# Optional per-sample T-field PNG rendered with ParaView batch mode.
+# Optional per-sample T-field PNG rendered without ParaView or OpenGL.
 # RESULTS_ROOT.name == sample ID (e.g. "00000") when invoked by the BO loop.
 SAMPLE_PNG = RESULTS_ROOT / "visualizations" / f"{RESULTS_ROOT.name}_T.png"
 
 VISUALIZE_SAMPLE_DONE = WORKFLOW / "visualize_sample.done"
-PARAVIEW_RENDER_SCRIPT = CASE_ROOT / "render_latest_mixing_field.py"
-PARAVIEW_BATCH = shutil.which("pvbatch") or shutil.which("pvpython")
-if PARAVIEW_BATCH is None:
-    print(
-        "WARNING: ParaView batch executable (pvpython/pvbatch) not found; "
-        "sample field visualization will be skipped.",
-        file=sys.stderr,
-    )
+FIELD_RENDER_SCRIPT = CASE_ROOT / "render_latest_mixing_field.py"
 
 shell.prefix(
     "set -eo pipefail; "
@@ -80,6 +83,8 @@ rule all:
         MIXING_FOAM,
         str(WORKFLOW / "mixing_post_process.done"),
         str(VISUALIZE_SAMPLE_DONE),
+        str(MESH_VALIDATION),
+        str(FLOW_VALIDATION),
 
 
 rule stage_template_cases:
@@ -101,11 +106,13 @@ rule stage_template_cases:
         cd "{HYDRO}"
         rm -rf constant/polyMesh
         rm -f constant/triSurface/alternating_deflector_mixer.stl
+        rm -f constant/triSurface/geometry_manifest.json
         rm -f 0/V
         rm -rf processor*
         find . -maxdepth 1 -mindepth 1 -type d -regex './[1-9][0-9]*' -exec rm -rf {{}} +
         rm -f badSurfaceWithSubsets.fms
         rm -f pressureDrop.csv
+        rm -f mesh_validation.json flow_validation.json
         rm -rf postProcessing
         rm -rf __pycache__
         rm -f log.*
@@ -137,7 +144,8 @@ rule hydro_geometry:
     input:
         str(WORKFLOW / "stage_template_cases.done"),
     output:
-        str(HYDRO / "constant/triSurface/alternating_deflector_mixer.stl"),
+        stl = str(HYDRO / "constant/triSurface/alternating_deflector_mixer.stl"),
+        manifest = str(GEOMETRY_MANIFEST),
     shell:
         """
         set -eo pipefail
@@ -149,11 +157,15 @@ rule hydro_geometry:
 rule hydro_mesh:
     threads: 1
     input:
-        str(HYDRO / "constant/triSurface/alternating_deflector_mixer.stl"),
-        str(TEMPLATE_HYDRO / "system/meshDict"),
+        stl = str(HYDRO / "constant/triSurface/alternating_deflector_mixer.stl"),
+        manifest = str(GEOMETRY_MANIFEST),
+        mesh_dict = str(TEMPLATE_HYDRO / "system/meshDict"),
+        validator = str(MESH_VALIDATOR),
+        research_config = str(RESEARCH_CONFIG),
     output:
-        str(HYDRO / "constant/polyMesh/boundary"),
-        str(HYDRO / "constant/polyMesh/points"),
+        boundary = str(HYDRO / "constant/polyMesh/boundary"),
+        points = str(HYDRO / "constant/polyMesh/points"),
+        report = str(MESH_VALIDATION),
     shell:
         """
         set -eo pipefail
@@ -169,6 +181,16 @@ rule hydro_mesh:
             echo "ERROR: cfMesh left $last_bad zero-area face(s) in the mesh — aborting" >&2
             exit 1
         fi
+        checkMesh -allGeometry -allTopology 2>&1 | tee log.checkMesh
+        grep -q "Mesh OK" log.checkMesh || {{
+            echo "ERROR: checkMesh did not report Mesh OK" >&2
+            exit 1
+        }}
+        "{PYTHON_BIN}" "{input.validator}" \
+            --case "{HYDRO}" \
+            --manifest "{input.manifest}" \
+            --research-config "{input.research_config}" \
+            --output "{output.report}"
         """
 
 
@@ -207,7 +229,9 @@ rule hydro_decompose:
 rule hydro_simpleFoam:
     threads: NPROCS
     input:
-        str(WORKFLOW / "hydro_decompose.done"),
+        decomposed = str(WORKFLOW / "hydro_decompose.done"),
+        verifier = str(FLOW_CONVERGENCE_VERIFIER),
+        geometry = str(HYDRO / CAD_CONFIG_NAME),
     output:
         done    = str(WORKFLOW / "hydro_simpleFoam.done"),
         csv     = str(HYDRO / "pressureDrop.csv"),
@@ -216,15 +240,20 @@ rule hydro_simpleFoam:
         set -eo pipefail
         mkdir -p "{WORKFLOW}"
         cd "{HYDRO}"
+        if grep -Eq '^topology:[[:space:]]*straight([[:space:]]|$)' "{input.geometry}"; then
+            # The straight case uses a zero transverse velocity. Its relative
+            # Uy residual is ill-conditioned, so run a bounded 600 iterations
+            # and apply the dedicated pressure/Ux convergence verifier below.
+            foamDictionary -entry endTime -set 600 system/controlDict
+        fi
         mpirun -np {threads} simpleFoam -parallel 2>&1 | tee log.simpleFoam
-        grep -q "SIMPLE solution converged" log.simpleFoam || {{
-            echo "ERROR: simpleFoam reached endTime without satisfying residualControl" >&2
-            exit 1
-        }}
         if [ ! -f pressureDrop.csv ] && [ -f processor0/pressureDrop.csv ]; then
             cp processor0/pressureDrop.csv pressureDrop.csv
         fi
         [ -f pressureDrop.csv ] || {{ echo "ERROR: pressureDrop.csv not produced by pressureDrop FO"; exit 1; }}
+        "{PYTHON_BIN}" "{input.verifier}" \
+            log.simpleFoam pressureDrop.csv "{input.geometry}" \
+            --window 100 --min-rows 400 --pressure-span-tol 1e-7 --residual-tol 1e-5
         touch "{output.done}"
         """
 
@@ -245,12 +274,33 @@ rule hydro_reconstruct:
         """
 
 
+rule hydro_validate_flow:
+    threads: 1
+    input:
+        reconstructed = str(WORKFLOW / "hydro_reconstruct.done"),
+        manifest = str(GEOMETRY_MANIFEST),
+        validator = str(FLOW_VALIDATOR),
+        research_config = str(RESEARCH_CONFIG),
+    output:
+        str(FLOW_VALIDATION),
+    shell:
+        """
+        set -eo pipefail
+        "{PYTHON_BIN}" "{input.validator}" \
+            --case "{HYDRO}" \
+            --manifest "{input.manifest}" \
+            --research-config "{input.research_config}" \
+            --output "{output}"
+        """
+
+
 rule copy_hydro_to_mixing:
     threads: 1
     input:
         str(HYDRO / "pressureDrop.csv"),
         str(HYDRO / "constant/polyMesh/boundary"),
         str(WORKFLOW / "hydro_reconstruct.done"),
+        str(FLOW_VALIDATION),
     output:
         str(MIXING / "constant/polyMesh/boundary"),
         str(MIXING / "0/U"),
@@ -312,6 +362,7 @@ rule mixing_scalar_transport:
     input:
         decomposed = str(WORKFLOW / "mixing_decompose.done"),
         verifier = str(CASE_ROOT / "verify_scalar_convergence.py"),
+        geometry = str(HYDRO / CAD_CONFIG_NAME),
     output:
         done    = str(WORKFLOW / "mixing_scalar_transport.done"),
         csv     = str(MIXING / "mixing.csv"),
@@ -320,13 +371,31 @@ rule mixing_scalar_transport:
         set -eo pipefail
         mkdir -p "{WORKFLOW}"
         cd "{MIXING}"
-        mpirun -np {threads} scalarTransportFoam -parallel 2>&1 | tee log.scalarTransportFoam
-        if [ ! -f mixing.csv ] && [ -f processor0/mixing.csv ]; then
-            cp processor0/mixing.csv mixing.csv
+        # Advance in bounded chunks and stop only when the objective itself is
+        # stable. Algebraic residual convergence alone was shown not to imply a
+        # stationary outlet metric in the corrected high-Peclet cases.
+        foamDictionary -entry startFrom -set latestTime system/controlDict
+        foamDictionary -entry SIMPLE/residualControl/T -set 1e-12 system/fvSolution
+        : > log.scalarTransportFoam
+        converged=0
+        for target_end in 600 1200 1800 2400; do
+            foamDictionary -entry endTime -set "$target_end" system/controlDict
+            mpirun -np {threads} scalarTransportFoam -parallel 2>&1 | tee -a log.scalarTransportFoam
+            if [ ! -f mixing.csv ] && [ -f processor0/mixing.csv ]; then
+                cp processor0/mixing.csv mixing.csv
+            fi
+            if [ -f mixing.csv ] && \
+               "{PYTHON_BIN}" "{input.verifier}" mixing.csv \
+                   --window 50 --min-rows 200 --intensity-tol 1e-4 --mean-tol 1e-4; then
+                converged=1
+                break
+            fi
+            echo "[scalar-convergence] objective not stable by $target_end; continuing sequentially"
+        done
+        if [ "$converged" -ne 1 ]; then
+            echo "ERROR: scalar objective did not stabilize by 2400 iterations" >&2
+            exit 1
         fi
-        [ -f mixing.csv ] || {{ echo "ERROR: mixing.csv not produced by patchMixingQuality FO"; exit 1; }}
-        "{PYTHON_BIN}" "{input.verifier}" mixing.csv \
-            --window 50 --min-rows 200 --intensity-tol 1e-4 --mean-tol 1e-4
         touch "{output.done}"
         """
 
@@ -350,8 +419,8 @@ rule mixing_reconstruct:
 rule mixing_post_process:
     """Legacy samplingPlane hook kept for workflow compatibility.
 
-    The old OpenFOAM samplingPlane export is disabled in favour of ParaView
-    batch rendering from the reconstructed mixing case.
+    The old OpenFOAM samplingPlane export is disabled in favour of a Python
+    foamlib/VTK render from the reconstructed mixing case.
     """
     threads: 1
     input:
@@ -365,16 +434,15 @@ rule mixing_post_process:
         cd "{MIXING}"
         # Legacy path kept for reference only:
         # postProcess -func samplingPlane -latestTime 2>&1 | tee log.postProcess_samplingPlane
-        echo "WARNING: legacy samplingPlane post-processing is disabled; using ParaView batch rendering instead." | tee log.postProcess_samplingPlane
+        echo "WARNING: legacy samplingPlane post-processing is disabled; using Python foamlib/VTK rendering instead." | tee log.postProcess_samplingPlane
         touch "{output}"
         """
 
 
 rule visualize_sample:
-    """Render the latest reconstructed mixing field with ParaView in batch mode.
+    """Render the latest reconstructed field with foamlib, VTK, and Pillow.
 
-    When pvpython/pvbatch is unavailable, the render is skipped with a warning
-    and the workflow continues without a per-sample PNG.
+    Rendering is deliberately non-fatal because the PNG is not a BO objective.
     """
     threads: 1
     input:
@@ -382,19 +450,17 @@ rule visualize_sample:
         foam = MIXING_FOAM,
     output:
         str(VISUALIZE_SAMPLE_DONE),
-    params:
-        paraview_batch = PARAVIEW_BATCH or "",
     shell:
         """
         set -eo pipefail
         mkdir -p "{WORKFLOW}" "{RESULTS_ROOT}/visualizations"
-        if [ -n "{params.paraview_batch}" ]; then
-            if ! env VTK_DEFAULT_RENDER_WINDOW_OFFSCREEN=1 "{params.paraview_batch}" "{PARAVIEW_RENDER_SCRIPT}"                 --case-foam "{input.foam}"                 --output "{SAMPLE_PNG}"                 --field T; then
-                echo "WARNING: ParaView rendering failed for sample {RESULTS_ROOT.name}; BO objectives are complete and the workflow will continue." | tee "{RESULTS_ROOT}/visualizations/visualization.warning.log" >&2
-                rm -f "{SAMPLE_PNG}"
-            fi
-        else
-            echo "WARNING: ParaView batch executable (pvpython/pvbatch) not found; skipping field visualization for sample {RESULTS_ROOT.name}." | tee "{RESULTS_ROOT}/visualizations/visualization.warning.log" >&2
+        rm -f "{RESULTS_ROOT}/visualizations/visualization.warning.log"
+        if ! "{PYTHON_BIN}" "{FIELD_RENDER_SCRIPT}" \
+                --case-foam "{input.foam}" \
+                --output "{SAMPLE_PNG}" \
+                --field T; then
+            echo "WARNING: Python field rendering failed for sample {RESULTS_ROOT.name}; BO objectives are complete and the workflow will continue." | tee "{RESULTS_ROOT}/visualizations/visualization.warning.log" >&2
+            rm -f "{SAMPLE_PNG}"
         fi
         touch "{output}"
         """
@@ -447,6 +513,8 @@ rule agglomerate:
         yaml    = str(HYDRO / CAD_CONFIG_NAME),
         pdrop   = str(HYDRO / "pressureDrop.csv"),
         mixing  = str(MIXING / "mixing.csv"),
+        flow_validation = str(FLOW_VALIDATION),
+        research_config = str(RESEARCH_CONFIG),
     output:
         str(RESULTS_ROOT / "objectives.csv"),
     shell:
@@ -456,6 +524,8 @@ rule agglomerate:
             --yaml        "{input.yaml}"   \
             --pdrop       "{input.pdrop}"  \
             --mixing      "{input.mixing}" \
+            --flow-validation "{input.flow_validation}" \
+            --research-config "{input.research_config}" \
             --output      "{output}"       \
             --results-dir "{RESULTS_ROOT}"
         """

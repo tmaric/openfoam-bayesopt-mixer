@@ -1,0 +1,15 @@
+# Unobstructed channel with the same H, L, depth and operating point.
+scale: 1.0e-3
+topology: straight
+baseline_name: straight
+H: 1.0
+L0: 2.0
+N: 5
+L_cell: 4.0
+L_s: 1.4
+L_m: 1.0
+w_s: 0.38
+t_s: 0.10
+t_m: 0.05
+delta: 0.0
+k: 0.0

@@ -4,10 +4,14 @@
 # toward these targets; it does not add n_bo evaluations on every invocation.
 # Use --max-new-evaluations for a bounded pilot or maintenance run.
 
-campaign: verified_flux_sequential_v2
-results_dir: results/verified_flux_sequential_v2
+campaign: corrected_boundary_v3
+results_dir: results/corrected_boundary_v3
 model_file: gp_checkpoint.pt
 
+# The default driver stage stops after this corrected feasibility screen.  The
+# full campaign must be requested explicitly and is blocked unless the screen
+# passes (or the researcher records an explicit override).
+screening_n_init: 12
 n_init: 32
 n_bo:   80
 cores:  2
@@ -25,8 +29,21 @@ acquisition:
 # Fixed minimisation-space reference point. The acquisition receives its
 # negation because the BoTorch model is trained to maximise -Y.
 reference_point:
-  pdrop_m2_s2: 0.02
+  pressure_drop_Pa: 20.0
   flux_intensity_of_segregation: 1.0
+
+baseline_summary: results/corrected_boundary_v3_baselines/baseline_summary.csv
+
+screening_gate:
+  minimum_mixing_index: 0.60
+  maximum_failed_fraction: 0.25
+
+# Leave the corrected screening objectives in physical/linear space.  Log
+# transforms may be enabled only after the screen demonstrates positive,
+# sufficiently broad target distributions.
+objective_transforms:
+  pressure_ratio: linear
+  segregation: linear
 
 bo_parameters:
   # Actual cosine amplitude on the weak wall, excluding the 0.01 H CAD floor.

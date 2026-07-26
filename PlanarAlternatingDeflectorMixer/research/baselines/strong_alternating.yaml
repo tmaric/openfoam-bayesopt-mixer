@@ -1,0 +1,17 @@
+# High-asymmetry corrected PADM reference inside the mesh-safe design envelope.
+scale: 1.0e-3
+topology: alternating_deflector
+baseline_name: strong_alternating
+H: 1.0
+L0: 2.0
+N: 5
+L_cell: 4.0
+L_s: 1.162148244399209
+L_m: 0.837736037280779
+w_s: 0.45
+t_s: 0.11911191078834235
+t_m: 0.10090245308842286
+delta: 0.30
+k: 0.0
+a_weak: 0.05
+a_strong: 0.35

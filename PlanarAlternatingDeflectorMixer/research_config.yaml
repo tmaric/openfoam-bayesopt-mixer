@@ -1,0 +1,28 @@
+# Fixed physical conditions and decision gates for the corrected study.
+# Geometry dimensions remain in FlowCase/alternating_deflector_cad.yaml.
+
+operating_point:
+  fluid_density_kg_m3: 998.2
+  kinematic_viscosity_m2_s: 1.0e-6
+  scalar_diffusivity_m2_s: 1.0e-9
+  mean_velocity_m_s: 0.01
+  reynolds_number: 10.0
+  schmidt_number: 1000.0
+
+validation:
+  mesh_patch_area_relative_tolerance: 0.10
+  mesh_boundary_position_tolerance_H: 0.002
+  flow_rate_relative_tolerance: 0.03
+  mass_balance_relative_tolerance: 1.0e-5
+  straight_pressure_drop_relative_tolerance: 0.15
+
+screening_gate:
+  successful_designs: 12
+  minimum_mixing_index: 0.60
+  maximum_failed_fraction: 0.25
+
+publication_targets:
+  useful_mixing_index: 0.60
+  competitive_mixing_index: 0.80
+  strong_mixing_index: 0.90
+  pressure_drop_budget_Pa: 20.0

@@ -3,14 +3,21 @@
 ## Scope
 
 This study models a two-dimensional passive micromixer with a centre baffle
-and five repeated pairs of cosine wall deflectors. The stronger deflector
-alternates between the top and bottom wall. It bends and stretches one inlet
-scalar interface; it is not a three-dimensional split-and-recombine network.
+and five repeated pairs of cosine wall deflectors. It is not a three-dimensional
+split-and-recombine network.
 
-All CAD dimensions are normalized by `H = 1` and converted to SI units by
-`scale = 1e-3`.
+## Corrected-boundary prerequisite
 
-## Verified six-dimensional parameterization
+The former campaigns are invalid because the CAD generator classified every
+x-normal obstacle face as an inlet or outlet. The corrected generator requires
+the complete inlet face to lie at `x=0` and the complete outlet face to lie at
+`x=L`. Every generated mesh is independently checked for patch location, area,
+mesh quality, flow rate, and mass balance before objectives are accepted.
+
+The archived `results/` and `results/verified_flux_sequential_v2/` values must
+not be pooled with the corrected campaign.
+
+## Six-dimensional parameterization
 
 | BO coordinate | Bounds | CAD mapping |
 |---|---:|---|
@@ -21,103 +28,96 @@ All CAD dimensions are normalized by `H = 1` and converted to SI units by
 | `L_c` | 0.40–2.40 | deflector interaction length |
 | `L_s_ratio` | 0–1 | partitions the remaining cell length into `L_s` and `L_m` |
 
-The realized CAD vector stored in each sample is
+The CAD now uses a 0.02 H endpoint floor so every deflector end spans more
+than one fine cell. Its mesh-safety algebra includes the floor on both walls.
+The merge-to-split thickness transition is resolved over four CAD minimum
+feature lengths, and the cosine tessellation is commensurate with the CFD mesh.
+
+## Objectives and retained metrics
+
+Both BO objectives are minimized:
 
 ```text
-(w_s, t_s, t_m, L_s, L_m, delta, k, a_weak, a_strong)
-```
-
-where `delta = a_strong - a_weak`, `k = 0`, and
-`L_s + L_c + L_m = L_cell = 4`. Fixing `k = 0` removes the old downstream
-amplitude trend until evidence supports adding it back.
-
-The transform also enforces two fine mesh cells across `t_m`, one fine cell
-across the splitter-thickness step, four fine cells across the split-side gap,
-and `0.8 <= L_s,L_m <= 1.8`.
-
-## Objectives
-
-Both objectives are minimized:
-
-```text
-J_dp  = <p>_inlet - <p>_outlet                    [m²/s²]
+J_dp  = DeltaP / DeltaP_straight                  [-]
 J_mix = flux_weighted_intensity_of_segregation    [-]
 ```
 
-OpenFOAM uses kinematic pressure, so physical pressure loss is
-`DeltaP = rho * J_dp`. For water, a value of `0.0014 m²/s²` is approximately
-`1.4 Pa`.
+Every objective row also retains kinematic and dimensional pressure drop,
+flow rate, pumping power, mass-balance error, and the literature-style mixing
+index `1-sqrt(J_mix)`.
 
-`J_mix` weights every outlet face by positive scalar flux. For communication
-with passive-mixer literature, the plots report
-`mixing index = 1 - sqrt(J_mix)`. This is the usual relative-standard-deviation
-form; it is not the legacy `1 - J_mix` display.
+## Corrected research sequence
 
-## Sequential BO campaign
+The default command advances at most one CFD evaluation and never runs cases
+in parallel:
 
-The checked-in campaign is deliberately resumable and resource limited:
+```bash
+python research_sequence.py status
+python research_sequence.py next --max-new-evaluations 1
+```
+
+The sequence is gated:
+
+1. validated straight, symmetric-deflector, and strong-alternating baselines;
+2. twelve corrected scrambled-Sobol screening designs;
+3. a no-go unless the best mixing index reaches 0.60 and failures stay below
+   25%;
+4. only after a pass, explicit `python research_sequence.py optimization` to
+   expand to 32 Sobol designs and then 80 strictly sequential BO evaluations.
+
+The corrected baseline values at `Re=10`, `Sc=1000` are:
+
+| Baseline | Pressure (Pa) | `DeltaP/DeltaP0` | Mixing index |
+|---|---:|---:|---:|
+| Straight | 2.874 | 1.000 | 0.1003 |
+| Symmetric deflectors | 10.812 | 3.762 | 0.0901 |
+| Strong alternating | 30.509 | 10.617 | 0.1450 |
+
+The straight pressure result differs from the fully developed parallel-plate
+solution by only 0.039%. The strong alternating reference already exceeds the
+predeclared 20 Pa budget and remains far below the 0.60 mixing gate.
+
+Corrected screen result (2026-07-26): all twelve designs completed and passed
+every numerical validation, with no failures. The formal decision is NO-GO.
+The best mixing index was only 0.1698 at 34.060 Pa (pressure ratio 11.852),
+and the best design below 20 Pa reached only 0.1126 at 16.469 Pa. Both are far
+below the predeclared 0.60 continuation threshold. The full 32+80 BO stage
+must not be run on this topology.
+
+## Sequential BO configuration
 
 ```text
-32 feasible scrambled-Sobol designs
+12-design feasibility gate
+                 ↓
+32 total feasible scrambled-Sobol designs
                  ↓
 ARD Matérn-5/2 SingleTaskGP on the negated two-objective response
 Normalize inputs + standardize outputs
                  ↓
-qLogNEHVI, fixed physical reference point
-32 restarts, 1024 raw samples, q = 1
+qLogNEHVI, 32 restarts, 1024 raw samples, q = 1
                  ↓
 80 sequential BO evaluations
 ```
 
-`q = 1` is validated at startup. Each CFD evaluation uses two MPI ranks and
-Torch uses one thread. A failed CFD case is logged with blank targets and is
-excluded from GP fitting; it never becomes an artificial penalty observation.
+Scalar transport advances in sequential 600-iteration chunks up to 2400 and
+stops at the first chunk where the final 50 outlet measurements satisfy the
+fixed stability tolerance. Algebraic residual convergence alone is not used
+as a substitute for objective stability.
 
 ## Run from any clone location
-
-Source an OpenFOAM v2506 environment and use the Python environment containing
-the packages in `requirements.txt`. No installation or repository path is
-stored in the workflow.
 
 ```bash
 source /path/to/OpenFOAM-v2506/etc/bashrc
 cd /path/to/openfoam-bayesopt-mixer
 ./Allwmake
 cd PlanarAlternatingDeflectorMixer
-python bayes_optimize_sequential.py --max-new-evaluations 1
+export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+python research_sequence.py next --max-new-evaluations 1
 ```
 
-Repeat the last command to advance the same campaign by one sequential
-evaluation. Omit `--max-new-evaluations` only when the machine may remain
-occupied until the configured total of 32 initial plus 80 BO evaluations is
-reached. Results and the GP checkpoint are kept below
-`results/verified_flux_sequential_v2/` and are not version controlled.
-
-For a single explicitly parameterized workflow, provide the required
-Snakemake configuration and retain `--cores 2`.
-
-## Verification status
-
-Two distinct Sobol geometries have completed the revised scalar calculation:
-
-| Pilot | `J_dp` (m²/s²) | Flux `I_s` | `1-sqrt(I_s)` | Scalar stability |
-|---|---:|---:|---:|---:|
-| first | 0.00141115 | 0.780094 | 0.1168 | final-50 span `3.8e-5` |
-| second | 0.00119273 | 0.889416 | 0.0569 | final-50 span `2.0e-6` |
-
-The second geometry exposed a GAMG coarse-grid failure. The checked-in scalar
-solver now uses PBiCGStab/DILU with equation relaxation 0.7; rerunning the exact
-case then completed all 600 iterations. This is a workflow pilot, not evidence
-that the Pareto front has converged.
-
-## Legacy 28-sample campaign
-
-The original eight-Sobol plus twenty-BO result set remains under `results/` for
-provenance. It used a different seven-dimensional parameterization,
-first-order upwind scalar convection, an unweighted mixing objective, only 200
-flow iterations, and penalty values for failures. Its front and reported
-`1-I_s` mixing values must not be pooled with or used to validate the revised
-campaign.
+All stored paths are clone-relative. Corrected results are written below
+`results/corrected_boundary_v3_baselines/` and
+`results/corrected_boundary_v3/`; runtime results are not version controlled.
 
 See `docs/index.html` for the Reveal.js presentation and
-`docs/RESEARCH_PLAN.md` for the validation gates required before publication.
+`docs/RESEARCH_PLAN.md` for the publication decision gates.

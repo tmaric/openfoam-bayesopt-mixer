@@ -4,6 +4,7 @@
 # Script: alternating_deflector_cad.py
 
 scale: 1.0e-3       # 1 normalised unit = 1 mm = 1e-3 m
+topology: alternating_deflector
 
 H:      1.0         # channel height
 L0:     2.0         # inlet / outlet buffer length

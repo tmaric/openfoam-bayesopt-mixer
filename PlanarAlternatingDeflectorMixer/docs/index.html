@@ -13,7 +13,7 @@
       <section class="title-slide">
         <div class="eyebrow">CAD → CFD → Bayesian optimization</div>
         <h1>Planar Alternating-Deflector<br>Micromixer</h1>
-        <p class="subtitle">What the geometry actually does, why the original 28-point front is only exploratory, and how the verified six-dimensional sequential campaign is run.</p>
+        <p class="subtitle">Boundary-audited CAD/CFD, matched baselines, and a gated sequential search for a defensible mixing–pressure Pareto front.</p>
         <svg class="geometry-strip" viewBox="0 0 1450 170" role="img" aria-label="Five-cell planar alternating-deflector channel">
           <rect x="5" y="24" width="1440" height="122" fill="#fffdf8" stroke="#2f78a8" stroke-width="6"/>
           <g fill="#f6b66e" stroke="#ad5c10" stroke-width="3">
@@ -31,7 +31,71 @@
       </section>
 
       <section>
-        <h2>The computed device is not a true SAR mixer</h2>
+        <h2>The boundary audit invalidated every former objective</h2>
+        <div class="two-col">
+          <div>
+            <p class="claim">Normal-based patch assignment turned internal deflector faces into inlets and outlets.</p>
+            <ul>
+              <li>old inlet bounds: <code>x = 0…22 mm</code>;</li>
+              <li>old outlet bounds: <code>x = 2…24 mm</code>;</li>
+              <li>old inlet area: 2.85 times the physical cross-section;</li>
+              <li>velocity and scalar were injected through obstacle faces.</li>
+            </ul>
+          </div>
+          <div>
+            <p class="definition"><strong>Repair:</strong> every point of an inlet/outlet CAD face must lie on <code>x=0</code> or <code>x=L</code>.</p>
+            <p>Independent polyMesh reconstruction now checks patch bounds and areas. Full <code>checkMesh</code>, flow-rate, and mass-balance checks run before an objective can be written.</p>
+            <p class="caution">The legacy and <code>verified_flux_sequential_v2</code> fronts are provenance only.</p>
+          </div>
+        </div>
+        <aside class="notes">[Sources] Corrected classification and CAD manifest: ../FlowCase/alternating_deflector_cad.py. Independent checks: ../validate_mesh_patches.py and ../validate_flow_balance.py.</aside>
+      </section>
+
+      <section>
+        <h2>Corrected matched baselines set a demanding starting point</h2>
+        <table class="compact-table">
+          <thead><tr><th>Baseline</th><th>Pressure (Pa)</th><th>Δp/Δp<sub>0</sub></th><th>1−√I<sub>s,flux</sub></th></tr></thead>
+          <tbody>
+            <tr><td>Straight channel</td><td>2.874</td><td>1.000</td><td>0.1003</td></tr>
+            <tr><td>Symmetric deflectors</td><td>10.812</td><td>3.762</td><td>0.0901</td></tr>
+            <tr><td>Strong alternating</td><td>30.509</td><td>10.617</td><td>0.1450</td></tr>
+            <tr><td>Best screen ≤20 Pa: 00003</td><td>16.469</td><td>5.731</td><td>0.1126</td></tr>
+            <tr><td>Best screen overall: 00007</td><td>34.060</td><td>11.852</td><td>0.1698</td></tr>
+          </tbody>
+        </table>
+        <div class="two-col" style="margin-top:45px">
+          <p class="evidence">Straight-channel CFD differs from the parallel-plate analytical pressure drop by only 0.039%.</p>
+          <p class="claim">All twelve corrected designs remain far below the 0.60 target; the best mixer also exceeds 20 Pa.</p>
+        </div>
+        <aside class="notes">[Sources] Corrected baselines: ../results/corrected_boundary_v3_baselines/baseline_summary.csv. Tracked screen summary: ../research/corrected_screening_summary.yaml.</aside>
+      </section>
+
+      <section>
+        <h2>The predeclared screen gives a decisive NO-GO</h2>
+        <div class="two-col">
+          <div>
+            <p class="evidence"><strong>12/12</strong> designs passed mesh, flow, mass-balance, scalar-stability, and rendering checks.</p>
+            <p class="evidence"><strong>0%</strong> numerical failures, below the allowed 25%.</p>
+          </div>
+          <div>
+            <p class="caution"><strong>0.1698</strong> best mixing index, versus the required 0.60.</p>
+            <p class="caution"><strong>34.060 Pa</strong> for that best mixer, versus the 20 Pa budget.</p>
+          </div>
+        </div>
+        <table class="compact-table" style="margin-top:45px">
+          <thead><tr><th>Decision input</th><th>Observed</th><th>Required</th><th>Result</th></tr></thead>
+          <tbody>
+            <tr><td>Successful corrected designs</td><td>12</td><td>12</td><td>pass</td></tr>
+            <tr><td>Failure fraction</td><td>0.00</td><td>≤0.25</td><td>pass</td></tr>
+            <tr><td>Best mixing index</td><td>0.1698</td><td>≥0.60</td><td>fail</td></tr>
+          </tbody>
+        </table>
+        <p class="claim">Do not spend the 32+80 BO budget on this topology. Introduce a genuine interface-multiplication mechanism and repeat the matched screen.</p>
+        <aside class="notes">[Sources] Formal runtime gate: ../results/corrected_boundary_v3/screening_gate.json. Tracked result summary: ../research/corrected_screening_summary.yaml.</aside>
+      </section>
+
+      <section>
+        <h2>Legacy fields show why the device is not a true SAR mixer</h2>
         <div class="two-col wide-right">
           <div>
             <p class="claim">The scalar interface bends and smears, but it does not multiply into four or eight lamellae.</p>
@@ -44,7 +108,7 @@
           </div>
           <div>
             <img class="hero-field" src="assets/sample-00027-T.png" alt="Computed scalar concentration for the best-mixing sample">
-            <p class="image-caption">Best stored mixing sample 00027. The red/blue interface remains a single ordered transition across the outlet.</p>
+            <p class="image-caption">Legacy sample 00027 is not valid quantitative evidence. Qualitatively, its red/blue interface remains a single ordered transition across the outlet.</p>
           </div>
         </div>
         <aside class="notes">[Sources] Field render: ../results/00027/visualizations/00027_T.png. Geometry topology: ../FlowCase/alternating_deflector_cad.py. The old four/eight-layer diagrams are in ../../docs/obsidian/03-Resources/.</aside>
@@ -149,7 +213,7 @@
             </ul>
           </div>
         </div>
-        <p class="caution">Every candidate runs for 200–600 scalar iterations and must keep the final-50 flux mean and intensity spans below 10⁻⁴.</p>
+        <p class="caution">Scalar transport advances in resumable 600-iteration chunks, up to 2400, and stops at the first final-50 flux-mean/intensity span below 10⁻⁴.</p>
         <aside class="notes">[Sources] Flow dictionaries: ../FlowCase/0/U, ../FlowCase/constant/transportProperties, ../FlowCase/constant/turbulenceProperties. Scalar dictionaries: ../ScalarTransportCase/0/T, ../ScalarTransportCase/constant/transportProperties, ../ScalarTransportCase/system/fvSchemes.</aside>
       </section>
 
@@ -172,9 +236,9 @@
         <div class="two-col">
           <div>
             <h3>Hydraulic objective</h3>
-            <p class="formula">J<sub>dp</sub>(θ) = ⟨p⟩<sub>in</sub> − ⟨p⟩<sub>out</sub></p>
-            <p>OpenFOAM stores <strong>kinematic pressure</strong>, so the native unit is <code>m²/s²</code>.</p>
-            <p class="evidence">Physical ΔP in pascals is ρJ<sub>dp</sub>. For water, the observed 0.0010–0.0026 m²/s² corresponds to roughly 1.0–2.6 Pa.</p>
+            <p class="formula">J<sub>dp</sub>(θ) = Δp(θ) / Δp<sub>straight</sub></p>
+            <p>The objective is dimensionless and matched to the validated straight channel. Raw kinematic pressure and physical pascals remain in every result row.</p>
+            <p class="evidence">The acquisition reference pressure corresponds to a predeclared 20 Pa engineering budget.</p>
           </div>
           <div>
             <h3>Mixing objective</h3>
@@ -227,8 +291,8 @@
               <li><code>qLogNoisyExpectedHypervolumeImprovement</code>;</li>
               <li>fallback to <code>qNEHVI</code> for older BoTorch;</li>
               <li><code>q = 1</code>, 32 restarts, 1024 raw samples;</li>
-              <li>fixed reference point: <code>(0.02, 1.0)</code> in minimization units;</li>
-              <li>32 Sobol starts + 80 strictly sequential suggestions.</li>
+              <li>reference: 20 Pa and segregation intensity 1.0;</li>
+              <li>12-point feasibility gate, then 32 Sobol total + 80 sequential suggestions.</li>
             </ul>
           </div>
         </div>
@@ -236,7 +300,7 @@
       </section>
 
       <section>
-        <h2>Two pilots verify resume and convergence gates</h2>
+        <h2>The former pilots are retained only as invalid provenance</h2>
         <table class="compact-table">
           <thead><tr><th>Pilot</th><th>J<sub>dp</sub> (m²/s²)</th><th>Flux I<sub>s</sub></th><th>1−√I<sub>s</sub></th><th>Final-50 span</th></tr></thead>
           <tbody>
@@ -246,8 +310,8 @@
         </table>
         <div class="two-col" style="margin-top:45px">
           <div>
-            <p class="claim">A pilot is a workflow test, not a Pareto-front estimate.</p>
-            <p>Both flow solves converged explicitly. Both scalar results satisfy the engineering stability window.</p>
+            <p class="claim">Their numerical convergence does not rescue their incorrect physical boundary conditions.</p>
+            <p>They must not seed, normalize, or validate the corrected campaign.</p>
           </div>
           <div>
             <p>The second geometry exposed a GAMG coarse-grid singularity. PBiCGStab/DILU completed the exact same high-Péclet case.</p>
@@ -330,16 +394,16 @@
       </section>
 
       <section class="closing">
-        <h2>The BO study is useful—once its claim matches its geometry</h2>
-        <p class="claim">The methodology is now aligned with the geometry; the scientific claim still depends on completing the sequential campaign and its numerical and comparative validation.</p>
+        <h2>The screen worked: now change the mixing mechanism</h2>
+        <p class="claim">The corrected evidence rejects full BO of this planar alternating-deflector topology. The next publishable step is topology adaptation, not a larger optimization budget.</p>
         <div class="two-col">
           <div>
             <h3 style="color:white">Immediate validation</h3>
             <ul>
-              <li>complete or defensibly stop the 32 + 80 sequential campaign;</li>
-              <li>repeat selected Pareto points on three refined meshes;</li>
-              <li>add a straight-channel and symmetric-deflector baseline;</li>
-              <li>quantify uncertainty and report dimensional ΔP.</li>
+              <li>freeze the corrected 12-point screen as the PADM no-go result;</li>
+              <li>implement one topology with interface multiplication;</li>
+              <li>repeat the matched baselines and 12-point gate;</li>
+              <li>spend the full BO budget only after a pass.</li>
             </ul>
           </div>
           <div>

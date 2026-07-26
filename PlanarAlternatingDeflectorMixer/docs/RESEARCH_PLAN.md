@@ -1,129 +1,123 @@
-# Research plan: verified sequential optimization
+# Research plan: corrected, gated sequential optimization
 
-## Decision already made
+## Scientific status
 
-The device is studied as a **Planar Alternating-Deflector Micromixer (PADM)**,
-not as a split-and-recombine mixer. The present 2-D topology does not split,
-permute, and restack fluid layers.
+This is a Planar Alternating-Deflector Micromixer (PADM), not a true
+split-and-recombine mixer. The legacy and `verified_flux_sequential_v2`
+campaigns are invalid: internal x-normal obstacle faces were assigned to the
+inlet and outlet patches. Their pressure and scalar objectives must never be
+combined with corrected data.
 
-The historical 28-point campaign is an exploratory archive. Its numerical
-scheme, objective definition, design variables, and convergence policy differ
-from the verified campaign, so old and new targets are not interchangeable.
+## Phase 0 — geometry and physics repair
 
-## Phase 0 — workflow pilot
+Status: complete.
 
-Status: complete for two distinct Sobol geometries.
+- Classify inlet/outlet by complete face location at `x=0` and `x=L`.
+- Emit a CAD geometry manifest with boundary bounds and areas.
+- Reconstruct mesh patch polygons independently and reject incorrect location,
+  area, type, short edges, concave cells, or other failed `checkMesh` tests.
+- Require `Q = U_mean A` within 3% and relative mass imbalance below `1e-5`.
+- Use mesh-aware deflector endpoint floors, curve tessellation, and centre
+  splitter transitions.
+- Accept obstructed flow only after SIMPLE residual convergence. The straight
+  baseline additionally permits a pressure/Ux convergence test because its
+  physically zero transverse component has an ill-conditioned relative
+  residual.
+- Advance scalar transport in resumable chunks and require objective stability.
 
-- Use second-order bounded `limitedLinear 1` scalar convection.
-- Require explicit SIMPLE flow convergence, with up to 2000 iterations.
-- Run at least 200 and at most 600 scalar iterations, then require the final 50
-  samples to have spans no greater than `1e-4` in flux-weighted mean and
-  segregation intensity.
-- Use PBiCGStab/DILU for the high-Peclet scalar matrix and equation relaxation
-  0.7.
-- Minimize kinematic pressure drop and flux-weighted intensity of segregation.
-- Exclude failed or unconverged evaluations from the GP, retaining their
-  geometry and failure status for later feasibility modelling.
+## Phase 1 — matched baselines
 
-Pilot observations are recorded in `../QUICKSTART.md`. The pilot establishes
-workflow operation only; it does not estimate an optimum.
+Status: complete at `Re=10`, `Sc=1000`, `H=1 mm`, and `L=24 mm`.
 
-## Phase 1 — space-filling initialization
+| Baseline | Pressure (Pa) | Pressure ratio | Mixing index |
+|---|---:|---:|---:|
+| Straight | 2.8737 | 1.000 | 0.1003 |
+| Symmetric deflectors | 10.8116 | 3.762 | 0.0901 |
+| Strong alternating | 30.5091 | 10.617 | 0.1450 |
 
-Run 32 scrambled-Sobol designs in the six-dimensional feasible box. Execute
-strictly one design at a time (`q = 1`), with two OpenFOAM MPI ranks and one
-Torch thread.
+The analytical straight-channel pressure drop is 2.8748 Pa; the CFD error is
+0.039%. The strong alternating reference exceeds the predeclared 20 Pa budget
+without approaching competitive mixing.
 
-Advance in bounded invocations so machine use remains controllable:
+## Phase 2 — corrected topology feasibility screen
+
+Status: complete — NO-GO. All twelve scrambled-Sobol designs passed every
+numerical validation, with zero failures. The best mixing index was 0.1698 at
+34.0596 Pa (pressure ratio 11.852). The best design below the 20 Pa budget was
+`00003`, with mixing index 0.1126 at 16.4689 Pa. The gate required 0.60.
 
 ```bash
-python bayes_optimize_sequential.py --max-new-evaluations 1
+python research_sequence.py next --max-new-evaluations 1
 ```
 
-After 8, 16, and 32 successful designs, review:
+The predeclared go/no-go gate requires:
 
-- mesh-generation and CFD failure rate;
-- target distributions and duplicates;
-- mass balance and scalar boundedness;
-- whether the fixed reference point `(0.02 m²/s², 1.0)` is dominated by all
-  valid observations;
-- whether any parameter bound is repeatedly selected by the non-dominated set.
+- twelve successful corrected designs;
+- best flux-weighted mixing index at least 0.60;
+- failed-evaluation fraction no greater than 0.25.
 
-If failures cluster geometrically, fit a feasibility classifier or contract
-the design bounds before BO. Do not replace failures with arbitrary objective
-penalties.
+The driver wrote `results/corrected_boundary_v3/screening_gate.json`; the
+tracked result summary is `research/corrected_screening_summary.yaml`. The
+no-go means the planar topology must be adapted before spending the full BO
+budget.
 
-## Phase 2 — sequential multi-objective BO
+## Phase 3 — topology adaptation after a no-go
 
-Fit independent-output exact GPs with normalized six-dimensional inputs,
-standardized outputs, and an ARD Matérn-5/2 covariance. Select one candidate
-per iteration using qLogNEHVI (`q = 1`), 32 multistarts, 1024 raw samples, and
-the fixed physical reference point.
+Status: next action. The corrected screen has triggered this phase.
 
-The configured budget is 80 BO observations after the 32-point initialization.
-At every 10 successful BO observations, save and review:
+Do not merely enlarge the current amplitude bounds. Preserve the matched
+operating point and first test one of these mechanisms:
 
-- Pareto front and dominated hypervolume;
-- GP length scales and standardized residuals;
-- candidate distances from earlier designs;
-- objective repeatability for at least one re-evaluated design;
-- concentration of Pareto points at design-space bounds.
+1. an inclined/parallelogram-barrier or modified-Tesla planar unit with angle,
+   barrier length, throat ratio, lateral offset, pitch, and unit count;
+2. preferably, a genuine three-dimensional SAR/crossing-channel or staggered
+   groove topology with groove/channel angle, depth, width, overlap,
+   asymmetry, pitch, and unit count.
 
-Stop early if the hypervolume gain is practically negligible for 15
-consecutive successful evaluations and posterior uncertainty is already small
-along the estimated front. Any stopping rule used for a paper must be fixed
-before interpreting the final candidates.
+Run the same three baselines and twelve-point feasibility screen for each new
+topology version. Do not use the current 2-D topology as a numerical
+low-fidelity model for a 3-D mechanism unless cross-fidelity correlation is
+demonstrated.
 
-## Phase 3 — numerical verification
+## Phase 4 — full sequential BO after a pass
 
-Do not identify a publishable optimum directly from the BO mesh. Select at
-least five Pareto designs spanning low pressure loss to high mixing, plus a
-straight channel and a symmetric-deflector baseline.
+The full stage must be explicitly requested:
 
-For each selected design:
+```bash
+python research_sequence.py optimization --max-new-evaluations 1
+```
 
-1. repeat on at least three systematically refined meshes;
-2. compare `limitedLinear 1` with another bounded high-resolution scheme;
-3. demonstrate mass conservation and outlet scalar boundedness;
-4. repeat enough evaluations to estimate numerical/run-to-run uncertainty;
-5. report flux-weighted mixing index, pressure loss, Reynolds number,
-   Schmidt/Péclet number, channel length, and computational cost.
+It expands the initialization to 32 successful Sobol designs, then performs
+80 `q=1` qLogNEHVI evaluations using independent-output exact GPs, normalized
+inputs, standardized outputs, and ARD Matérn-5/2 kernels. The pressure
+objective is normalized by the validated straight channel. The acquisition
+reference corresponds to 20 Pa and segregation intensity 1.0.
 
-Use a refinement-based uncertainty estimate (for example GCI when the
-asymptotic regime is demonstrated). Re-evaluate Pareto dominance using the
-verified objectives and their uncertainty intervals.
+Failed CFD cases retain geometry and failure status but receive no artificial
+objective penalty. If failures cluster after enough evidence exists, add an
+explicit feasibility classifier before resuming acquisition.
 
-## Phase 4 — scientific comparison
+## Phase 5 — numerical and robust verification
 
-Compare all designs at matched hydraulic diameter, channel length or residence
-time, Reynolds number, diffusivity, inlet condition, and mixing-index
-definition. At minimum include:
+Select at least five Pareto designs spanning the trade-off, plus all baselines.
+For each:
 
-- an unobstructed straight channel;
-- a symmetric version of this deflector topology;
-- one established planar passive-mixer benchmark reproducible with the same
-  solver;
-- literature data only where metric and operating-condition conversions are
-  defensible.
+1. run at least three systematically refined meshes;
+2. compare the checked-in bounded high-resolution scalar scheme with another
+   bounded high-resolution scheme;
+3. report mass conservation and scalar bounds;
+4. quantify discretization uncertainty and re-evaluate Pareto dominance with
+   uncertainty intervals;
+5. perturb manufacturable dimensions and report expected and worst-case
+   performance under fabrication tolerances;
+6. if claiming operating robustness, repeat at predeclared Reynolds numbers
+   such as 1, 5, 10, and 20.
 
-A fair performance plot should show mixing index against pressure drop or
-pumping power, not mixing alone. Report dimensional pressure drop in pascals
-alongside the native kinematic value.
+## Publication gate
 
-## Phase 5 — publication gate
-
-The current legacy optimum is **not publication-ready as a global optimum**.
-A Chemical Engineering Science-level claim would require, at minimum:
-
-- completion or defensible early stopping of the verified sequential campaign;
-- mesh/scheme independence and quantified uncertainty;
-- meaningful passive-mixer baselines at matched conditions;
-- a clear physical mechanism supported by velocity/scalar fields;
-- reproducible code, parameter bounds, random seed, objective definitions, and
-  complete successful/failed evaluation history;
-- preferably 3-D confirmation or experimental validation, especially if the
-  intended claim concerns SAR-like lamination.
-
-Without those items, the defensible contribution is a reproducible 2-D
-multi-objective numerical design study and a corrected methodology—not a
-validated universal passive-mixer optimum.
+A corrected 2-D campaign is not automatically a Chemical Engineering Science
+paper. A strong submission requires a physical mixing mechanism that exceeds
+matched baselines, a verified mixing-pressure Pareto front, numerical
+uncertainty, mechanistic flow/Lagrangian evidence, complete reproducibility,
+and preferably 3-D or experimental validation. BO is the search method, not by
+itself the physical novelty.
