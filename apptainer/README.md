@@ -43,9 +43,22 @@ Both the native and the container build use the same `WM_OPTIONS`
 (`linux64GccDPInt32Opt`), so this **overwrites** any host-built copy in
 `platforms/`. That is expected: the image is the environment.
 
+## Working inside the image
+
+For anything interactive — and for the whole teaching assignment — enter it once
+and stay there:
+
+```bash
+apptainer shell --bind "$PWD" apptainer/padm.sif
+```
+
+The image carries `sed`, `grep`, `awk`, `git`, `less` and `ffmpeg` alongside
+OpenFOAM, cfMesh and the Python stack, so the only step that cannot happen
+inside is building the image itself.
+
 ## Notes for anyone editing `padm.def`
 
-Three things bit during the first builds and are now guarded:
+Four things bit during the builds and are now guarded:
 
 * **`%post` runs under `/bin/sh` (dash on Ubuntu), not bash.** `set -o pipefail`
   is a bashism and aborts the build outright. The code therefore avoids
@@ -77,6 +90,20 @@ MEASURED: a SourceForge-built `cartesian2DMesh` on this laptop aborted with
 meshed in 7 s. Rebuilt from the ESI fork against the same OpenFOAM-v2512 it
 meshes the identical case in 7 s and prints `End`. The image uses the ESI fork
 for the same reason.
+
+* **Never source OpenFOAM's `etc/bashrc` from `%environment`.** Apptainer
+  sources the environment scripts while the user's command is still in `$@`, and
+  OpenFOAM's `etc/config.sh/setup` loops over its positional parameters —
+  `eval export`ing anything shaped like `name=value` and **sourcing anything
+  that happens to be a file**. MEASURED: with the bashrc sourced at run time,
+  `apptainer exec img bash -c "cmd1 && cmd2"` ran the script **twice**, the
+  first time without `/opt/venv` on `PATH`; and `apptainer exec img python3
+  script.py` printed `source: .../python3: invalid UTF-8 encoding` because
+  OpenFOAM had tried to source the interpreter. `%post` now freezes the
+  resulting variables into `/opt/openfoam-env.sh` as plain `export` lines, which
+  `%environment` sources instead — no argument parsing on the runtime path, and
+  a faster container start. There is a build-time assertion that the capture
+  produced `WM_PROJECT_DIR`.
 
 `requirements-container.txt` is pinned rather than ranged because CadQuery
 *generates the geometry*: a different minor version can change the STL, the mesh

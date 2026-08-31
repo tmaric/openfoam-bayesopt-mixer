@@ -48,12 +48,16 @@ twelve designs the campaign already paid for.
 | 5 | Fit a GP to the finished designs, rank the parameters | GP + ARD as a free sensitivity analysis |
 | 6 | Maximise UCB for κ = 0, 2, 10 | exploration vs exploitation on real data |
 
-Every number on the answer slides was produced by running the exercise. The
-reference solution for 5 and 6 is [`exercises/surrogate.py`](exercises/surrogate.py):
+The whole assignment runs **inside the container** — building the image is the
+only step that cannot. Students enter it once and stay there:
 
 ```bash
-apptainer exec --bind "$PWD/.." ../apptainer/padm.sif python3 docs/exercises/surrogate.py
+apptainer shell --bind "$PWD" apptainer/padm.sif
 ```
+
+Every number on the answer slides was produced by running the exercise. The
+reference solution for 5 and 6 is [`exercises/surrogate.py`](exercises/surrogate.py),
+run from inside as `python3 docs/exercises/surrogate.py`.
 
 ## Assets
 

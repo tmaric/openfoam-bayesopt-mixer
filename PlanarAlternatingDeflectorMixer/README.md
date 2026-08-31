@@ -201,11 +201,22 @@ campaign already paid for.
 | 5 | Fit a GP to the finished designs; rank the parameters | GP + ARD as a free sensitivity analysis |
 | 6 | Maximise UCB for κ = 0, 2, 10 | exploration vs exploitation, on real data |
 
+**The whole assignment runs inside the container.** Building the image is the
+only step that cannot — everything after it, including `sed`, `grep`, `git`,
+Snakemake and the BO scripts, is in the image:
+
+```bash
+./apptainer/build.sh                              # on the host, once
+apptainer shell --bind "$PWD" apptainer/padm.sif  # everything else happens in here
+```
+
+The repository is bind-mounted, so edits and results land on the real disk.
+
 Every number on the answer slides was produced by running the exercise. The
 reference solution for tasks 5 and 6 is `docs/exercises/surrogate.py`:
 
 ```bash
-apptainer exec --bind "$PWD/.." ../apptainer/padm.sif python3 docs/exercises/surrogate.py
+python3 docs/exercises/surrogate.py               # from inside the image
 ```
 
 Serve the deck with `./docs/serve.sh` and open <http://localhost:8000/>.

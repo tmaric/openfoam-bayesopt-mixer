@@ -913,14 +913,18 @@
       </section>
 
       <section>
-        <h2>Before you start</h2>
+        <h2>Before you start: get inside the image</h2>
         <div class="body">
-          <p>Everything runs inside the image. Set this alias once, from inside the study directory, and every command below is short:</p>
-          <p class="cmd"><code>cd openfoam-bayesopt-mixer/PlanarAlternatingDeflectorMixer
-alias padm='apptainer exec --bind "$PWD/.." ../apptainer/padm.sif'</code></p>
-          <div class="callout">
-            <p>Exercises <strong>1&ndash;4</strong> run CFD and take a few minutes each. Exercises <strong>5&ndash;6</strong> run no CFD at all &mdash; they reuse the twelve designs the campaign already paid for, and finish in about a second.</p>
+          <p>One step happens on your own machine &mdash; building the image. <strong>Everything after it happens inside.</strong></p>
+          <p class="cmd"><code>cd openfoam-bayesopt-mixer
+./apptainer/build.sh                              # the only step that cannot run inside
+
+apptainer shell --bind "$PWD" apptainer/padm.sif  # now you are in the container
+Apptainer&gt; cd PlanarAlternatingDeflectorMixer</code></p>
+          <div class="callout green">
+            <p>Inside you have OpenFOAM, cfMesh, CadQuery, BoTorch, Snakemake, <code>git</code>, <code>sed</code>, <code>grep</code> &mdash; everything the six exercises need. The repository is bind-mounted, so <strong>files you edit and results you produce are on your real disk</strong>, not lost when you exit.</p>
           </div>
+          <p class="caution">Exercises 1&ndash;4 run CFD, a few minutes each. Exercises 5&ndash;6 run none at all &mdash; they reuse the twelve designs the campaign already paid for, and finish in about a second.</p>
         </div>
       </section>
 
@@ -941,16 +945,15 @@ alias padm='apptainer exec --bind "$PWD/.." ../apptainer/padm.sif'</code></p>
         <div class="tag answer">Answer 1</div>
         <h2>2.8737 Pa measured against 2.8748 Pa exact</h2>
         <div class="body">
-          <p class="cmd"><code>cd .. &amp;&amp; ./apptainer/build.sh
-apptainer exec --bind "$PWD" apptainer/padm.sif bash -c "./Allwclean &amp;&amp; ./Allwmake"
+          <p class="cmd"><code>./Allwclean &amp;&amp; ./Allwmake            # from the repository root, inside the image
 cd PlanarAlternatingDeflectorMixer
-padm python3 research_sequence.py next --max-new-evaluations 1 --profile profiles/local
+python3 research_sequence.py next --max-new-evaluations 1 --profile profiles/local
 cat results/corrected_boundary_v3_baselines/straight/objectives.csv</code></p>
           <div class="expect">
             <div class="lbl">analytic</div><div class="val">2.8748 Pa</div><div class="note">12 &middot; 10&#8315;&#8310; &middot; 0.01 &middot; 0.024 / (10&#8315;&sup3;)&sup2; &times; 998.2</div>
             <div class="lbl">measured</div><div class="val">2.8737 Pa</div><div class="note">0.039 % low &mdash; discretisation, and well inside the 15 % gate</div>
           </div>
-          <p style="margin-top:16px">Now repeat it with <code>--profile profiles/local2</code>. Same number: the backend is a profile, and that is the only thing that changed.</p>
+          <p style="margin-top:16px">Still inside the image, repeat it with <code>--profile profiles/local2</code>. Same number: the backend is a profile, and that is the only thing that changed.</p>
         </div>
       </section>
 
@@ -1007,7 +1010,7 @@ grep -n "_p\[" FlowCase/alternating_deflector_cad.py               # w_s, delta,
           <p class="cmd"><code>mkdir -p results/ex3
 sed 's/^delta: 0.30$/delta: 0.15/' research/baselines/strong_alternating.yaml \
     &gt; results/ex3/alternating_deflector_cad.yaml
-padm snakemake --snakefile Snakefile --directory results/ex3 \
+snakemake --snakefile Snakefile --directory results/ex3 \
      --workflow-profile profiles/local --config results_dir=results/ex3 np=2</code></p>
           <div class="expect">
             <div class="lbl">&delta; = 0.30</div><div class="val">30.509 Pa &middot; 0.1450</div><div class="note">the baseline</div>
@@ -1037,7 +1040,7 @@ padm snakemake --snakefile Snakefile --directory results/ex3 \
         <div class="tag answer">Answer 4</div>
         <h2>Nothing, then thirteen jobs</h2>
         <div class="body">
-          <p class="cmd"><code>DRY="padm snakemake --snakefile Snakefile --directory results/ex3 \
+          <p class="cmd"><code>DRY="snakemake --snakefile Snakefile --directory results/ex3 \
       --workflow-profile profiles/local --config results_dir=results/ex3 np=2 -n"
 
 rm results/ex3/FlowCase/pressureDrop.csv          &amp;&amp; $DRY   # step 1
@@ -1075,7 +1078,7 @@ rm results/ex3/objectives.csv                     &amp;&amp; $DRY   # step 2</co
         <div class="tag answer">Answer 5</div>
         <h2>Two parameters carry the mechanism; two do nothing</h2>
         <div class="body">
-          <p class="cmd"><code>padm python3 docs/exercises/surrogate.py</code></p>
+          <p class="cmd"><code>python3 docs/exercises/surrogate.py</code></p>
           <div class="two-col">
             <div>
               <table class="compact-table dense">

@@ -120,14 +120,43 @@ From: ubuntu:24.04
     /opt/venv/bin/pip install --no-cache-dir -r /opt/requirements-container.txt
     /opt/venv/bin/python -c "import torch; assert not torch.version.cuda, torch.__version__"
 
+    # ------------------------------------------------- freeze the OpenFOAM env
+    # DO NOT source etc/bashrc from %environment.  Apptainer sources the
+    # environment scripts while the USER'S COMMAND is still in "$@", and
+    # OpenFOAM's etc/config.sh/setup loops over the positional parameters:
+    # anything shaped like name=value it `eval export`s, and anything else it
+    # SOURCES AS A FILE.  So `apptainer exec img bash -c '<script>'` had the
+    # script evaluated once by OpenFOAM's setup and once by bash -- every
+    # command ran TWICE, the first time without /opt/venv on PATH.  It also
+    # produced the giveaway noise `source: /opt/venv/bin/python3: invalid UTF-8`
+    # and `eval: 'foo(' must be followed by ')'`.
+    #
+    # Capturing the resulting variables once, here, removes the arg parsing
+    # from the runtime path entirely and makes container start-up cheaper too.
+    python3 - > /opt/openfoam-env.sh <<'FREEZE'
+import os, shlex
+PREFIXES = ("WM_", "FOAM_", "MPI_", "OPAL_", "SCOTCH", "BOOST", "CGAL",
+            "FFTW", "ADIOS", "METIS", "KAHIP", "ParaView", "PV_")
+EXPLICIT = {"PATH", "LD_LIBRARY_PATH", "MANPATH"}
+print("# Generated at build time -- see the %post note on why this is not")
+print("# `. etc/bashrc` at run time.")
+for key in sorted(os.environ):
+    if key.startswith("BASH_FUNC_") or "\n" in os.environ[key]:
+        continue
+    if key in EXPLICIT or key.startswith(PREFIXES):
+        print(f"export {key}={shlex.quote(os.environ[key])}")
+FREEZE
+    grep -q '^export WM_PROJECT_DIR=' /opt/openfoam-env.sh \
+        || { echo "FATAL: OpenFOAM environment capture failed"; exit 1; }
+
     apt-get clean
     rm -rf /var/lib/apt/lists/*
 
 %environment
-    # OpenFOAM's etc/bashrc reads unset variables (WM_PROJECT_DIR among them),
-    # so it must be sourced with `set -u` OFF or every container start aborts.
-    set +eu
-    . /usr/lib/openfoam/openfoam2512/etc/bashrc
+    # A plain list of `export` lines frozen at build time.  Sourcing OpenFOAM's
+    # etc/bashrc here instead would make it parse the user's command as its own
+    # arguments -- see the long note in %post.
+    . /opt/openfoam-env.sh
 
     export PATH="/opt/venv/bin:$PATH"
 
@@ -147,8 +176,7 @@ From: ubuntu:24.04
     exec "$@"
 
 %test
-    set +eu
-    . /usr/lib/openfoam/openfoam2512/etc/bashrc
+    . /opt/openfoam-env.sh
     set -e
     export PATH="/opt/venv/bin:$PATH"
 
