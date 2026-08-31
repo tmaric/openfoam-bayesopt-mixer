@@ -185,6 +185,31 @@ hold the corrected data. The archived `results/` and
 `results/verified_flux_sequential_v2/` predate the boundary repair and **must not
 be pooled** with it.
 
+## 7. Using this as a teaching study
+
+Part 5 of the slide deck is a hands-on assignment: six exercises that alternate
+**task → answer**, with the exact commands on the answer slide. Tasks 1–4 run
+CFD (minutes each); tasks 5–6 run none at all, reusing the twelve designs the
+campaign already paid for.
+
+| # | Task | Learning outcome |
+|---|---|---|
+| 1 | Run the straight baseline; check it against 12νUL/H² | the workflow, the container, the profile switch |
+| 2 | Find which YAML keys the CAD actually reads | read the source, not the field names |
+| 3 | Halve the asymmetry; predict, then measure | parameters → geometry → objectives; the trade-off |
+| 4 | Delete outputs; predict what Snakemake re-runs | the DAG is target-driven, not a file watcher |
+| 5 | Fit a GP to the finished designs; rank the parameters | GP + ARD as a free sensitivity analysis |
+| 6 | Maximise UCB for κ = 0, 2, 10 | exploration vs exploitation, on real data |
+
+Every number on the answer slides was produced by running the exercise. The
+reference solution for tasks 5 and 6 is `docs/exercises/surrogate.py`:
+
+```bash
+apptainer exec --bind "$PWD/.." ../apptainer/padm.sif python3 docs/exercises/surrogate.py
+```
+
+Serve the deck with `./docs/serve.sh` and open <http://localhost:8000/>.
+
 ## Repository map
 
 | path | what |
@@ -199,7 +224,8 @@ be pooled** with it.
 | `FlowCase/`, `ScalarTransportCase/` | OpenFOAM case templates |
 | `FlowCase/alternating_deflector_cad.py` | the CadQuery geometry generator |
 | `validate_*.py`, `verify_*.py` | independent mesh, flow and convergence checks |
-| `docs/index.html` | the slide deck (`./docs/serve.sh`, then open `localhost:8000`) |
+| `docs/index.html` | the slide deck, incl. the hands-on assignment (`./docs/serve.sh`) |
+| `docs/exercises/` | reference solutions for the assignment |
 | [QUICKSTART.md](QUICKSTART.md) | parameterization, objectives, campaign ladder |
 | [CLUSTER.md](CLUSTER.md) | SLURM, binds, and the measured failure modes |
 | [docs/RESEARCH_PLAN.md](docs/RESEARCH_PLAN.md) | phase gates and publication criteria |

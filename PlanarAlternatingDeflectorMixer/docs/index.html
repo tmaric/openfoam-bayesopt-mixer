@@ -905,6 +905,256 @@
         </div>
       </section>
 
+      <!-- ================= PART 5: ASSIGNMENT ================= -->
+      <section class="divider">
+        <div class="part">Part five</div>
+        <h2>Your turn</h2>
+        <p>Six exercises. Each is a question first, then the answer with the exact commands. By the end you will have run the workflow, changed the device, and steered the optimiser by hand.</p>
+      </section>
+
+      <section>
+        <h2>Before you start</h2>
+        <div class="body">
+          <p>Everything runs inside the image. Set this alias once, from inside the study directory, and every command below is short:</p>
+          <p class="cmd"><code>cd openfoam-bayesopt-mixer/PlanarAlternatingDeflectorMixer
+alias padm='apptainer exec --bind "$PWD/.." ../apptainer/padm.sif'</code></p>
+          <div class="callout">
+            <p>Exercises <strong>1&ndash;4</strong> run CFD and take a few minutes each. Exercises <strong>5&ndash;6</strong> run no CFD at all &mdash; they reuse the twelve designs the campaign already paid for, and finish in about a second.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="task-slide">
+        <div class="tag task">Task 1</div>
+        <h2>Reproduce a number you can check independently</h2>
+        <div class="body">
+          <ol class="steps">
+            <li><p>Build the image and the study&rsquo;s OpenFOAM function-object library inside it.</p></li>
+            <li><p>Run the first baseline the driver asks for &mdash; the straight, unobstructed channel.</p></li>
+            <li><p>Find the pressure drop it reports, and check it against the textbook parallel-plate result <span class="formula" style="font-size:26px !important">&Delta;p = 12&nu;UL/H&sup2; &middot; &rho;</span></p></li>
+          </ol>
+          <p class="caution">Why this first? If the empty pipe is wrong, nothing downstream can be trusted.</p>
+        </div>
+      </section>
+
+      <section class="answer-slide">
+        <div class="tag answer">Answer 1</div>
+        <h2>2.8737 Pa measured against 2.8748 Pa exact</h2>
+        <div class="body">
+          <p class="cmd"><code>cd .. &amp;&amp; ./apptainer/build.sh
+apptainer exec --bind "$PWD" apptainer/padm.sif bash -c "./Allwclean &amp;&amp; ./Allwmake"
+cd PlanarAlternatingDeflectorMixer
+padm python3 research_sequence.py next --max-new-evaluations 1 --profile profiles/local
+cat results/corrected_boundary_v3_baselines/straight/objectives.csv</code></p>
+          <div class="expect">
+            <div class="lbl">analytic</div><div class="val">2.8748 Pa</div><div class="note">12 &middot; 10&#8315;&#8310; &middot; 0.01 &middot; 0.024 / (10&#8315;&sup3;)&sup2; &times; 998.2</div>
+            <div class="lbl">measured</div><div class="val">2.8737 Pa</div><div class="note">0.039 % low &mdash; discretisation, and well inside the 15 % gate</div>
+          </div>
+          <p style="margin-top:16px">Now repeat it with <code>--profile profiles/local2</code>. Same number: the backend is a profile, and that is the only thing that changed.</p>
+        </div>
+      </section>
+
+      <section class="task-slide">
+        <div class="tag task">Task 2</div>
+        <h2>Which keys actually shape the deflectors?</h2>
+        <div class="body">
+          <p>Open <code>research/baselines/strong_alternating.yaml</code>. It contains, among others:</p>
+          <p class="cmd"><code>w_s: 0.45        a_weak:   0.05
+delta: 0.30      a_strong: 0.35</code></p>
+          <p class="claim">Set <code>a_weak</code> and <code>a_strong</code> to anything you like and the geometry does not change.</p>
+          <p><strong>Which keys does the CAD generator actually read, and how do they produce the two amplitudes?</strong> Answer from the source, not from the names.</p>
+        </div>
+      </section>
+
+      <section class="answer-slide">
+        <div class="tag answer">Answer 2</div>
+        <h2>It reads w<sub>s</sub> and &delta;. The rest is provenance.</h2>
+        <div class="body">
+          <p class="cmd"><code>grep -n "a_weak\|a_strong" FlowCase/alternating_deflector_cad.py   # no hits
+grep -n "_p\[" FlowCase/alternating_deflector_cad.py               # w_s, delta, k, ...</code></p>
+          <div class="two-col">
+            <div>
+              <p>The generator computes one base intrusion and adds the bias to alternating walls:</p>
+              <p class="formula">a<sub>weak</sub> = 0.5 &minus; w<sub>s</sub></p>
+              <p class="formula">a<sub>strong</sub> = a<sub>weak</sub> + &delta;</p>
+              <p>Check: 0.5 &minus; 0.45 = 0.05, and 0.05 + 0.30 = 0.35. Both match the file.</p>
+            </div>
+            <div>
+              <div class="callout green">
+                <p><code>a_weak</code> and <code>a_strong</code> are written <em>by the BO driver</em> so each design records the physical amplitudes it meant. They are never read back.</p>
+              </div>
+              <p style="margin-top:18px" class="caution">The habit this teaches is the one that matters: a field name is a claim, the source is the evidence.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="task-slide">
+        <div class="tag task">Task 3</div>
+        <h2>Predict, then measure</h2>
+        <div class="body">
+          <p>The <code>strong_alternating</code> baseline uses &delta; = 0.30 and reaches <strong>30.509 Pa</strong> at a mixing index of <strong>0.1450</strong>.</p>
+          <p class="claim">Halve the asymmetry to &delta; = 0.15 and run it.</p>
+          <p><strong>Write your prediction down first:</strong> do pressure and mixing go up or down, and which one changes more?</p>
+          <p class="caution">Committing to a prediction before the run is the entire discipline. It is also how you notice when a result is suspicious.</p>
+        </div>
+      </section>
+
+      <section class="answer-slide">
+        <div class="tag answer">Answer 3</div>
+        <h2>Both fall &mdash; but pressure falls twice as fast</h2>
+        <div class="body">
+          <p class="cmd"><code>mkdir -p results/ex3
+sed 's/^delta: 0.30$/delta: 0.15/' research/baselines/strong_alternating.yaml \
+    &gt; results/ex3/alternating_deflector_cad.yaml
+padm snakemake --snakefile Snakefile --directory results/ex3 \
+     --workflow-profile profiles/local --config results_dir=results/ex3 np=2</code></p>
+          <div class="expect">
+            <div class="lbl">&delta; = 0.30</div><div class="val">30.509 Pa &middot; 0.1450</div><div class="note">the baseline</div>
+            <div class="lbl">&delta; = 0.15</div><div class="val">13.381 Pa &middot; 0.1023</div><div class="note">&minus;56 % pressure, &minus;29 % mixing</div>
+          </div>
+          <div class="callout">
+            <p>So the gentler device is the <em>better trade</em> per Pascal &mdash; and further from the 0.60 gate. That is exactly why a single scalar objective would mislead you here.</p>
+          </div>
+          <p class="claim" style="margin-top:14px">Now look it up on the front: Sobol design <strong>00000</strong> reached 13.185 Pa at 0.1048. Your hand-tuned design is <strong>dominated by one the optimiser already found</strong>.</p>
+        </div>
+      </section>
+
+      <section class="task-slide">
+        <div class="tag task">Task 4</div>
+        <h2>Follow the DAG</h2>
+        <div class="body">
+          <p>Work in the finished directory from Task 3, and <em>predict before each run</em>.</p>
+          <ol class="steps">
+            <li><p>Delete <code>FlowCase/pressureDrop.csv</code> &mdash; an input the objectives are computed from &mdash; and ask Snakemake what it would do.</p></li>
+            <li><p>Now delete <code>objectives.csv</code> as well, and ask again.</p></li>
+          </ol>
+          <p><strong>How many jobs does each case want to run, and why are the two answers so different?</strong></p>
+        </div>
+      </section>
+
+      <section class="answer-slide">
+        <div class="tag answer">Answer 4</div>
+        <h2>Nothing, then thirteen jobs</h2>
+        <div class="body">
+          <p class="cmd"><code>DRY="padm snakemake --snakefile Snakefile --directory results/ex3 \
+      --workflow-profile profiles/local --config results_dir=results/ex3 np=2 -n"
+
+rm results/ex3/FlowCase/pressureDrop.csv          &amp;&amp; $DRY   # step 1
+rm results/ex3/objectives.csv                     &amp;&amp; $DRY   # step 2</code></p>
+          <div class="expect">
+            <div class="lbl">step 1</div><div class="val">Nothing to be done</div><div class="note">every target of <code>rule all</code> is still present</div>
+            <div class="lbl">step 2</div><div class="val">13 jobs</div><div class="note">from <code>hydro_simpleFoam</code> downwards</div>
+          </div>
+          <div class="two-col" style="margin-top:18px">
+            <div>
+              <p class="claim">Snakemake is <strong>target-driven, not a file watcher.</strong></p>
+              <p>Deleting an intermediate nobody is currently asking for changes nothing. Ask for <code>objectives.csv</code> again and the chain is rebuilt only as far back as the first missing file.</p>
+            </div>
+            <div>
+              <div class="callout blue">
+                <p><strong>What does not re-run: the CAD and the mesh.</strong> Their outputs are still on disk, so the expensive geometry and meshing are skipped entirely.</p>
+              </div>
+              <p style="margin-top:16px" class="caution">Nothing declares an order. Each rule declares what it needs and what it makes &mdash; which is why a 95-design campaign resumes cleanly after a crash at design 40.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="task-slide">
+        <div class="tag task">Task 5</div>
+        <h2>Which parameters actually matter? No CFD allowed.</h2>
+        <div class="body">
+          <p>The campaign has already paid for twelve designs. They are in <code>results/corrected_boundary_v3/all_samples.csv</code>, with the six BO coordinates in the <code>bo_*</code> columns and the mixing index in <code>metric_flux_weighted_mixing_index</code>.</p>
+          <p class="claim">Fit a GP to that data and use it to rank the six parameters by how much the mixing index depends on them.</p>
+          <p class="definition">Hint: an <strong>ARD</strong> kernel learns one length scale per parameter. What does a very large length scale mean?</p>
+        </div>
+      </section>
+
+      <section class="answer-slide">
+        <div class="tag answer">Answer 5</div>
+        <h2>Two parameters carry the mechanism; two do nothing</h2>
+        <div class="body">
+          <p class="cmd"><code>padm python3 docs/exercises/surrogate.py</code></p>
+          <div class="two-col">
+            <div>
+              <table class="compact-table dense">
+                <thead><tr><th>Parameter</th><th>Length scale</th><th>Verdict</th></tr></thead>
+                <tbody>
+                  <tr><td>a<sub>strong,ratio</sub></td><td>1.22</td><td>drives it</td></tr>
+                  <tr><td>L<sub>c</sub></td><td>3.47</td><td>drives it</td></tr>
+                  <tr><td>a<sub>weak</sub></td><td>16.3</td><td>some effect</td></tr>
+                  <tr><td>t<sub>m,ratio</sub></td><td>32.3</td><td>some effect</td></tr>
+                  <tr><td>L<sub>s,ratio</sub></td><td>665</td><td>inert</td></tr>
+                  <tr><td>t<sub>s</sub></td><td>748</td><td>inert</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div>
+              <p>The box is [0,1] wide. A length scale of <strong>665</strong> means the model saw <em>no</em> dependence on that parameter across its entire range.</p>
+              <div class="callout green">
+                <p><strong>Asymmetry and interaction length are the mechanism.</strong> Baffle thickness is not. That is a sensitivity analysis for free, from data you already had.</p>
+              </div>
+              <p class="caution" style="margin-top:14px">It also explains the NO-GO: the two knobs that matter are already at their limits.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="task-slide">
+        <div class="tag task">Task 6</div>
+        <h2>Where should design 13 go?</h2>
+        <div class="body">
+          <p>Use the same fitted model. Maximise the UCB acquisition over the unit box for</p>
+          <p class="formula">&kappa; = 0,&nbsp;&nbsp; &kappa; = 2,&nbsp;&nbsp; &kappa; = 10</p>
+          <p><strong>Which coordinates change as you turn the dial, and which do not?</strong> Explain both halves of the answer.</p>
+          <p class="definition">In BoTorch, <code>UpperConfidenceBound</code> takes <code>beta</code> = &kappa;&sup2;.</p>
+        </div>
+      </section>
+
+      <section class="answer-slide">
+        <div class="tag answer">Answer 6</div>
+        <h2>The dial moves only the coordinates the model is unsure about</h2>
+        <div class="body">
+          <table class="compact-table dense">
+            <thead><tr><th>&kappa;</th><th>a<sub>weak</sub></th><th>a<sub>strong,r</sub></th><th>t<sub>s</sub></th><th>t<sub>m,r</sub></th><th>L<sub>c</sub></th><th>L<sub>s,r</sub></th></tr></thead>
+            <tbody>
+              <tr><td><strong>0</strong></td><td>0.00</td><td>1.00</td><td>1.00</td><td>0.00</td><td>1.00</td><td>0.11</td></tr>
+              <tr><td><strong>2</strong></td><td>1.00</td><td>1.00</td><td>1.00</td><td>0.00</td><td>1.00</td><td>0.16</td></tr>
+              <tr><td><strong>10</strong></td><td>1.00</td><td>1.00</td><td>1.00</td><td>0.00</td><td>1.00</td><td>1.00</td></tr>
+            </tbody>
+          </table>
+          <div class="two-col" style="margin-top:20px">
+            <div>
+              <h3>What does not move</h3>
+              <p><strong>a<sub>strong,ratio</sub> and L<sub>c</sub> stay pinned at 1.</strong> The model is confident these drive the objective, so exploring them buys nothing &mdash; every &kappa; agrees.</p>
+            </div>
+            <div>
+              <h3>What moves</h3>
+              <p><strong>a<sub>weak</sub> and L<sub>s,ratio</sub> swing.</strong> These are the directions the model is least sure about, so more optimism sends the next run there.</p>
+            </div>
+          </div>
+          <p class="claim" style="margin-top:16px">This is exploration and exploitation, on the real campaign, in one table.</p>
+          <p class="caution" style="margin-top:10px">Your L<sub>s,ratio</sub> column will differ from these digits &mdash; the acquisition is <em>flat</em> along an inert parameter, so its optimum is not unique. That is not an error; it is the same fact Task 5 measured, seen from the other side.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>What you should be able to explain now</h2>
+        <div class="body">
+          <div class="outcomes">
+            <div><strong>The workflow.</strong> Where a design starts, which gates it must pass, and why nothing is recorded as a result until it has.</div>
+            <div><strong>The tools.</strong> What the container guarantees, what Snakemake derives for you, and why the backend is a one-flag change.</div>
+            <div><strong>The surrogate.</strong> Why a GP gives a mean and an error bar, and why fitting it is free next to one simulation.</div>
+            <div><strong>The acquisition.</strong> What &kappa; trades, and why the proposal only moves along directions the model is unsure about.</div>
+            <div><strong>The judgement.</strong> Why a predeclared gate turns a disappointing campaign into a publishable result.</div>
+          </div>
+          <div class="callout" style="margin-top:22px">
+            <p><strong>Going further:</strong> re-run Task 5 against the pressure objective instead. Do the same two parameters dominate? If not, you have found the trade-off in the model itself &mdash; which is where the Pareto front comes from.</p>
+          </div>
+        </div>
+      </section>
+
       <section class="closing">
         <h2>Reproducing all of this</h2>
         <div class="body">
