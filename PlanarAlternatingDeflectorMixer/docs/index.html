@@ -353,7 +353,7 @@
             </div>
             <div>
               <div class="callout green">
-                <p><strong>ARD Mat&eacute;rn-5/2:</strong> one length scale per parameter. The model learns, on its own, which of the six actually matter &mdash; and tells you.</p>
+                <p><strong>Mat&eacute;rn-5/2 with ARD</strong> &mdash; <em>automatic relevance determination</em>: one length scale per parameter. The model learns, on its own, which of the six actually matter &mdash; and tells you.</p>
               </div>
               <p style="margin-top:20px" class="definition">A long length scale means that parameter barely moves the objective. A free sensitivity analysis; we come back to it in part three.</p>
             </div>
@@ -550,37 +550,56 @@
       </section>
 
       <section>
-        <h2>Everything converged. Everything was wrong.</h2>
+        <h2>What went wrong here, and why no solver noticed</h2>
         <div class="body">
-          <svg viewBox="0 0 1240 300" style="width:100%;height:auto;max-height:460px" role="img" aria-label="Correct versus defective inlet patch assignment">
-            <text x="10" y="22" fill="#c84b4b" font-size="23" font-weight="700">what the CAD produced</text>
-            <rect x="10" y="42" width="580" height="110" fill="#fffdf8" stroke="#102a43" stroke-width="3"/>
+          <p class="claim">The CAD generator decided which faces were <em>inlets</em> by looking at which way they pointed &mdash; not at where they were.</p>
+          <div class="two-col">
+            <div>
+              <p>Every baffle and every deflector has faces pointing along <code>-x</code>, exactly like the real inlet does. So all of them were labelled &ldquo;inlet&rdquo; too.</p>
+              <p><strong>The consequence:</strong> OpenFOAM dutifully injected fluid and scalar through the middle of the device &mdash; out of the obstacles &mdash; instead of only at <code>x = 0</code>.</p>
+            </div>
+            <div>
+              <div class="expect">
+                <div class="lbl">real inlet</div><div class="val">1 &times; H</div><div class="note">one face at x = 0</div>
+                <div class="lbl">what was tagged</div><div class="val">2.85 &times; H</div><div class="note">plus every obstacle face</div>
+              </div>
+              <p style="margin-top:14px" class="caution">The mixing it measured was partly fluid being injected <em>after</em> the mixing section. The numbers were not noisy. They were meaningless.</p>
+            </div>
+          </div>
+          <svg viewBox="0 0 1240 150" style="width:100%;height:auto;max-height:180px" role="img" aria-label="Defective versus correct inlet faces">
+            <text x="10" y="18" fill="#c84b4b" font-size="20" font-weight="700">tagged as inlet by the old CAD</text>
+            <rect x="10" y="32" width="560" height="90" fill="#fffdf8" stroke="#102a43" stroke-width="3"/>
             <g fill="#f6b66e" stroke="#ad5c10" stroke-width="2">
-              <rect x="140" y="88" width="70" height="16"/><rect x="320" y="88" width="70" height="16"/><rect x="490" y="88" width="70" height="16"/>
+              <rect x="140" y="70" width="70" height="14"/><rect x="310" y="70" width="70" height="14"/><rect x="470" y="70" width="70" height="14"/>
             </g>
             <g stroke="#c84b4b" stroke-width="7">
-              <line x1="10" y1="42" x2="10" y2="152"/>
-              <line x1="140" y1="88" x2="140" y2="104"/><line x1="210" y1="88" x2="210" y2="104"/>
-              <line x1="320" y1="88" x2="320" y2="104"/><line x1="390" y1="88" x2="390" y2="104"/>
-              <line x1="490" y1="88" x2="490" y2="104"/><line x1="560" y1="88" x2="560" y2="104"/>
+              <line x1="10" y1="32" x2="10" y2="122"/>
+              <line x1="140" y1="70" x2="140" y2="84"/><line x1="310" y1="70" x2="310" y2="84"/><line x1="470" y1="70" x2="470" y2="84"/>
             </g>
-            <text x="10" y="182" fill="#c84b4b" font-size="20">every x-normal face tagged &ldquo;inlet&rdquo;, obstacles included</text>
-            <text x="10" y="210" fill="#c84b4b" font-size="21" font-weight="700">inlet area = 2.85 &times; the real cross-section</text>
-
-            <text x="650" y="22" fill="#3a8f57" font-size="23" font-weight="700">what it must be</text>
-            <rect x="650" y="42" width="580" height="110" fill="#fffdf8" stroke="#102a43" stroke-width="3"/>
+            <text x="650" y="18" fill="#3a8f57" font-size="20" font-weight="700">what an inlet actually is</text>
+            <rect x="650" y="32" width="560" height="90" fill="#fffdf8" stroke="#102a43" stroke-width="3"/>
             <g fill="#f6b66e" stroke="#ad5c10" stroke-width="2">
-              <rect x="780" y="88" width="70" height="16"/><rect x="960" y="88" width="70" height="16"/><rect x="1130" y="88" width="70" height="16"/>
+              <rect x="780" y="70" width="70" height="14"/><rect x="950" y="70" width="70" height="14"/><rect x="1110" y="70" width="70" height="14"/>
             </g>
-            <line x1="650" y1="42" x2="650" y2="152" stroke="#3a8f57" stroke-width="7"/>
-            <text x="650" y="182" fill="#3a8f57" font-size="20">every point of an inlet face lies on x = 0</text>
-            <text x="650" y="210" fill="#3a8f57" font-size="21" font-weight="700">checked by an independent polyMesh rebuild</text>
-
-            <text x="10" y="262" fill="#102a43" font-size="24">Nothing crashed. Every solver converged. <tspan font-weight="700">checkMesh said &ldquo;Mesh OK&rdquo;.</tspan></text>
-            <text x="10" y="294" fill="#c84b4b" font-size="26" font-weight="700">28 designs, void.</text>
+            <line x1="650" y1="32" x2="650" y2="122" stroke="#3a8f57" stroke-width="7"/>
+            <text x="650" y="142" fill="#3a8f57" font-size="19">every point of the face lies on x = 0</text>
+            <text x="10" y="142" fill="#c84b4b" font-size="19">any face pointing along &minus;x, wherever it is</text>
           </svg>
         </div>
-        <aside class="notes">validate_mesh_patches.py rebuilds the patch polygons from constant/polyMesh and compares against the CAD manifest, deliberately not trusting the generator that produced both.</aside>
+        <aside class="notes">The repair: classify by POSITION, not orientation, and verify it by rebuilding the patch polygons from constant/polyMesh independently of the CAD that produced them.</aside>
+      </section>
+
+      <section class="statement">
+        <div class="body">
+          <p class="bombastic">Nothing crashed. Every solver converged. <code>checkMesh</code> said &ldquo;Mesh OK&rdquo;. The Pareto fronts looked <em>plausible</em>.</p>
+          <div class="takeaway" style="margin-top:38px">
+            <div class="big">28</div>
+            <div class="txt">designs discarded &mdash; an entire campaign, invalidated by a bug that no exit code, no residual and no mesh check could ever have caught.</div>
+          </div>
+          <div class="callout" style="margin-top:30px">
+            <p><strong>Only a test that knew where an inlet is supposed to be could find this.</strong> That is what a top-level, physical test buys you, and it is why it gets written first.</p>
+          </div>
+        </div>
       </section>
 
       <section>
@@ -603,7 +622,21 @@
           <div class="callout">
             <p>The common property: <strong>a machine can re-run all of it without you</strong>, on another host, next year.</p>
           </div>
-          <p class="caution" style="margin-top:18px">If the test lives only in a chat transcript, it does not exist.</p>
+          <p class="claim" style="margin-top:18px">If the test lives only in a chat transcript, it does not exist.</p>
+          <div class="three-col" style="margin-top:16px">
+            <div>
+              <h3>An agent cannot read it</h3>
+              <p>A bespoke checking script has to be re-explained every session &mdash; tokens and time spent re-deriving what a rule name would have stated.</p>
+            </div>
+            <div>
+              <h3>It will not run elsewhere</h3>
+              <p>Home-grown harnesses hard-code paths and core counts. The same test has to run on a laptop and on the cluster, or it proves nothing about the cluster.</p>
+            </div>
+            <div>
+              <h3>An engineer cannot audit it</h3>
+              <p>A reviewer knows what a Snakemake rule or a pytest assertion means. They should not have to reverse-engineer your conventions to trust a number.</p>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -765,7 +798,7 @@
             <div class="node"><strong>Decide</strong><span>Continue, re-bound, or re-parameterise.</span><span class="price">you</span></div>
           </div>
           <div class="callout green">
-            <p><strong>ARD length scales are a free sensitivity analysis.</strong> A huge length scale means that parameter does nothing across its whole range. You get this after every evaluation, at no cost.</p>
+            <p><strong>ARD &mdash; <em>automatic relevance determination</em> &mdash; is a free sensitivity analysis.</strong> A huge length scale means that parameter does nothing across its whole range. You get this after every evaluation, at no cost.</p>
           </div>
         </div>
       </section>
@@ -791,22 +824,51 @@
       <section>
         <h2>Two objectives: a front, not a winner</h2>
         <div class="body">
+          <svg data-objspace="front" style="background:var(--white);border:1px solid #d7e0e7;width:100%;height:470px"></svg>
+          <p class="claim" style="margin-top:16px">With one objective there is a best design. With two there is a <strong>set</strong> &mdash; every design where mixing cannot improve without paying more pressure.</p>
+        </div>
+        <aside class="notes">Both axes are minimised, so better is down and to the left. A grey point is dominated: some orange point beats it on BOTH objectives at once.</aside>
+      </section>
+
+      <section>
+        <h2>Turning a whole front into one number</h2>
+        <div class="body">
           <div class="two-col">
             <div>
-              <p>With one objective there is a best design. With two there is a <em>set</em>: every design where mixing cannot improve without paying more pressure.</p>
-              <p class="definition">In d objectives the Pareto set is a <strong>(d&minus;1)-dimensional surface</strong> in objective space, drawn from a 6-dimensional design space.</p>
+              <p>To say one front is <em>better</em> than another, you need a single number. The standard one is the <strong>hypervolume</strong>: the area of objective space the front dominates, measured against a fixed <strong>reference point</strong>.</p>
+              <p class="definition">Push the front down and left and the shaded staircase grows. That growth is the only thing the optimiser is trying to maximise.</p>
             </div>
             <div>
-              <p class="formula">ref = (20 Pa, I<sub>s</sub> = 1)</p>
-              <ul>
-                <li><strong>qLogNEHVI</strong> maximises the <em>hypervolume</em> the front encloses against that reference &mdash; no scalarising away the trade-off;</li>
-                <li>the reference point is declared in config, because it silently defines &ldquo;improvement&rdquo;;</li>
-                <li>failed designs are excluded, never given a fictitious penalty.</li>
-              </ul>
+              <div class="callout">
+                <p><strong>The reference point is a real modelling choice.</strong> It says how bad a design has to be before it stops counting at all. Ours is declared in config as (20 Pa, I<sub>s</sub> = 1) &mdash; move it and you silently change what &ldquo;improvement&rdquo; means.</p>
+              </div>
             </div>
           </div>
-          <div class="callout">
-            <p>You sample the surface, then <strong>re-simulate the interesting corners at higher fidelity to confirm</strong>. The front is a hypothesis until you do.</p>
+          <svg data-objspace="hypervolume" style="background:var(--white);border:1px solid #d7e0e7;width:100%;height:420px;margin-top:14px"></svg>
+        </div>
+        <aside class="notes">Blue: what the current front already dominates. Orange: the extra area one candidate design would add — its hypervolume improvement.</aside>
+      </section>
+
+      <section>
+        <h2>So the acquisition asks: which design adds the most area?</h2>
+        <div class="body">
+          <p class="formula">qLogNEHVI &mdash; <em>q</em>-batch <em>Log</em> <em>N</em>oisy <em>E</em>xpected <em>H</em>yper<em>v</em>olume <em>I</em>mprovement</p>
+          <div class="three-col">
+            <div>
+              <h3>Expected</h3>
+              <p>The GP gives a distribution over where a candidate will land, so the added area is an <em>expectation</em>, not a guess.</p>
+            </div>
+            <div>
+              <h3>Noisy</h3>
+              <p>Our observations are not exact &mdash; a finite mesh and a stopping tolerance. NEHVI accounts for that instead of trusting each point.</p>
+            </div>
+            <div>
+              <h3>Log</h3>
+              <p>The raw improvement underflows to zero over most of the box. The log form keeps the optimiser able to see a gradient.</p>
+            </div>
+          </div>
+          <div class="callout green">
+            <p>No scalarising into a weighted sum &mdash; that would need weights nobody can justify, and it would quietly hide the trade-off you are trying to expose. <strong>Failed designs are excluded, never given a fictitious penalty.</strong></p>
           </div>
         </div>
       </section>
@@ -1070,7 +1132,7 @@ rm results/ex3/objectives.csv                     &amp;&amp; $DRY   # step 2</co
         <div class="body">
           <p>The campaign has already paid for twelve designs. They are in <code>results/corrected_boundary_v3/all_samples.csv</code>, with the six BO coordinates in the <code>bo_*</code> columns and the mixing index in <code>metric_flux_weighted_mixing_index</code>.</p>
           <p class="claim">Fit a GP to that data and use it to rank the six parameters by how much the mixing index depends on them.</p>
-          <p class="definition">Hint: an <strong>ARD</strong> kernel learns one length scale per parameter. What does a very large length scale mean?</p>
+          <p class="definition">Hint: an <strong>ARD</strong> kernel &mdash; <em>automatic relevance determination</em> &mdash; learns one length scale per parameter. What does a very large length scale mean?</p>
         </div>
       </section>
 

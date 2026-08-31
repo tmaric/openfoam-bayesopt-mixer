@@ -23,6 +23,21 @@ function svgText(x, y, content, attrs = {}) {
   return t;
 }
 
+/* SVG has no <sub>, so a symbol like t_s has to be built from a tspan that is
+   nudged down and set smaller.  Everything on the figures goes through here so
+   the labels read as real symbols rather than "t s". */
+function svgSym(x, y, base, sub, attrs = {}) {
+  const size = Number(attrs['font-size'] || 19);
+  const t = svgElement('text', Object.assign({ x, y, fill: MUTED, 'font-size': size }, attrs));
+  t.appendChild(document.createTextNode(base));
+  if (sub) {
+    const s2 = svgElement('tspan', { dy: size * 0.28, 'font-size': size * 0.72 });
+    s2.textContent = sub;
+    t.appendChild(s2);
+  }
+  return t;
+}
+
 /* ===================================================================
    1. Corrected campaign: the twelve screening designs.
    Straight from results/corrected_boundary_v3/all_samples.csv.
@@ -127,7 +142,7 @@ function renderParetoChart() {
 
   svg.appendChild(svgText((m.left + W - m.right) / 2, H - 10, 'Pressure drop Δp  [Pa]',
     { 'text-anchor': 'middle', fill: INK, 'font-size': 22 }));
-  const yl = svgText(26, H / 2, 'Mixing index  1 − √I s,flux',
+  const yl = svgSym(26, H / 2, 'Mixing index   1 \u2212 \u221AI', 's,flux',
     { 'text-anchor': 'middle', fill: INK, 'font-size': 22 });
   yl.setAttribute('transform', `rotate(-90 26 ${H / 2})`);
   svg.appendChild(yl);
@@ -201,7 +216,7 @@ function renderGpChart() {
   /* ---- posterior panel ---- */
   const W = 1320, H = 400;
   const m = { left: 70, right: 330, top: 26, bottom: 46 };
-  const yMin = -2.6, yMax = 2.9;
+  const yMin = -2.6, yMax = 3.2;
   const x = (v) => m.left + v * (W - m.left - m.right);
   const y = (v) => H - m.bottom - (v - yMin) / (yMax - yMin) * (H - m.top - m.bottom);
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
@@ -214,6 +229,14 @@ function renderGpChart() {
     fill: 'none', stroke: BLUE, 'stroke-width': 4,
   }));
   svg.appendChild(svgElement('line', { x1: m.left, x2: W - m.right, y1: y(0), y2: y(0), stroke: GRID }));
+
+  /* The acquisition, traced on the posterior itself.  With kappa = 2 it is
+     exactly the upper edge of the +/-2 sigma band -- which is the clearest way
+     to see what "mean plus two error bars of optimism" means. */
+  svg.appendChild(svgElement('polyline', {
+    points: grid.map((p) => `${x(p.x)},${y(p.ucb)}`).join(' '),
+    fill: 'none', stroke: ORANGE, 'stroke-width': 4,
+  }));
 
   GP.X.forEach((xi, i) => {
     svg.appendChild(svgElement('circle', { cx: x(xi), cy: y(GP.Y[i]), r: 9, fill: INK }));
@@ -228,7 +251,7 @@ function renderGpChart() {
     [INK, 'the 5 runs we paid for'],
     [BLUE, 'mean μ(x) — best guess'],
     ['rgba(47,120,168,0.35)', '±2σ(x) — our ignorance'],
-    [ORANGE, 'UCB says: spend run 6 here'],
+    [ORANGE, 'acquisition  \u03BC + \u03BA\u03C3'],
   ];
   legend.forEach(([colour, label], i) => {
     const ly = m.top + 16 + i * 34;
@@ -349,21 +372,22 @@ function renderCell(svg, p, opts = {}) {
     svg.appendChild(svgElement('line', { x1: X(a), x2: X(b), y1: yPix, y2: yPix, stroke: colour, 'stroke-width': 2 }));
     [a, b].forEach((v) => svg.appendChild(svgElement('line', {
       x1: X(v), x2: X(v), y1: yPix - 6, y2: yPix + 6, stroke: colour, 'stroke-width': 2 })));
-    svg.appendChild(svgText((X(a) + X(b)) / 2, yPix - 9, label,
+    svg.appendChild(svgSym((X(a) + X(b)) / 2, yPix - 9, label[0], label.slice(1),
       { 'text-anchor': 'middle', 'font-size': 19, fill: colour, 'font-weight': 700 }));
   };
   const dimY = (a, b, xPix, label, colour = INK, anchor = 'start') => {
     svg.appendChild(svgElement('line', { x1: xPix, x2: xPix, y1: Y(a), y2: Y(b), stroke: colour, 'stroke-width': 2 }));
     [a, b].forEach((v) => svg.appendChild(svgElement('line', {
       x1: xPix - 6, x2: xPix + 6, y1: Y(v), y2: Y(v), stroke: colour, 'stroke-width': 2 })));
-    svg.appendChild(svgText(xPix + (anchor === 'start' ? 10 : -10), (Y(a) + Y(b)) / 2 + 6, label,
+    svg.appendChild(svgSym(xPix + (anchor === 'start' ? 10 : -10), (Y(a) + Y(b)) / 2 + 6,
+      label[0], label.slice(1),
       { 'text-anchor': anchor, 'font-size': 19, fill: colour, 'font-weight': 700 }));
   };
 
   const yBot = HH - 26;
-  dimX(0, Ls, yBot, 'L s');
-  dimX(Ls, Ls + Lc, yBot, 'L c', ORANGE);
-  dimX(Ls + Lc, L, yBot, 'L m');
+  dimX(0, Ls, yBot, 'Ls');
+  dimX(Ls, Ls + Lc, yBot, 'Lc', ORANGE);
+  dimX(Ls + Lc, L, yBot, 'Lm');
   dimY(0, H, 22, 'H', MUTED, 'start');
 
   /* amplitudes, measured from each wall */
@@ -371,17 +395,17 @@ function renderCell(svg, p, opts = {}) {
   svg.appendChild(svgElement('line', {
     x1: xPeak, x2: xPeak, y1: Y(H), y2: Y(H - p.a_strong), stroke: '#c84b4b', 'stroke-width': 3 }));
   const halo = { stroke: '#fffdf8', 'stroke-width': 5, 'paint-order': 'stroke' };
-  svg.appendChild(svgText(xPeak + 12, Y(H - p.a_strong / 2) + 6, 'a strong',
+  svg.appendChild(svgSym(xPeak + 12, Y(H - p.a_strong / 2) + 6, 'a', 'strong',
     Object.assign({ 'font-size': 19, fill: '#c84b4b', 'font-weight': 700 }, halo)));
   svg.appendChild(svgElement('line', {
     x1: xPeak, x2: xPeak, y1: Y(0), y2: Y(p.a_weak), stroke: GREEN, 'stroke-width': 3 }));
-  svg.appendChild(svgText(xPeak + 12, Y(p.a_weak / 2) + 6, 'a weak',
+  svg.appendChild(svgSym(xPeak + 12, Y(p.a_weak / 2) + 6, 'a', 'weak',
     Object.assign({ 'font-size': 19, fill: GREEN, 'font-weight': 700 }, halo)));
 
   /* baffle thicknesses */
-  svg.appendChild(svgText(X(Ls / 2), Y(H / 2) - 12, 't s',
+  svg.appendChild(svgSym(X(Ls / 2), Y(H / 2) - 12, 't', 's',
     { 'text-anchor': 'middle', 'font-size': 19, fill: '#ad5c10', 'font-weight': 700 }));
-  svg.appendChild(svgText(X(Ls + Lc + Lm / 2), Y(H / 2) - 12, 't m',
+  svg.appendChild(svgSym(X(Ls + Lc + Lm / 2), Y(H / 2) - 12, 't', 'm',
     { 'text-anchor': 'middle', 'font-size': 19, fill: '#ad5c10', 'font-weight': 700 }));
 
   /* the peak-to-peak gap that the mesh constraint protects */
@@ -512,6 +536,134 @@ function renderForresterAll() {
   });
 }
 
+
+/* ===================================================================
+   5. Pareto front and hypervolume, in objective space.
+   BOTH objectives are minimised here (pressure ratio, segregation), so
+   "better" is down-and-left and the reference point sits up-and-right.
+   The shaded staircase IS the hypervolume: the area the front dominates
+   with respect to that reference.
+   =================================================================== */
+const OBJ = [                      /* schematic designs, minimise both */
+  { x: 1.4, y: 0.86 }, { x: 2.1, y: 0.62 }, { x: 3.0, y: 0.47 },
+  { x: 4.3, y: 0.38 }, { x: 6.2, y: 0.33 },
+  { x: 2.6, y: 0.80 }, { x: 3.8, y: 0.70 }, { x: 5.1, y: 0.55 },
+  { x: 1.9, y: 0.92 }, { x: 4.9, y: 0.78 },
+];
+const REF = { x: 7.4, y: 1.0 };
+const NEWPT = { x: 2.5, y: 0.41 };
+
+function paretoOf(pts) {                       /* minimise both */
+  return pts.filter((p) => !pts.some((o) =>
+    o !== p && o.x <= p.x && o.y <= p.y && (o.x < p.x || o.y < p.y)
+  )).sort((a, b) => a.x - b.x);
+}
+
+/* Staircase polygon of the region dominated by `front`, up to the reference. */
+function dominatedPolygon(front, ref, X, Y) {
+  const pts = [];
+  pts.push(`${X(front[0].x)},${Y(ref.y)}`);
+  front.forEach((p, i) => {
+    pts.push(`${X(p.x)},${Y(p.y)}`);
+    const nextX = (i + 1 < front.length) ? front[i + 1].x : ref.x;
+    pts.push(`${X(nextX)},${Y(p.y)}`);
+  });
+  pts.push(`${X(ref.x)},${Y(ref.y)}`);
+  return pts.join(' ');
+}
+
+function renderObjectiveSpace(svg, mode) {
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const W = 1340, H = 560;
+  const m = { left: 96, right: 300, top: 34, bottom: 78 };
+  const xMax = 8.4, yMax = 1.12;
+  const X = (v) => m.left + (v / xMax) * (W - m.left - m.right);
+  const Y = (v) => H - m.bottom - (v / yMax) * (H - m.top - m.bottom);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+  const front = paretoOf(OBJ);
+
+  if (mode === 'hypervolume') {
+    svg.appendChild(svgElement('polygon', {
+      points: dominatedPolygon(front, REF, X, Y), fill: BLUE, opacity: 0.20,
+    }));
+    /* what one more design would add */
+    const grown = paretoOf(OBJ.concat([NEWPT]));
+    svg.appendChild(svgElement('polygon', {
+      points: dominatedPolygon(grown, REF, X, Y), fill: ORANGE, opacity: 0.30,
+    }));
+    svg.appendChild(svgElement('polygon', {
+      points: dominatedPolygon(front, REF, X, Y), fill: '#fffdf8', opacity: 1,
+    }));
+    svg.appendChild(svgElement('polygon', {
+      points: dominatedPolygon(front, REF, X, Y), fill: BLUE, opacity: 0.20,
+    }));
+  }
+
+  /* axes */
+  svg.appendChild(svgElement('line', {
+    x1: m.left, x2: W - m.right, y1: H - m.bottom, y2: H - m.bottom, stroke: INK, 'stroke-width': 2 }));
+  svg.appendChild(svgElement('line', {
+    x1: m.left, x2: m.left, y1: m.top, y2: H - m.bottom, stroke: INK, 'stroke-width': 2 }));
+  svg.appendChild(svgText((m.left + W - m.right) / 2, H - 34,
+    'pressure cost  →  worse', { 'text-anchor': 'middle', fill: INK, 'font-size': 21 }));
+  const yl = svgText(30, H / 2, 'segregation  →  worse',
+    { 'text-anchor': 'middle', fill: INK, 'font-size': 21 });
+  yl.setAttribute('transform', `rotate(-90 30 ${H / 2})`);
+  svg.appendChild(yl);
+  svg.appendChild(svgText(m.left + 12, m.top + 22, 'better designs are down and to the left',
+    { fill: MUTED, 'font-size': 19 }));
+
+  /* dominated points, then the front */
+  OBJ.forEach((pt) => {
+    const on = front.includes(pt);
+    svg.appendChild(svgElement('circle', {
+      cx: X(pt.x), cy: Y(pt.y), r: on ? 10 : 7,
+      fill: on ? ORANGE : MUTED, opacity: on ? 1 : 0.45,
+      stroke: on ? INK : 'none', 'stroke-width': on ? 3 : 0,
+    }));
+  });
+  svg.appendChild(svgElement('polyline', {
+    points: front.map((p) => `${X(p.x)},${Y(p.y)}`).join(' '),
+    fill: 'none', stroke: INK, 'stroke-width': 3, 'stroke-dasharray': '8 5',
+  }));
+
+  if (mode === 'hypervolume') {
+    svg.appendChild(svgElement('circle', {
+      cx: X(REF.x), cy: Y(REF.y), r: 9, fill: '#c84b4b' }));
+    svg.appendChild(svgText(X(REF.x), Y(REF.y) - 16, 'reference point',
+      { 'text-anchor': 'middle', fill: '#c84b4b', 'font-size': 20, 'font-weight': 700 }));
+    svg.appendChild(svgElement('circle', {
+      cx: X(NEWPT.x), cy: Y(NEWPT.y), r: 10,
+      fill: ORANGE, stroke: INK, 'stroke-width': 3, 'stroke-dasharray': '4 3' }));
+    svg.appendChild(svgText(X(NEWPT.x) - 16, Y(NEWPT.y) + 6, 'candidate',
+      { 'text-anchor': 'end', fill: INK, 'font-size': 20, 'font-weight': 700,
+        stroke: '#fffdf8', 'stroke-width': 5, 'paint-order': 'stroke' }));
+  }
+
+  const legend = mode === 'hypervolume'
+    ? [[BLUE, 'hypervolume the front already owns'],
+       [ORANGE, 'what the candidate would ADD'],
+       ['#c84b4b', 'reference point (declared in config)']]
+    : [[ORANGE, 'Pareto front \u2014 non-dominated'],
+       [MUTED, 'dominated \u2014 some design beats it on both']];
+  legend.forEach(([colour, label], i) => {
+    const ly = m.top + 20 + i * 36;
+    svg.appendChild(svgElement('rect', {
+      x: W - m.right + 16, y: ly - 13, width: 26, height: 15, fill: colour,
+      opacity: colour === BLUE || colour === ORANGE ? 0.5 : 1 }));
+    svg.appendChild(svgText(W - m.right + 52, ly, label, { 'font-size': 18, fill: INK }));
+  });
+}
+
+function renderObjectiveSpaces() {
+  document.querySelectorAll('svg[data-objspace]').forEach((svg) => {
+    if (svg.dataset.rendered) return;
+    svg.dataset.rendered = 'true';
+    renderObjectiveSpace(svg, svg.dataset.objspace);
+  });
+}
+
 Reveal.initialize({
   /* Slides are laid out by CSS flex (title pinned top, body centred in the rest),
      which needs full-height sections.  Reveal's default vertical centring sizes
@@ -548,6 +700,7 @@ function renderAll() {
   renderGpChart();
   renderAllCells();
   renderForresterAll();
+  renderObjectiveSpaces();
 }
 
 Reveal.on('ready', renderAll);
