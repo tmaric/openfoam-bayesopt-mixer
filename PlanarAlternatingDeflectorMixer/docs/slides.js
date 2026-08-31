@@ -527,7 +527,23 @@ Reveal.initialize({
   width: 1600,
 });
 
+/* Author attribution on every slide.  Injected rather than written out 67
+   times, so it cannot drift out of sync -- and injected INTO the section rather
+   than positioned against the viewport, so it scales with the slide. */
+const AUTHOR = 'Tomislav Maric \u2013 MMA TU Darmstadt \u2013 maric@mma.tu-darmstadt.de';
+
+function addAuthorLine() {
+  document.querySelectorAll('.reveal .slides > section').forEach((section) => {
+    if (section.querySelector(':scope > .deck-author')) return;
+    const el = document.createElement('div');
+    el.className = 'deck-author';
+    el.textContent = AUTHOR;
+    section.appendChild(el);
+  });
+}
+
 function renderAll() {
+  addAuthorLine();
   renderParetoChart();
   renderGpChart();
   renderAllCells();

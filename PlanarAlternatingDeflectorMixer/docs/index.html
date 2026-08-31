@@ -974,7 +974,7 @@ delta: 0.30      a_strong: 0.35</code></p>
         <h2>It reads w<sub>s</sub> and &delta;. The rest is provenance.</h2>
         <div class="body">
           <p class="cmd"><code>grep -n "a_weak\|a_strong" FlowCase/alternating_deflector_cad.py   # no hits
-grep -n "_p\[" FlowCase/alternating_deflector_cad.py               # w_s, delta, k, ...</code></p>
+grep -nE '_p\[|_p\.get' FlowCase/alternating_deflector_cad.py      # w_s, delta, k, ...</code></p>
           <div class="two-col">
             <div>
               <p>The generator computes one base intrusion and adds the bias to alternating walls:</p>

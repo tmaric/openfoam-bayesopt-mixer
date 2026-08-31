@@ -685,3 +685,25 @@ body { background: var(--paper); }
   left: 0;
   position: absolute;
 }
+
+/* ===================================================================
+   Author attribution, shown on every slide.
+   One element outside .slides rather than 67 copies, so it cannot drift
+   out of sync.  Its colour is flipped by slides.js on the dark slides.
+   =================================================================== */
+/* Injected into every section by slides.js, so it lives in the SLIDE's
+   coordinate system: it scales with the slide and lines up with the slide's own
+   left padding.  Positioned against the viewport instead, it was clipped at the
+   left edge and floated outside the painted area of the dark slides. */
+.reveal .slides section > .deck-author {
+  bottom: 14px;
+  color: var(--muted);
+  font-size: 15px;
+  left: 72px;
+  letter-spacing: 0.01em;
+  margin: 0;
+  position: absolute;
+  z-index: 40;
+}
+.reveal .slides section.divider > .deck-author,
+.reveal .slides section.closing > .deck-author { color: rgba(255, 255, 255, 0.55); }
