@@ -353,11 +353,12 @@ body { background: var(--paper); }
 
 .pipeline {
   align-items: center;
-  display: grid;
+  display: flex;
   gap: 14px;
-  grid-template-columns: repeat(6, 1fr);
   margin-top: 76px;
 }
+.pipeline .stage { flex: 1 1 0; min-width: 0; }
+.pipeline .pipeline-arrow { flex: 0 0 auto; }
 
 .pipeline .stage {
   border-top: 7px solid var(--blue);
@@ -365,7 +366,7 @@ body { background: var(--paper); }
   padding-top: 16px;
 }
 
-.pipeline .stage:nth-child(even) { border-color: var(--orange); }
+.pipeline .stage:nth-child(4n + 3) { border-color: var(--orange); }
 .pipeline .stage strong { display: block; font-size: 25px; margin-bottom: 8px; }
 .pipeline .stage span { color: var(--muted); font-size: 20px; line-height: 1.25; }
 .pipeline-arrow { color: var(--line); font-size: 38px; text-align: center; }
@@ -821,22 +822,24 @@ body { background: var(--paper); }
 
 /* --- figure panels: a row of three, or a two-by-two grid ----------- */
 .panel-row { display: grid; gap: 18px; grid-template-columns: repeat(3, 1fr); }
+.panel-pair { display: grid; gap: 18px; grid-template-columns: repeat(2, 1fr); }
 .panel-grid { display: grid; gap: 12px 18px; grid-template-columns: repeat(2, 1fr); }
-.panel-row figure, .panel-grid figure { display: flex; flex-direction: column; margin: 0; }
-.panel-row svg, .panel-grid svg {
+.panel-row figure, .panel-pair figure, .panel-grid figure { display: flex; flex-direction: column; margin: 0; }
+.panel-row svg, .panel-pair svg, .panel-grid svg {
   background: var(--white);
   border: 1px solid #d7e0e7;
   width: 100%;
 }
 .panel-row svg { height: 330px; }
+.panel-pair svg { height: 330px; }
 .panel-grid svg { height: 244px; }
-.panel-row figcaption, .panel-grid figcaption {
+.panel-row figcaption, .panel-pair figcaption, .panel-grid figcaption {
   color: var(--muted);
   font-size: 19px;
   line-height: 1.35;
   margin-top: 7px;
 }
-.panel-row figcaption strong, .panel-grid figcaption strong {
+.panel-row figcaption strong, .panel-pair figcaption strong, .panel-grid figcaption strong {
   color: var(--ink);
   display: block;
   font-size: 22px;

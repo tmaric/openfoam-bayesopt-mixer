@@ -387,6 +387,294 @@ function renderEfficiency(svg) {
   });
 }
 
+/* ---- E. maximum likelihood: what it fits, and what it does NOT fix -------
+   Ten samples, not five.  With five the profile likelihood is nearly flat and
+   the optimiser runs to the lower bound on the length scale -- true, and worth
+   saying out loud, but it does not make the figure the slide needs. */
+const MLE_X = Array.from({ length: 10 }, (_, i) => (i + 0.5) / 10);
+const MLE_Y = MLE_X.map(forrester);
+const MLE_NOISE = 0.02;
+
+function logMarginalLikelihood(X, Y, l, sf, sn) {
+  const n = X.length;
+  const K = X.map((a, i) => X.map((b, j) =>
+    sf * sf * Math.exp(-((a - b) ** 2) / (2 * l * l)) + (i === j ? sn * sn : 0)));
+  const L = cholesky(K);
+  const alpha = solve(K, Y);
+  let quad = 0, logdet = 0;
+  for (let i = 0; i < n; i += 1) { quad += Y[i] * alpha[i]; logdet += 2 * Math.log(L[i][i]); }
+  return -0.5 * quad - 0.5 * logdet - 0.5 * n * Math.log(2 * Math.PI);
+}
+
+/* profile likelihood: for each length scale, the best signal variance */
+function mleProfile() {
+  const out = [];
+  for (let i = 0; i <= 110; i += 1) {
+    const l = 0.02 + i * 0.003;
+    let best = -Infinity, sf = 0;
+    for (let j = 0; j < 300; j += 1) {
+      const s = 0.1 + j * 0.02;
+      const v = logMarginalLikelihood(MLE_X, MLE_Y, l, s, MLE_NOISE);
+      if (v > best) { best = v; sf = s; }
+    }
+    out.push({ l, logL: best, sf });
+  }
+  const star = out.reduce((a, b) => (b.logL > a.logL ? b : a));
+  return { out, star };
+}
+let MLE_CACHE = null;
+const mle = () => (MLE_CACHE || (MLE_CACHE = mleProfile()));
+
+function renderMLEProfile(svg) {
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const { out, star } = mle();
+  const W = 720, H = 330, m = { left: 76, right: 26, top: 34, bottom: 54 };
+  const lo = -15, hi = -5.4;
+  const shown = out.filter((p) => p.logL >= lo - 1);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const X = (v) => m.left + ((v - 0.02) / 0.36) * (W - m.left - m.right);
+  const Y = (v) => H - m.bottom - ((v - lo) / (hi - lo)) * (H - m.top - m.bottom);
+  [-14, -12, -10, -8, -6].forEach((t) => {
+    svg.appendChild(svgElement('line', { x1: m.left, x2: W - m.right, y1: Y(t), y2: Y(t), stroke: GRID_C }));
+    svg.appendChild(svgText(m.left - 12, Y(t) + 6, String(t), { 'text-anchor': 'end', fill: MUTED, 'font-size': 18 }));
+  });
+  svg.appendChild(svgElement('polyline', {
+    points: shown.map((p) => `${X(p.l)},${Y(Math.max(p.logL, lo))}`).join(' '),
+    fill: 'none', stroke: BLUE, 'stroke-width': 4 }));
+  svg.appendChild(svgElement('line', {
+    x1: X(star.l), x2: X(star.l), y1: Y(star.logL), y2: H - m.bottom,
+    stroke: ORANGE, 'stroke-width': 3, 'stroke-dasharray': '8 5' }));
+  svg.appendChild(svgElement('circle', { cx: X(star.l), cy: Y(star.logL), r: 8, fill: ORANGE }));
+  svg.appendChild(svgText(X(star.l) + 14, Y(star.logL) + 6,
+    `ℓ* = ${star.l.toFixed(2)},  σ_f* = ${star.sf.toFixed(2)}`.replace('σ_f', 'σf'),
+    { fill: ORANGE, 'font-size': 21, 'font-weight': 700 }));
+  [0.05, 0.1, 0.2, 0.3].forEach((t) => svg.appendChild(
+    svgText(X(t), H - m.bottom + 26, t.toFixed(2), { 'text-anchor': 'middle', fill: MUTED, 'font-size': 18 })));
+  svg.appendChild(svgText((m.left + W - m.right) / 2, H - 12, 'length scale ℓ',
+    { 'text-anchor': 'middle', fill: INK, 'font-size': 21 }));
+  const yl = svgText(24, H / 2, 'log p(y | θ)', { 'text-anchor': 'middle', fill: INK, 'font-size': 21 });
+  yl.setAttribute('transform', `rotate(-90 24 ${H / 2})`);
+  svg.appendChild(yl);
+  svg.appendChild(svgText(m.left + 6, m.top - 12, 'the fit is a one-dimensional hill-climb',
+    { fill: MUTED, 'font-size': 19 }));
+}
+
+function renderMLEPrior(svg) {
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const { star } = mle();
+  const W = 720, H = 330, m = { left: 26, right: 22, top: 34, bottom: 20 };
+  const { X, Y } = axes1d(svg, W, H, m, -4.2, 4.2);
+  const n = 90;
+  const xs = Array.from({ length: n }, (_, i) => i / (n - 1));
+  const k = (a, b) => star.sf * star.sf * Math.exp(-((a - b) ** 2) / (2 * star.l * star.l));
+  const L = cholesky(xs.map((a, i) => xs.map((b, j) => k(a, b) + (i === j ? 1e-8 : 0))));
+  svg.appendChild(svgElement('rect', {
+    x: m.left, y: Y(2 * star.sf), width: W - m.left - m.right,
+    height: Y(-2 * star.sf) - Y(2 * star.sf), fill: BLUE, opacity: 0.12 }));
+  svg.appendChild(svgElement('line', {
+    x1: m.left, x2: W - m.right, y1: Y(0), y2: Y(0), stroke: BLUE, 'stroke-width': 3.5 }));
+  const colours = [MUTED, ORANGE, GREEN, '#7a2fa8', RED];
+  for (let sIdx = 0; sIdx < 5; sIdx += 1) {
+    const rnd = seededRandom(4242 + sIdx * 613);
+    const z = Array.from({ length: n }, () => gaussPair(rnd));
+    const f = L.map((row) => row.reduce((acc, v, j) => acc + v * z[j], 0));
+    svg.appendChild(svgElement('polyline', {
+      points: xs.map((x, i) => `${X(x)},${Y(f[i])}`).join(' '),
+      fill: 'none', stroke: colours[sIdx], 'stroke-width': 2.2, opacity: 0.7 }));
+  }
+  MLE_X.forEach((xi, i) => svg.appendChild(svgElement('circle', {
+    cx: X(xi), cy: Y(MLE_Y[i]), r: 7, fill: INK })));
+  svg.appendChild(svgText(m.left + 6, m.top - 12,
+    `prior with ℓ* = ${star.l.toFixed(2)}, σf* = ${star.sf.toFixed(2)}`,
+    { fill: INK, 'font-size': 21, 'font-weight': 700 }));
+  svg.appendChild(svgText(W - m.right - 4, H - m.bottom - 8, 'mean still 0 — no data used yet',
+    { 'text-anchor': 'end', fill: BLUE, 'font-size': 19 }));
+}
+
+/* ---- F. marginalise versus condition, on one joint Gaussian --------------
+   The two operations people conflate.  Same joint, same picture: marginalising
+   projects all the mass onto one axis, conditioning takes a single slice
+   through it and renormalises.  rho = 0.8 so the difference is unmissable. */
+const MC_RHO = 0.8;
+const MC_C = 1.5;                       /* the value y2 is observed to take */
+
+function renderMarginalConditional(svg, mode) {
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const W = 720, H = 380, m = { left: 66, right: 30, top: 118, bottom: 56 };
+  const lim = 3.2;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const X = (v) => m.left + ((v + lim) / (2 * lim)) * (W - m.left - m.right);
+  const Y = (v) => H - m.bottom - ((v + lim) / (2 * lim)) * (H - m.top - m.bottom);
+  /* the density strip lives above the panel, drawn downwards from its baseline */
+  const base = m.top - 14;
+  const D = (d) => base - d * 84;
+
+  [-3, -2, -1, 0, 1, 2, 3].forEach((t) => {
+    svg.appendChild(svgElement('line', { x1: X(t), x2: X(t), y1: m.top, y2: H - m.bottom, stroke: GRID_C }));
+    svg.appendChild(svgElement('line', { x1: m.left, x2: W - m.right, y1: Y(t), y2: Y(t), stroke: GRID_C }));
+    svg.appendChild(svgText(X(t), H - m.bottom + 24, String(t), { 'text-anchor': 'middle', fill: MUTED, 'font-size': 17 }));
+    svg.appendChild(svgText(m.left - 12, Y(t) + 6, String(t), { 'text-anchor': 'end', fill: MUTED, 'font-size': 17 }));
+  });
+
+  /* iso-probability ellipses of N(0, [[1,rho],[rho,1]]) via its Cholesky factor */
+  const a = Math.sqrt(1 - MC_RHO * MC_RHO);
+  [1, 2, 3].forEach((r) => {
+    const pts = [];
+    for (let i = 0; i <= 120; i += 1) {
+      const t = (i / 120) * 2 * Math.PI;
+      pts.push(`${X(r * Math.cos(t))},${Y(MC_RHO * r * Math.cos(t) + a * r * Math.sin(t))}`);
+    }
+    svg.appendChild(svgElement('polygon', {
+      points: pts.join(' '), fill: BLUE, opacity: 0.10, stroke: BLUE,
+      'stroke-width': 1.6, 'stroke-opacity': 0.5 }));
+  });
+  svg.appendChild(svgText(W - m.right - 6, H - m.bottom + 24, 'y₁',
+    { 'text-anchor': 'end', fill: INK, 'font-size': 21, 'font-weight': 700 }));
+  const y2lab = svgText(22, (m.top + H - m.bottom) / 2, 'y₂',
+    { 'text-anchor': 'middle', fill: INK, 'font-size': 21, 'font-weight': 700 });
+  y2lab.setAttribute('transform', `rotate(-90 22 ${(m.top + H - m.bottom) / 2})`);
+  svg.appendChild(y2lab);
+
+  const gauss = (x, mu, sd) => Math.exp(-((x - mu) ** 2) / (2 * sd * sd)) / (sd * Math.sqrt(2 * Math.PI));
+  const curve = (mu, sd, colour) => {
+    const pts = [];
+    for (let i = 0; i <= 200; i += 1) {
+      const x = -lim + (i / 200) * 2 * lim;
+      pts.push(`${X(x)},${D(gauss(x, mu, sd))}`);
+    }
+    svg.appendChild(svgElement('polyline', { points: `${X(-lim)},${D(0)} ` + pts.join(' ') + ` ${X(lim)},${D(0)}`,
+      fill: colour, opacity: 0.16, stroke: 'none' }));
+    svg.appendChild(svgElement('polyline', { points: pts.join(' '), fill: 'none', stroke: colour, 'stroke-width': 3.5 }));
+    svg.appendChild(svgElement('line', { x1: m.left, x2: W - m.right, y1: D(0), y2: D(0), stroke: MUTED, 'stroke-width': 1.5 }));
+  };
+
+  if (mode === 'marginal') {
+    /* every column of the joint, summed: N(0, 1) */
+    for (let i = 0; i <= 26; i += 1) {
+      const x = -lim + (i / 26) * 2 * lim;
+      svg.appendChild(svgElement('line', {
+        x1: X(x), x2: X(x), y1: m.top, y2: H - m.bottom,
+        stroke: ORANGE, 'stroke-width': 1.4, opacity: 0.35 }));
+    }
+    curve(0, 1, ORANGE);
+    svg.appendChild(svgText(m.left, 26, 'p(y₁) = ∫ p(y₁, y₂) dy₂',
+      { fill: ORANGE, 'font-size': 22, 'font-weight': 700 }));
+    svg.appendChild(svgText(m.left, 50, 'mean 0,  sd 1.00  —  as wide as it started',
+      { fill: MUTED, 'font-size': 19 }));
+  } else {
+    const mu = MC_RHO * MC_C, sd = Math.sqrt(1 - MC_RHO * MC_RHO);
+    svg.appendChild(svgElement('line', {
+      x1: m.left, x2: W - m.right, y1: Y(MC_C), y2: Y(MC_C),
+      stroke: ORANGE, 'stroke-width': 3.5 }));
+    svg.appendChild(svgText(W - m.right - 6, Y(MC_C) - 10, `y₂ = ${MC_C}  observed`,
+      { 'text-anchor': 'end', fill: ORANGE, 'font-size': 19, 'font-weight': 700 }));
+    curve(mu, sd, ORANGE);
+    svg.appendChild(svgElement('line', {
+      x1: X(mu), x2: X(mu), y1: D(0), y2: D(gauss(mu, mu, sd)),
+      stroke: ORANGE, 'stroke-width': 2, 'stroke-dasharray': '6 4' }));
+    svg.appendChild(svgText(m.left, 26, 'p(y₁ | y₂ = 1.5)',
+      { fill: ORANGE, 'font-size': 22, 'font-weight': 700 }));
+    svg.appendChild(svgText(m.left, 50, `mean ${mu.toFixed(2)},  sd ${sd.toFixed(2)}  —  moved, and 40% as wide`,
+      { fill: MUTED, 'font-size': 19 }));
+  }
+}
+
+/* ---- G. why a weighted sum cannot reach a non-convex front ---------------
+   Both objectives minimised.  A weighted sum picks whichever front point its
+   iso-cost line touches first, so it can only ever select vertices of the
+   LOWER CONVEX HULL.  Sweep the weights across a concave stretch and the
+   chosen design jumps over it -- every design in between is unselectable, for
+   every weighting.  Front, hull and jump are all computed here, not drawn. */
+const SC_FRONT = (t) => 1 - Math.sqrt(Math.max(2 * t - t * t, 0))
+                          + 0.14 * Math.exp(-(((t - 0.5) / 0.12) ** 2));
+
+function renderScalarise(svg) {
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const W = 1340, H = 470, m = { left: 96, right: 300, top: 34, bottom: 74 };
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const X = (v) => m.left + (v / 1.06) * (W - m.left - m.right);
+  const Y = (v) => H - m.bottom - (v / 1.06) * (H - m.top - m.bottom);
+
+  const N = 400;
+  const P = Array.from({ length: N + 1 }, (_, i) => [i / N, SC_FRONT(i / N)]);
+  /* lower convex hull, monotone chain */
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const hull = [];
+  P.forEach((pt) => {
+    while (hull.length >= 2 && cross(hull[hull.length - 2], hull[hull.length - 1], pt) <= 0) hull.pop();
+    hull.push(pt);
+  });
+  /* the one hull edge that bridges a gap is the concave stretch */
+  let bridge = [hull[0], hull[1]];
+  for (let i = 0; i < hull.length - 1; i += 1) {
+    if (hull[i + 1][0] - hull[i][0] > bridge[1][0] - bridge[0][0]) bridge = [hull[i], hull[i + 1]];
+  }
+  const [A, B] = bridge;                          /* A is the left end, B the right */
+  const inside = (pt) => pt[0] > A[0] + 1e-9 && pt[0] < B[0] - 1e-9;
+
+  [0, 0.25, 0.5, 0.75, 1].forEach((t) => {
+    svg.appendChild(svgElement('line', { x1: m.left, x2: W - m.right, y1: Y(t), y2: Y(t), stroke: GRID_C }));
+    svg.appendChild(svgElement('line', { x1: X(t), x2: X(t), y1: m.top, y2: H - m.bottom, stroke: GRID_C }));
+    svg.appendChild(svgText(m.left - 14, Y(t) + 6, t.toFixed(2), { 'text-anchor': 'end', fill: MUTED, 'font-size': 18 }));
+    svg.appendChild(svgText(X(t), H - m.bottom + 26, t.toFixed(2), { 'text-anchor': 'middle', fill: MUTED, 'font-size': 18 }));
+  });
+
+  /* the weighted-sum iso-cost line through both ends of the bridge */
+  const w1 = (B[1] - A[1]) / ((B[1] - A[1]) + (A[0] - B[0]));
+  const cost = w1 * A[0] + (1 - w1) * A[1];
+  const isoAt = (x) => (cost - w1 * x) / (1 - w1);
+  const isoLo = Math.max(0, (cost - (1 - w1) * 1.06) / w1);
+  const isoHi = Math.min(1.06, cost / w1);
+  svg.appendChild(svgElement('line', {
+    x1: X(isoLo), y1: Y(isoAt(isoLo)), x2: X(isoHi), y2: Y(isoAt(isoHi)),
+    stroke: ORANGE, 'stroke-width': 3, 'stroke-dasharray': '10 6' }));
+
+  /* the front: reachable in blue, unreachable in red */
+  const seg = (pts, colour, width) => svg.appendChild(svgElement('polyline', {
+    points: pts.map((q) => `${X(q[0])},${Y(q[1])}`).join(' '),
+    fill: 'none', stroke: colour, 'stroke-width': width, 'stroke-linecap': 'round' }));
+  seg(P.filter((q) => q[0] <= A[0]), BLUE, 5);
+  seg(P.filter((q) => q[0] >= B[0]), BLUE, 5);
+  seg(P.filter(inside), RED, 6);
+
+  [[A, 'A'], [B, 'B']].forEach(([pt, lab]) => {
+    svg.appendChild(svgElement('circle', { cx: X(pt[0]), cy: Y(pt[1]), r: 9, fill: ORANGE }));
+    svg.appendChild(svgText(X(pt[0]) + (lab === 'A' ? -18 : 16), Y(pt[1]) - 14, lab,
+      { 'text-anchor': lab === 'A' ? 'end' : 'start', fill: ORANGE, 'font-size': 24, 'font-weight': 700 }));
+  });
+  const mid = P.find((q) => q[0] > (A[0] + B[0]) / 2);
+  svg.appendChild(svgText(X(mid[0]), Y(mid[1]) - 22, 'never selected, for any weights',
+    { 'text-anchor': 'middle', fill: RED, 'font-size': 21, 'font-weight': 700 }));
+
+  svg.appendChild(svgElement('line', { x1: m.left, x2: W - m.right, y1: Y(0), y2: Y(0), stroke: INK, 'stroke-width': 2 }));
+  svg.appendChild(svgElement('line', { x1: m.left, x2: m.left, y1: m.top, y2: Y(0), stroke: INK, 'stroke-width': 2 }));
+  svg.appendChild(svgText((m.left + W - m.right) / 2, H - 14, 'objective 1  (minimise →)',
+    { 'text-anchor': 'middle', fill: INK, 'font-size': 21 }));
+  const yl = svgText(30, H / 2, 'objective 2  (minimise ↓)', { 'text-anchor': 'middle', fill: INK, 'font-size': 21 });
+  yl.setAttribute('transform', `rotate(-90 30 ${H / 2})`);
+  svg.appendChild(yl);
+
+  const L = W - m.right + 18;
+  const lines = [
+    ['The weighted sum', INK, 23, 700],
+    [`minimise  w₁f₁ + w₂f₂`, MUTED, 21, 400],
+    ['', INK, 10, 400],
+    [`Its iso-cost lines are straight, so it`, MUTED, 20, 400],
+    ['can only ever touch the front at a', MUTED, 20, 400],
+    ['vertex of the convex hull.', MUTED, 20, 400],
+    ['', INK, 10, 400],
+    [`Raise w₁ past ${w1.toFixed(2)} and the answer`, INK, 20, 640],
+    [`jumps B → A, from (${B[0].toFixed(2)}, ${B[1].toFixed(2)})`, INK, 20, 640],
+    [`to (${A[0].toFixed(2)}, ${A[1].toFixed(2)}) — with nothing`, INK, 20, 640],
+    ['in between ever chosen.', INK, 20, 640],
+  ];
+  let y = m.top + 26;
+  lines.forEach(([txt, fill, size, weight]) => {
+    if (txt) svg.appendChild(svgText(L, y, txt, { fill, 'font-size': size, 'font-weight': weight }));
+    y += size + 8;
+  });
+}
+
 function renderDidacticFigures() {
   document.querySelectorAll('svg[data-cond]').forEach((svg) => {
     if (svg.dataset.rendered) return; svg.dataset.rendered = 'true';
@@ -399,6 +687,18 @@ function renderDidacticFigures() {
   document.querySelectorAll('svg[data-bostep]').forEach((svg) => {
     if (svg.dataset.rendered) return; svg.dataset.rendered = 'true';
     renderBOStep(svg, parseInt(svg.dataset.bostep, 10));
+  });
+  document.querySelectorAll('svg[data-scalarise]').forEach((svg) => {
+    if (svg.dataset.rendered) return; svg.dataset.rendered = 'true';
+    renderScalarise(svg);
+  });
+  document.querySelectorAll('svg[data-mc]').forEach((svg) => {
+    if (svg.dataset.rendered) return; svg.dataset.rendered = 'true';
+    renderMarginalConditional(svg, svg.dataset.mc);
+  });
+  document.querySelectorAll('svg[data-mle]').forEach((svg) => {
+    if (svg.dataset.rendered) return; svg.dataset.rendered = 'true';
+    if (svg.dataset.mle === 'profile') renderMLEProfile(svg); else renderMLEPrior(svg);
   });
   document.querySelectorAll('svg[data-efficiency]').forEach((svg) => {
     if (svg.dataset.rendered) return; svg.dataset.rendered = 'true';

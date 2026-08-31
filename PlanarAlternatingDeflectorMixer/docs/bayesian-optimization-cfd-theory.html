@@ -29,7 +29,7 @@
             <span>4. Building blocks</span>
             <span>5. Bayes</span>
             <span>6. Acquisition</span>
-            <span>7. What&rsquo;s next</span>
+            <span>7. Many objectives</span>
             <span>8. Conclusions</span>
           </div>
       </section>
@@ -123,7 +123,7 @@
             <span>4. Building blocks</span>
             <span>5. Bayes</span>
             <span>6. Acquisition</span>
-            <span>7. What&rsquo;s next</span>
+            <span>7. Many objectives</span>
             <span>8. Conclusions</span>
           </div>
       </section>
@@ -175,7 +175,7 @@
             <span>4. Building blocks</span>
             <span>5. Bayes</span>
             <span>6. Acquisition</span>
-            <span>7. What&rsquo;s next</span>
+            <span>7. Many objectives</span>
             <span>8. Conclusions</span>
           </div>
       </section>
@@ -186,7 +186,7 @@
           <p class="formula">x* = argmax<sub>x ∈ X</sub> f(x),&nbsp;&nbsp; x ∈ I<sup>d</sup>,&nbsp; d ≲ 20&ndash;60</p>
           <p>f is an <strong>expensive black box</strong>: no formula, no gradient, and each evaluation is a simulation.</p>
           <div class="callout blue">
-            <p>Bayesian optimization models f with a cheap <strong>probabilistic surrogate</strong> &mdash; a Gaussian process &mdash; and optimises <em>that</em> instead, using it to decide where the next expensive evaluation should go.</p>
+            <p>Bayesian optimization models f with a cheap <strong>probabilistic surrogate</strong> &mdash; a <strong>Gaussian process (GP)</strong> &mdash; and optimises <em>that</em> instead, using it to decide where the next expensive evaluation should go.</p>
           </div>
         </div>
       </section>
@@ -212,14 +212,15 @@
       <section>
         <h2>The Bayesian optimization loop</h2>
         <div class="body">
-          <p class="formula">while |f(x*<sub>k</sub>) − f(x*<sub>k−1</sub>)| &gt; ε</p>
+          <p><strong>Before the loop:</strong> evaluate f at n<sub>0</sub> space-filling points (Sobol or Latin hypercube) to get D = {(x<sub>i</sub>, y<sub>i</sub>)}. The loop cannot start from nothing &mdash; a GP with no data proposes only the corners of the box.</p>
           <div class="emph-rows">
-            <div class="emph-row"><div class="n">1</div><div class="t">Introduce more samples.</div></div>
-            <div class="emph-row"><div class="n">2</div><div class="t">Fit a Gaussian-process surrogate to the samples.</div></div>
-            <div class="emph-row"><div class="n">3</div><div class="t">Construct the acquisition function from the GP's mean and variance, balancing exploitation and exploration.</div></div>
-            <div class="emph-row"><div class="n">4</div><div class="t">Globally optimise the cheap acquisition to find where to sample next &mdash; possibly several points at once.</div></div>
-            <div class="emph-row"><div class="n">5</div><div class="t">Go to 1.</div></div>
+            <div class="emph-row"><div class="n">1</div><div class="t"><strong>Fit</strong> the GP to D: maximise the log marginal likelihood over &theta; = (&#8467;, &sigma;<sub>f</sub>, &sigma;<sub>n</sub>).</div></div>
+            <div class="emph-row"><div class="n">2</div><div class="t"><strong>Condition</strong> on D to get the posterior mean &mu;&prime;(x) and standard deviation &sigma;&prime;(x).</div></div>
+            <div class="emph-row"><div class="n">3</div><div class="t"><strong>Maximise</strong> the acquisition, x<sub>new</sub> = argmax<sub>x</sub> &alpha;(x; &mu;&prime;, &sigma;&prime;). Cheap, so: global, many restarts.</div></div>
+            <div class="emph-row"><div class="n">4</div><div class="t"><strong>Evaluate</strong> the expensive f at x<sub>new</sub> &mdash; one design, or q of them in parallel.</div></div>
+            <div class="emph-row"><div class="n">5</div><div class="t"><strong>Augment</strong>D &larr; D &cup; {(x<sub>new</sub>, y<sub>new</sub>)}, and go to 1.</div></div>
           </div>
+          <p class="caution" style="margin-top:14px"><strong>Stop on the budget you can afford, or when max<sub>x</sub> &alpha;(x) &lt; &epsilon;</strong> &mdash; the model itself reporting that nothing left is worth buying. Do <em>not</em> stop because the best value has not improved for a few iterations: BO spends those iterations exploring on purpose, and that test would halt it exactly when it is doing its job.</p>
         </div>
       </section>
 
@@ -235,7 +236,7 @@
             <span class="now">4. Building blocks</span>
             <span>5. Bayes</span>
             <span>6. Acquisition</span>
-            <span>7. What&rsquo;s next</span>
+            <span>7. Many objectives</span>
             <span>8. Conclusions</span>
           </div>
       </section>
@@ -419,6 +420,20 @@
         </div>
       </section>
 
+      <section>
+        <h2>What the fit gives you &mdash; and what it does not</h2>
+        <div class="body">
+          <div class="panel-pair">
+            <figure><svg data-mle="profile"></svg>
+              <figcaption><strong>The fit</strong>log p(y | &theta;) against the length scale, with the signal variance at its own optimum for each &#8467;. One clear peak, found by hill-climbing.</figcaption></figure>
+            <figure><svg data-mle="prior"></svg>
+              <figcaption><strong>The result</strong>the GP with those fitted values, before conditioning. The draws now wiggle at the right rate &mdash; and the mean runs flat at zero, straight past every observation.</figcaption></figure>
+          </div>
+          <p class="caution" style="margin-top:14px">Maximum likelihood fits <strong>&theta;</strong>, not <strong>f</strong>. It chooses which family of functions the model finds plausible. It does not make the model pass through a single data point &mdash; that is the next section's job.</p>
+        </div>
+        <aside class="notes">Ten samples here, not the five used elsewhere, and deliberately: with five the profile is nearly flat and the optimiser runs to the lower bound on the length scale, declaring the data uncorrelated noise. Hyperparameters need data too. In practice you bound the length scales or put priors on them precisely because early in a campaign there is not enough data to identify them — worth saying out loud, because it is the state every CFD campaign starts in.</aside>
+      </section>
+
       <!-- ============ PART 5 ============ -->
       <section class="divider">
         <div class="part">Part five</div>
@@ -431,7 +446,7 @@
             <span class="done">4. Building blocks</span>
             <span class="now">5. Bayes</span>
             <span>6. Acquisition</span>
-            <span>7. What&rsquo;s next</span>
+            <span>7. Many objectives</span>
             <span>8. Conclusions</span>
           </div>
       </section>
@@ -485,14 +500,66 @@
       </section>
 
       <section>
+        <h2>Marginalising: integrating out what you did not ask about</h2>
+        <div class="body">
+          <p>A joint density carries every variable at once. Usually you want a statement about <em>one</em> of them, with the rest allowed to be anything they like. That is a marginal:</p>
+          <p class="formula">p(y<sub>1</sub>) = &int; p(y<sub>1</sub>, y<sub>2</sub>) dy<sub>2</sub></p>
+          <div class="two-col">
+            <div>
+              <h3>Why it appears here</h3>
+              <p>Bayes' denominator <em>is</em> a marginal &mdash; p(D) is the joint p(D, H) summed over every hypothesis. It is the total probability of seeing the data by any route, which is what turns the numerator into a proper probability.</p>
+            </div>
+            <div>
+              <h3>Why it usually hurts</h3>
+              <p>That integral is over every unobserved variable. In a general model it is the expensive, often intractable step &mdash; the reason large parts of Bayesian inference are about approximating it.</p>
+            </div>
+          </div>
+          <div class="verdict">For Gaussians the integral has a closed form, and it is almost insultingly cheap.</div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Two operations on the same joint</h2>
+        <div class="body">
+          <div class="panel-pair">
+            <figure><svg data-mc="marginal"></svg>
+              <figcaption><strong>Marginalise</strong>collapse the joint along y&#8322;, keeping every value it might have taken. You learn nothing new, so the spread over y&#8321; is unchanged.</figcaption></figure>
+            <figure><svg data-mc="conditional"></svg>
+              <figcaption><strong>Condition</strong>take the single slice where y&#8322; = 1.5 and renormalise it. Because the two are correlated, the mean moves to 1.20 and the spread shrinks to 0.60.</figcaption></figure>
+          </div>
+          <p class="claim" style="margin-top:14px">Conditioning is what a measurement does. The mean moves toward what was observed and the variance falls &mdash; and those two sentences are the whole content of &mu;&prime; and &sigma;&prime;.</p>
+        </div>
+        <aside class="notes">Same bivariate Gaussian in both panels, correlation 0.8. Left: the orange verticals are the columns being summed. Right: the orange horizontal is the observation, and the curve above it is that one slice, renormalised. Conditional variance is 1 - rho^2 = 0.36, so sd = 0.6 — and note it does not depend on WHICH value y2 took, only that it was observed. That is why the GP band collapses at a sample regardless of the value measured there.</aside>
+      </section>
+
+      <section>
+        <h2>Why a Gaussian makes this free</h2>
+        <div class="body">
+          <div class="two-col">
+            <div>
+              <h3>Marginalising = deleting</h3>
+              <p>Take a jointly Gaussian vector, drop the components you do not want, and the rest is still Gaussian &mdash; with the mean and covariance you get by <strong>striking out the corresponding rows and columns</strong>. No integral is performed.</p>
+              <p class="formula" style="font-size:26px">N(&mu;, &Sigma;) &rarr; N(&mu;<sub>A</sub>, &Sigma;<sub>AA</sub>)</p>
+            </div>
+            <div>
+              <h3>What that buys a GP</h3>
+              <p>A GP is a distribution over functions &mdash; formally, over uncountably many random variables. You can only ever hold a finite number of them in a computer.</p>
+              <p>The marginalisation property says you do not have to: any finite set of points is <em>already</em> the exact marginal of the infinite object. The N designs you simulated are the whole model, as far as any computation is concerned.</p>
+            </div>
+          </div>
+          <div class="verdict">This is the definition of a Gaussian process: a collection of random variables, <em>any finite subset of which</em> is jointly Gaussian.</div>
+        </div>
+      </section>
+
+      <section>
         <h2>Conditioning a GP is Bayes in a continuous setting</h2>
         <div class="body">
           <p class="formula">GP(y′ | y) = GP(y′) GP(y | y′) / GP(y)</p>
           <h3 style="margin-top:20px">The recipe</h3>
           <ol class="steps">
-            <li><p>Write the joint distribution GP(y, y′) as likelihood × prior.</p></li>
-            <li><p>Marginalise the joint over y′.</p></li>
-            <li><p>Divide, cancel terms, apply the <strong>block-matrix inverse</strong>, and recognise the result as another Gaussian.</p></li>
+            <li><p>The observed y and the wanted y′ come from the <strong>same</strong> GP, so write their joint as one Gaussian with a block covariance: K(X,X) + σ²I, K(X,x′) and k(x′,x′).</p></li>
+            <li><p>The denominator GP(y) is that joint <strong>marginalised</strong> over y′ — the evidence, which by the previous slide costs nothing to write down.</p></li>
+            <li><p>Divide, cancel, apply the <strong>block-matrix inverse</strong>. The exponent stays quadratic, so the result is another Gaussian — and you read its mean and covariance straight off.</p></li>
           </ol>
           <p class="claim" style="margin-top:14px">The posterior of a Gaussian conditioned on Gaussian data is again Gaussian. That closure is the reason any of this is cheap.</p>
         </div>
@@ -529,14 +596,6 @@
         <aside class="notes">Every panel is the two formulas from the previous slide evaluated on a grid — nothing else. Grey dashed is the hidden truth, which the model never sees. The number to read out is the mean uncertainty printed at the top of each panel: 1.10, 0.93, 0.57, 0.16.</aside>
       </section>
 
-      <section>
-        <h2>Posterior: the mean interpolates, the variance collapses</h2>
-        <div class="body">
-          <svg id="gp-chart"></svg>
-          <svg id="ucb-chart"></svg>
-        </div>
-        <aside class="notes">Computed live from an exact posterior over five observations — the mean passes through every point and the band pinches to zero there, exactly as the two formulas require.</aside>
-      </section>
 
       <!-- ============ PART 6 ============ -->
       <section class="divider">
@@ -550,7 +609,7 @@
             <span class="done">4. Building blocks</span>
             <span class="done">5. Bayes</span>
             <span class="now">6. Acquisition</span>
-            <span>7. What&rsquo;s next</span>
+            <span>7. Many objectives</span>
             <span>8. Conclusions</span>
           </div>
       </section>
@@ -568,6 +627,15 @@
             <p>UCB is the simplest useful acquisition. Expected improvement, knowledge gradient and the hypervolume-based multi-objective forms all make the same trade with more machinery.</p>
           </div>
         </div>
+      </section>
+
+      <section>
+        <h2>Posterior: the mean interpolates, the variance collapses</h2>
+        <div class="body">
+          <svg id="gp-chart"></svg>
+          <svg id="ucb-chart"></svg>
+        </div>
+        <aside class="notes">Computed live from an exact posterior over five observations — the mean passes through every point and the band pinches to zero there, exactly as the two formulas require.</aside>
       </section>
 
       <section>
@@ -627,19 +695,17 @@
         <aside class="notes">Same function, same three starting points, same budget; only the strategy differs. This is the concrete version of the "roughly 100 evaluations" claim from part one. Say plainly that this is a one-dimensional toy and that the gap widens with dimension — but that the kappa = 0 failure mode is real and does show up in production campaigns.</aside>
       </section>
 
-      <section>
-        <h2>Several objectives at once</h2>
-        <div class="body">
-          <svg data-objspace="hypervolume" style="background:var(--white);border:1px solid #d7e0e7;width:100%;height:430px"></svg>
-          <p style="margin-top:12px">With two objectives there is no single best design, only a <strong>Pareto front</strong>. To rank one front against another you need a scalar: the <strong>hypervolume</strong> it dominates with respect to a declared reference point. The acquisition then asks which candidate adds the most area.</p>
-        </div>
-      </section>
+
+      <!-- ============ PART 7 ============ -->
+
+
+
 
       <!-- ============ PART 7 ============ -->
       <section class="divider">
         <div class="part">Part seven</div>
-        <h2>Where this is going</h2>
-        <p>Learned surrogates, and running the loop concurrently with the simulation.</p>
+        <h2>Many objectives at once</h2>
+        <p>Where the objectives come from, why you should not add them up, and how to choose in the end.</p>
           <div class="roadmap">
             <span class="done">1. Why BO</span>
             <span class="done">2. CFD loop</span>
@@ -647,40 +713,99 @@
             <span class="done">4. Building blocks</span>
             <span class="done">5. Bayes</span>
             <span class="done">6. Acquisition</span>
-            <span class="now">7. What&rsquo;s next</span>
+            <span class="now">7. Many objectives</span>
             <span>8. Conclusions</span>
           </div>
       </section>
 
       <section>
-        <h2>Physics-informed neural networks as surrogates</h2>
+        <h2>Two objectives, and no single answer</h2>
         <div class="body">
+          <p>Almost nothing in CFD has one objective. Pressure drop <em>and</em> mixing. Lift <em>and</em> drag. Heat transfer <em>and</em> pumping power. Efficiency <em>and</em> cavitation margin. They conflict, so &ldquo;the optimum&rdquo; is not a design &mdash; it is a set.</p>
           <div class="two-col">
             <div>
-              <h3>The idea</h3>
-              <p>A PINN is trained not only against data but against the <strong>governing equations themselves</strong>: the PDE residual, the boundary conditions and the initial conditions all enter the loss.</p>
-              <p class="formula">L = L<sub>data</sub> + L<sub>PDE</sub> + L<sub>BC</sub> + L<sub>IC</sub></p>
+              <h3>Dominance</h3>
+              <p>Design <strong>a</strong> dominates <strong>b</strong> if it is at least as good in <em>every</em> objective and strictly better in at least one. Then b is simply never worth building.</p>
             </div>
             <div>
-              <h3>Why it is interesting for BO</h3>
-              <p>A trained PINN can evaluate a design far more cheaply than a solver, so it can stand in for f &mdash; or provide a cheap fidelity level in a multi-fidelity scheme.</p>
-              <p class="caution">The catch: a PINN is only trustworthy where it was trained, and BO deliberately proposes points where nothing has been sampled.</p>
+              <h3>The Pareto front</h3>
+              <p>The designs that nothing dominates. Moving along it, you cannot improve one objective without giving up another &mdash; which is the trade-off, made explicit and measured rather than assumed.</p>
             </div>
           </div>
+          <div class="verdict">Reporting a front instead of a winner is the honest output. It also defers the value judgement until you can see what it costs.</div>
         </div>
       </section>
 
       <section>
-        <h2>Online training and concurrent workflows</h2>
+        <h2>Where the objectives actually come from</h2>
         <div class="body">
-          <p>If the surrogate learns <em>while</em> the simulations run, the loop stops being strictly sequential:</p>
-          <ul>
-            <li>simulations stream data to the learner as they compute, rather than at the end;</li>
-            <li>the surrogate is retrained online and improves during the campaign;</li>
-            <li>proposal, simulation and training overlap instead of queueing.</li>
-          </ul>
+          <p>An objective is a <strong>scalar functional of the flow field</strong>, produced by post-processing a converged solution. Getting them wrong is quieter and more expensive than getting the optimiser wrong.</p>
+          <div class="three-col">
+            <div><h3>Reduce the field</h3><p>Δp from patch-averaged pressure; mixing from a variance integral over the outlet; drag from a force integral. Each is an OpenFOAM function object, evaluated once per design.</p></div>
+            <div><h3>Normalise</h3><p>Divide by a matched baseline, so every objective is dimensionless and O(1). A GP with one objective in pascals and another in [0,1] is a GP fitting mostly the pascals.</p></div>
+            <div><h3>Sign and noise</h3><p>Negate what you minimise, once, in one place. And give each objective its own noise estimate — the solver tolerance is not the same for a pressure and a scalar variance.</p></div>
+          </div>
+          <div class="callout blue">
+            <p><strong>One GP per objective</strong>, fitted independently, is the usual and usually sufficient choice. A multi-output GP that shares information between them helps only when they genuinely share structure and you have the data to identify it.</p>
+          </div>
+          <p class="caution" style="margin-top:14px">A <strong>constraint is not an objective.</strong> A mesh-quality gate or a Reynolds bound makes a design feasible or not; it is not a quantity to be traded off. Fold it in as a feasibility model, never as another term with a weight.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>The tempting shortcut: add them up</h2>
+        <div class="body">
+          <svg data-scalarise style="background:var(--white);border:1px solid #d7e0e7;width:100%;height:470px"></svg>
+          <p style="margin-top:10px">Weights have to be chosen <em>before</em> you know the trade-off they are pricing &mdash; and one weight vector buys one point, so a front costs a full campaign per weighting. Worse, as the figure shows, <strong>no weighting at all can reach a concave stretch of the front.</strong> Sweep the weights and the chosen design jumps across the gap.</p>
+        </div>
+        <aside class="notes">Computed here: the front is sampled, its lower convex hull is taken, and the longest hull edge identifies the concave stretch. The critical weight and the two jump endpoints are read off that geometry, not typed in. ε-constraint methods do reach concave regions — "minimise f1 subject to f2 ≤ ε" — but they still need you to pick ε, and still cost one campaign per ε.</aside>
+      </section>
+
+      <section>
+        <h2>Hypervolume: one number for a whole front</h2>
+        <div class="body">
+          <svg data-objspace="hypervolume" style="background:var(--white);border:1px solid #d7e0e7;width:100%;height:430px"></svg>
+          <p style="margin-top:12px">A front cannot be ranked against another front without a scalar &mdash; and it has to be a scalar of the <em>set</em>, not of any one design. The <strong>hypervolume</strong> is the area the front dominates with respect to a declared <strong>reference point</strong>. It rewards a front for being good, for being wide, and for being evenly covered, all at once, which is why it became the standard.</p>
+        </div>
+        <aside class="notes">The reference point is a modelling choice, not a detail: it must be dominated by everything you would accept, because designs worse than it contribute nothing and become invisible to the optimiser. Place it a little beyond the worst tolerable value of each objective. Placing it deliberately close on one axis is also how you tell the optimiser to concentrate there.</aside>
+      </section>
+
+      <section>
+        <h2>The modern acquisition: qLogNEHVI, term by term</h2>
+        <div class="body">
+          <p class="formula" style="font-size:30px">&alpha;(X) = E[ HV(P &cup; f(X)) &minus; HV(P) ]</p>
+          <div class="three-col">
+            <div><h3>EHVI</h3><p><strong>Expected hypervolume improvement.</strong> How much area a candidate is expected to add to the front, under the GP posterior. The direct multi-objective analogue of expected improvement.</p></div>
+            <div><h3>q</h3><p><strong>Jointly, not greedily.</strong> Propose q designs at once and score the set, so two candidates that would add the same area are not both chosen. This is what makes a parallel campaign efficient rather than merely parallel.</p></div>
+            <div><h3>N</h3><p><strong>Noisy.</strong> The observed front is itself uncertain, so integrate over the posterior of the points already evaluated instead of pretending they are exact. Essential when the objectives are converged-solver output.</p></div>
+          </div>
           <div class="callout">
-            <p>Frameworks such as <strong>SmartSim</strong> and <strong>SmartRedis</strong> exist to wire this together: an in-memory database between the running solver and the learner, so neither has to wait on the filesystem.</p>
+            <p><strong>Log.</strong> Improvement values collapse toward zero late in a campaign and in higher dimensions, and the gradients vanish with them, so the inner optimiser stops making progress on a surface that is numerically flat. Working with the log of the acquisition keeps it optimisable — which is the difference between an acquisition that is correct and one that is usable.</p>
+          </div>
+          <p class="caution" style="margin-top:12px">Exact hypervolume improvement costs time exponential in the number of objectives. Two or three objectives are comfortable, four is work, beyond that use an approximation and know that you are.</p>
+        </div>
+        <aside class="notes">This is BoTorch's qLogNoisyExpectedHypervolumeImprovement, and it is what the hands-on study uses. Lineage worth naming: qEHVI (Daulton et al. 2020) made it differentiable and parallel, qNEHVI (2021) handled observation noise, and the LogEI family (Ament et al. 2023) fixed the numerical vanishing.</aside>
+      </section>
+
+      <section>
+        <h2>Choosing a design from the front</h2>
+        <div class="body">
+          <p class="claim">The optimiser returns a set. Picking one member is a <strong>decision</strong>, not a computation &mdash; and the whole point of deferring it was to make it with the trade-off in front of you.</p>
+          <div class="two-col">
+            <div>
+              <h3>Ways to pick</h3>
+              <ul>
+                <li><strong>Apply the real constraint.</strong> &ldquo;Best mixing with Δp under the pump budget&rdquo; reads straight off the front &mdash; usually the honest question.</li>
+                <li><strong>The knee.</strong> Maximum curvature: where a further gain starts costing disproportionately. Defensible when nothing else discriminates.</li>
+                <li><strong>Weights, afterwards.</strong> Score the finished front under many weightings. Free, unlike scalarising the search, and it shows how sensitive the choice is.</li>
+                <li><strong>Nearest to a target.</strong> Name the values you want; take the closest achievable point.</li>
+              </ul>
+            </div>
+            <div>
+              <h3>If you already know what you want</h3>
+              <p>Say so <em>before</em> the campaign rather than after. Placing the hypervolume reference point to emphasise a region, or steering with reference vectors, concentrates the simulations where you care instead of buying a uniform front you will use a tenth of.</p>
+              <p class="caution">And a front is a finite set of <em>simulated</em> designs, not a curve. To take a design &ldquo;between&rdquo; two front points you must simulate it: interpolating in objective space gives you a number, not a geometry.</p>
+            </div>
           </div>
         </div>
       </section>
@@ -696,7 +821,7 @@
             <span class="done">4. Building blocks</span>
             <span class="done">5. Bayes</span>
             <span class="done">6. Acquisition</span>
-            <span class="done">7. What&rsquo;s next</span>
+            <span class="done">7. Many objectives</span>
             <span class="now">8. Conclusions</span>
           </div>
       </section>
@@ -710,6 +835,7 @@
             <div><strong>The posterior mean and variance are closed-form and cheap</strong>, which is what makes an inner global optimization affordable.</div>
             <div><strong>The acquisition function is where exploration is bought</strong>, and κ is the price you set.</div>
             <div><strong>Constraining the CAD is not housekeeping</strong> &mdash; it is what stops the optimiser spending simulations on shapes that cannot exist.</div>
+            <div><strong>Real problems have several objectives</strong>, so the answer is a Pareto front. Do not add them up &mdash; a weighted sum prices a trade-off you have not measured yet, and cannot reach a concave front at all.</div>
           </div>
           <div class="verdict">Next: the hands-on tutorial builds all of this for a real micromixer &mdash; <code>bayesian-optimization-cfd-tutorial.html</code></div>
         </div>
