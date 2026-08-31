@@ -14,7 +14,7 @@
         <div class="eyebrow">Course notes &middot; theoretical part</div>
         <h1>Bayesian Optimization<br>in Computational Fluid Dynamics</h1>
         <p class="subtitle">From the Gaussian distribution to a working acquisition function &mdash; and why 100 simulations are enough.</p>
-        <div class="footline">Companion to the hands-on tutorial: <code>bayesian-optimization-cfd-tutorial.html</code></div>
+        <div class="footline">Every figure in these slides is computed at load time, from the algebra it illustrates.</div>
       </section>
 
       <!-- ============ PART 1 ============ -->
@@ -105,7 +105,7 @@
             </div>
             <div>
               <h3>Passive chaotic micromixing</h3>
-              <p>No moving parts: the walls must stretch and fold the interface. Objectives in tension: <strong>mixing quality</strong> against <strong>pressure loss</strong>. This is the device the hands-on tutorial optimises.</p>
+              <p>No moving parts: the walls must stretch and fold the interface. Objectives in tension: <strong>mixing quality</strong> against <strong>pressure loss</strong>.</p>
             </div>
           </div>
           <div class="verdict">Both are <strong>CAD-in-the-loop</strong>: the design variables are geometry, so every proposal must be built, meshed and solved before it can be scored.</div>
@@ -200,7 +200,7 @@
       <section>
         <h2>Everything converged. Everything was wrong.</h2>
         <div class="body">
-          <p>In the study this course is built on, the CAD classified a boundary face as an inlet by the direction it <strong>pointed</strong> rather than where it <strong>was</strong>. Every obstacle face that happened to face upstream became an inlet, so the solver injected fluid through the middle of the device.</p>
+          <p>In one micromixer optimization campaign, the CAD classified a boundary face as an inlet by the direction it <strong>pointed</strong> rather than where it <strong>was</strong>. Every obstacle face that happened to face upstream became an inlet, so the solver injected fluid through the middle of the device.</p>
           <div class="two-col">
             <div>
               <h3>What the diagnostics said</h3>
@@ -213,7 +213,7 @@
           </div>
           <div class="verdict">Only a test that knows where an inlet is <em>supposed to be</em> could have caught this. No exit code, no residual and no mesh check ever could.</div>
         </div>
-        <aside class="notes">This is the argument for writing the physical, top-level test first: the straight channel against its analytic pressure drop. It is the cheapest test in the study and the only one that would have failed here.</aside>
+        <aside class="notes">This is the argument for writing the physical, top-level test first: the straight channel against its analytic pressure drop. It is the cheapest test in the campaign and the only one that would have failed here.</aside>
       </section>
 
       <!-- ============ PART 3 ============ -->
@@ -795,28 +795,67 @@
       </section>
 
       <section>
-        <h2>Where the objectives actually come from</h2>
+        <h2>An objective is one number squeezed out of a whole field</h2>
         <div class="body">
-          <p>An objective is a <strong>scalar functional of the flow field</strong>, produced by post-processing a converged solution. Getting them wrong is quieter and more expensive than getting the optimiser wrong.</p>
           <div class="three-col">
-            <div><h3>Reduce the field</h3><p>Δp from patch-averaged pressure; mixing from a variance integral over the outlet; drag from a force integral. Each is an OpenFOAM function object, evaluated once per design.</p></div>
-            <div><h3>Normalise</h3><p>Divide by a matched baseline, so every objective is dimensionless and O(1). A GP with one objective in pascals and another in [0,1] is a GP fitting mostly the pascals.</p></div>
-            <div><h3>Sign and noise</h3><p>Negate what you minimise, once, in one place. And give each objective its own noise estimate — the solver tolerance is not the same for a pressure and a scalar variance.</p></div>
+            <div><h3>Reduce</h3><p>Δp from a patch-averaged pressure. Mixing from a variance integral over the outlet. Drag from a force integral. One function object, one number, once per design.</p></div>
+            <div><h3>Normalise</h3><p>Divide by a matched baseline. A GP given one objective in pascals and another in [0, 1] is a GP fitting the pascals.</p></div>
+            <div><h3>Sign, once</h3><p>Negate what you minimise in exactly one place. And give each objective its own noise: solver tolerance is not the same for a pressure as for a scalar variance.</p></div>
           </div>
-          <div class="callout blue">
-            <p><strong>One GP per objective</strong>, fitted independently, is the usual and usually sufficient choice. A multi-output GP that shares information between them helps only when they genuinely share structure and you have the data to identify it.</p>
+          <div class="verdict">Getting the objective wrong is quieter, and far more expensive, than getting the optimiser wrong.</div>
+        </div>
+        <aside class="notes">One GP per objective, fitted independently, is the usual choice and usually enough. A multi-output GP that shares information across objectives helps only when they genuinely share structure and you have the data to identify it — which early in a campaign you do not.</aside>
+      </section>
+
+      <section class="statement">
+        <div class="body">
+          <p class="bombastic">A constraint is not an objective.</p>
+          <p style="margin-top:30px">An objective is <strong>traded off</strong>. A constraint decides whether a design <strong>exists</strong>. Mesh quality, a Reynolds bound, a wall clearance, manufacturability &mdash; not one of them is a quantity you would accept less of in exchange for more mixing.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>So do not give it a weight</h2>
+        <div class="body">
+          <div class="two-col">
+            <div>
+              <h3>What goes wrong</h3>
+              <p>Add a constraint as another weighted term and you have <strong>priced</strong> it. The optimiser will then buy a violation whenever the other objective pays enough &mdash; and report that design as a success.</p>
+            </div>
+            <div>
+              <h3>What to do instead</h3>
+              <p>Model <strong>feasibility separately</strong>: a second GP over &ldquo;did this design survive?&rdquo;, and multiply the acquisition by the probability that it will. Infeasible regions become cheap to avoid rather than expensive to buy.</p>
+            </div>
           </div>
-          <p class="caution" style="margin-top:14px">A <strong>constraint is not an objective.</strong> A mesh-quality gate or a Reynolds bound makes a design feasible or not; it is not a quantity to be traded off. Fold it in as a feasibility model, never as another term with a weight.</p>
+          <div class="verdict">Feasible or not is a different question from good or bad, and it needs its own model.</div>
         </div>
       </section>
 
       <section>
         <h2>The tempting shortcut: add them up</h2>
         <div class="body">
-          <svg data-scalarise style="background:var(--white);border:1px solid #d7e0e7;width:100%;height:470px"></svg>
-          <p style="margin-top:10px">Weights have to be chosen <em>before</em> you know the trade-off they are pricing &mdash; and one weight vector buys one point, so a front costs a full campaign per weighting. Worse, as the figure shows, <strong>no weighting at all can reach a concave stretch of the front.</strong> Sweep the weights and the chosen design jumps across the gap.</p>
+          <p class="formula" style="font-size:34px">minimise&nbsp;&nbsp; w<sub>1</sub> f<sub>1</sub>(x) + w<sub>2</sub> f<sub>2</sub>(x)</p>
+          <div class="two-col" style="margin-top:30px">
+            <div>
+              <h3>You must price it first</h3>
+              <p>The weights <em>are</em> the trade-off &mdash; the very thing the campaign was meant to measure. You are asked to choose them before you have seen it.</p>
+            </div>
+            <div>
+              <h3>One weighting, one design</h3>
+              <p>A single weight vector returns a single point. Recovering a front means running the whole campaign again, once per weighting.</p>
+            </div>
+          </div>
+          <div class="verdict">And there is a third objection, worse than both.</div>
         </div>
-        <aside class="notes">Computed here: the front is sampled, its lower convex hull is taken, and the longest hull edge identifies the concave stretch. The critical weight and the two jump endpoints are read off that geometry, not typed in. ε-constraint methods do reach concave regions — "minimise f1 subject to f2 ≤ ε" — but they still need you to pick ε, and still cost one campaign per ε.</aside>
+      </section>
+
+      <section>
+        <h2>No weighting at all reaches a concave front</h2>
+        <div class="body">
+          <svg data-scalarise style="background:var(--white);border:1px solid #d7e0e7;width:100%;height:490px"></svg>
+          <p style="margin-top:12px">Sweep the weights and the chosen design <strong>jumps across the gap</strong>. Every design on the red arc is a perfectly good, non-dominated compromise &mdash; and no weighted sum will ever select one.</p>
+        </div>
+        <aside class="notes">Computed here: the front is sampled, its lower convex hull taken, and the longest hull edge identifies the concave stretch. The critical weight and the two jump endpoints are read off that geometry, not typed in. ε-constraint methods do reach concave regions — "minimise f1 subject to f2 ≤ ε" — but they still need you to pick ε, and still cost one campaign per ε.</aside>
       </section>
 
       <section>
@@ -829,20 +868,28 @@
       </section>
 
       <section>
-        <h2>The modern acquisition: qLogNEHVI, term by term</h2>
+        <h2>The acquisition for a front</h2>
         <div class="body">
-          <p class="formula" style="font-size:30px">&alpha;(X) = E[ HV(P &cup; f(X)) &minus; HV(P) ]</p>
-          <div class="three-col">
-            <div><h3>EHVI</h3><p><strong>Expected hypervolume improvement.</strong> How much area a candidate is expected to add to the front, under the GP posterior. The direct multi-objective analogue of expected improvement.</p></div>
-            <div><h3>q</h3><p><strong>Jointly, not greedily.</strong> Propose q designs at once and score the set, so two candidates that would add the same area are not both chosen. This is what makes a parallel campaign efficient rather than merely parallel.</p></div>
-            <div><h3>N</h3><p><strong>Noisy.</strong> The observed front is itself uncertain, so integrate over the posterior of the points already evaluated instead of pretending they are exact. Essential when the objectives are converged-solver output.</p></div>
+          <p class="formula" style="font-size:32px">&alpha;(x) = E[ HV(P &cup; f(x)) &minus; HV(P) ]</p>
+          <div class="callout blue" style="margin-top:30px">
+            <p><strong>Expected hypervolume improvement.</strong> How much area this candidate is expected to add to the front &mdash; averaged over everything the GP still does not know about it.</p>
           </div>
-          <div class="callout">
-            <p><strong>Log.</strong> Improvement values collapse toward zero late in a campaign and in higher dimensions, and the gradients vanish with them, so the inner optimiser stops making progress on a surface that is numerically flat. Working with the log of the acquisition keeps it optimisable — which is the difference between an acquisition that is correct and one that is usable.</p>
-          </div>
-          <p class="caution" style="margin-top:12px">Exact hypervolume improvement costs time exponential in the number of objectives. Two or three objectives are comfortable, four is work, beyond that use an approximation and know that you are.</p>
+          <p class="claim" style="margin-top:26px">It is expected improvement, with &ldquo;improvement&rdquo; redefined from <em>a better number</em> to <em>a better front</em>.</p>
         </div>
-        <aside class="notes">This is BoTorch's qLogNoisyExpectedHypervolumeImprovement, and it is what the hands-on study uses. Lineage worth naming: qEHVI (Daulton et al. 2020) made it differentiable and parallel, qNEHVI (2021) handled observation noise, and the LogEI family (Ament et al. 2023) fixed the numerical vanishing.</aside>
+      </section>
+
+      <section>
+        <h2>q, N, Log &mdash; three fixes that make it usable</h2>
+        <div class="body">
+          <div class="three-col">
+            <div><h3>q &mdash; jointly</h3><p>Propose q designs at once and score them <em>as a set</em>, so two candidates that would add the same area are not both bought. The difference between a parallel campaign and a merely simultaneous one.</p></div>
+            <div><h3>N &mdash; noisy</h3><p>The front you already have is itself uncertain. Integrate over the posterior of the evaluated points rather than treating them as exact &mdash; unavoidable when the objectives are solver output.</p></div>
+            <div><h3>Log</h3><p>Improvements collapse toward zero late in a campaign, and the gradients vanish with them. Optimising the log keeps the surface climbable &mdash; the difference between correct and usable.</p></div>
+          </div>
+          <div class="verdict">Together: <code>qLogNEHVI</code>.</div>
+          <p class="caution" style="margin-top:16px">Exact hypervolume improvement costs time exponential in the number of objectives. Two or three are comfortable, four is work; beyond that you are using an approximation, and should know that you are.</p>
+        </div>
+        <aside class="notes">Lineage worth naming: qEHVI (Daulton et al. 2020) made it differentiable and parallel, qNEHVI (2021) handled observation noise, and the LogEI family (Ament et al. 2023) fixed the numerical vanishing.</aside>
       </section>
 
       <section>
@@ -890,7 +937,8 @@
       <section>
         <h2>Fidelity is a knob you already have</h2>
         <div class="body">
-          <p>Every CFD study has a cheaper version of itself, and it is usually already sitting in the case directory:</p>
+          <p class="claim">Before you spend &euro;50 000 on GPUs and train a neural network to stand in for your solver: <strong>run your solver on a coarser mesh.</strong></p>
+          <p style="margin-top:14px">Every CFD study already contains a cheaper version of itself, and it is usually sitting in the case directory:</p>
           <div class="three-col">
             <div><h3>Coarser mesh</h3><p>Halving the cell count per direction is 8&times; fewer cells in 3-D, and the larger stable time step multiplies that again.</p></div>
             <div><h3>Shorter or looser</h3><p>Stop at a slacker residual, average over fewer flow-through times, or take a steady solve where you would take a transient one.</p></div>
@@ -917,19 +965,37 @@
       </section>
 
       <section>
-        <h2>How Bayesian optimization uses a second level</h2>
+        <h2>Model the gap, not the levels</h2>
         <div class="body">
-          <div class="two-col">
+          <p class="formula" style="font-size:34px">f<sub>high</sub>(x) = &rho; f<sub>low</sub>(x) + &delta;(x)</p>
+          <div class="two-col" style="margin-top:28px">
             <div>
-              <h3>Model the relationship, not each level</h3>
-              <p class="formula" style="font-size:27px">f<sub>high</sub>(x) = &rho; f<sub>low</sub>(x) + &delta;(x)</p>
-              <p>The cheap level carries the shape; a second GP carries the <strong>discrepancy</strong> &delta;. Only &delta; needs expensive data, and &delta; is usually far smoother than f itself &mdash; which is the entire saving.</p>
-              <p>The modern equivalent is one GP over the pair (x, s), with s the fidelity level and a kernel that multiplies a spatial part by a fidelity part, so the correlation between levels is learned rather than assumed.</p>
+              <h3>The cheap level carries the shape</h3>
+              <p>Fit it densely &mdash; you can afford to. It supplies almost all of the structure.</p>
             </div>
             <div>
-              <h3>The acquisition has to know the price</h3>
-              <p>An acquisition that only asks &ldquo;where do I learn the most?&rdquo; will pick the expensive level every time, because it always does. Divide by cost, and it starts choosing <strong>where <em>and</em> at what fidelity</strong>.</p>
-              <p>Knowledge-gradient and entropy-search forms take this naturally, since both already measure information per evaluation. In BoTorch: <code>qMultiFidelityKnowledgeGradient</code>, with the fidelity as one more search dimension and a cost model attached.</p>
+              <h3>A second GP carries &delta;</h3>
+              <p>Only the <strong>discrepancy</strong> needs expensive data, and &delta; is usually far smoother than f itself. That is the entire saving.</p>
+            </div>
+          </div>
+          <div class="callout blue">
+            <p>The modern equivalent is one GP over the pair <strong>(x, s)</strong>, with s the fidelity level and a kernel that multiplies a spatial part by a fidelity part &mdash; so the correlation between levels is <em>learned</em> rather than assumed.</p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>The acquisition has to know the price</h2>
+        <div class="body">
+          <p class="claim">An acquisition that only asks &ldquo;where do I learn the most?&rdquo; picks the expensive level every single time &mdash; because it always is the most informative.</p>
+          <div class="two-col" style="margin-top:22px">
+            <div>
+              <h3>Divide by cost</h3>
+              <p>Information <em>per euro of compute</em>, not information. Knowledge-gradient and entropy-search forms take this naturally, since both already measure information per evaluation.</p>
+            </div>
+            <div>
+              <h3>Fidelity becomes a search dimension</h3>
+              <p>Add s to the space, attach a cost model, and the optimiser chooses <strong>where <em>and</em> at what fidelity</strong>. In BoTorch: <code>qMultiFidelityKnowledgeGradient</code>.</p>
             </div>
           </div>
           <div class="verdict">The fidelity stops being your decision and becomes part of the optimiser's.</div>
@@ -990,7 +1056,6 @@
             <div><strong>Constraining the CAD is not housekeeping</strong> &mdash; it is what stops the optimiser spending simulations on shapes that cannot exist.</div>
             <div><strong>Real problems have several objectives</strong>, so the answer is a Pareto front. Do not add them up &mdash; a weighted sum prices a trade-off you have not measured yet, and cannot reach a concave front at all.</div>
           </div>
-          <div class="verdict">Next: the hands-on tutorial builds all of this for a real micromixer &mdash; <code>bayesian-optimization-cfd-tutorial.html</code></div>
         </div>
       </section>
 

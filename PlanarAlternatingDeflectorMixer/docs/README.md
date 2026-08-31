@@ -4,7 +4,7 @@ Two standalone decks for the **Delft Workshop on Bayesian Optimization for CFD**
 
 | file | what |
 |---|---|
-| [`bayesian-optimization-cfd-theory.html`](bayesian-optimization-cfd-theory.html) | **Theory.** Gaussian distribution → multivariate Gaussian → Gaussian process → Bayes and GP conditioning → acquisition functions → multi-objective BO and the hypervolume → multi-fidelity. |
+| [`bayesian-optimization-cfd-theory.html`](bayesian-optimization-cfd-theory.html) | **Theory.** Self-contained, and does not refer to the tutorial or to this repository, so it can be given on its own. Gaussian distribution → multivariate Gaussian → Gaussian process → marginalising and conditioning → acquisition functions → multi-objective BO and the hypervolume → multi-fidelity. |
 | [`bayesian-optimization-cfd-tutorial.html`](bayesian-optimization-cfd-tutorial.html) | **Hands-on.** The planar alternating-deflector micromixer end to end: the problem, the method, building it with agents, the results, a six-exercise assignment with answers, and a reproduction appendix. |
 
 ## No installation, no plugins, no build step
