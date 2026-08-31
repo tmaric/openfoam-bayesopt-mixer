@@ -55,7 +55,7 @@ openfoam-bayesopt-mixer/
     ├── bayes_optimize_sequential.py sequential multi-objective BO
     ├── bayes_optimize_sequential.yaml
     ├── QUICKSTART.md
-    └── docs/                        Reveal.js study deck
+    └── docs/                        standalone slide decks (no reveal.js)
 ```
 
 `ChannelTwoSquareObstacles/` is a separate experimental benchmark and is not
@@ -92,29 +92,97 @@ publication claims.
 ## Course and workshop material
 
 This repository is the worked example for the **Delft Workshop on Bayesian
-Optimization for CFD**. It carries two standalone slide decks and the complete,
-reproducible study they describe.
+Optimization for CFD**. It carries two standalone slide decks and the complete
+study they describe.
+
+### What the study does
+
+A **planar alternating-deflector micromixer** is optimised end to end, with the
+geometry itself as the search space. One evaluation of the objective is a full
+CAD-to-CFD pipeline:
+
+```text
+CadQuery geometry → cfMesh (cartesian2DMesh) → simpleFoam → scalarTransportFoam → objectives.csv
+                                   ↑                                                    │
+                                   └────────── BoTorch qLogNEHVI proposes θ ←────────────┘
+```
+
+Six mesh-safe parameters describe a 1 mm × 24 mm channel of five repeated cells,
+each with a centre baffle and two cosine wall deflectors whose strong side
+alternates top/bottom. Two objectives are minimised together — **pressure drop**
+normalised by the straight channel, and the **flux-weighted intensity of
+segregation** at the outlet — at Re = 10, Sc = 1000, in water. The surrogate is
+one ARD Matérn-5/2 GP per objective; the acquisition is
+`qLogNoisyExpectedHypervolumeImprovement` at q = 1.
+
+**The recorded outcome is a negative result, and that is the point.** The
+12-design feasibility screen completed with 12/12 numerically successful designs
+and zero failures, and the best mixing index reached 0.1698 against a required
+0.60. The full campaign is deliberately blocked: this planar topology stretches
+and diffuses the inlet interface but never multiplies it, and no setting of its
+six parameters fixes that. The study is therefore an honest example of a
+campaign that answers its question by saying no.
+
+### What works straight from a clone
+
+Cloning is 3.4 MB and needs nothing installed.
 
 | | |
 |---|---|
-| **Theory deck** | [`PlanarAlternatingDeflectorMixer/docs/bayesian-optimization-cfd-theory.html`](PlanarAlternatingDeflectorMixer/docs/bayesian-optimization-cfd-theory.html) — Gaussian distribution → multivariate Gaussian → Gaussian process → Bayes and conditioning → acquisition functions |
-| **Hands-on tutorial** | [`PlanarAlternatingDeflectorMixer/docs/bayesian-optimization-cfd-tutorial.html`](PlanarAlternatingDeflectorMixer/docs/bayesian-optimization-cfd-tutorial.html) — the micromixer study end to end, plus a six-exercise assignment with answers |
-| **The study itself** | [`PlanarAlternatingDeflectorMixer/`](PlanarAlternatingDeflectorMixer/) — CAD, cases, workflow, BO driver, results and [its README](PlanarAlternatingDeflectorMixer/README.md) |
+| **Theory deck**, 70 slides | [`docs/bayesian-optimization-cfd-theory.html`](PlanarAlternatingDeflectorMixer/docs/bayesian-optimization-cfd-theory.html) — Gaussian distribution → multivariate Gaussian → Gaussian process → marginalising and conditioning → acquisition functions → multi-objective BO → multi-fidelity. Self-contained: it refers neither to the tutorial nor to this repository, so it can be given on its own. |
+| **Hands-on tutorial**, 75 slides | [`docs/bayesian-optimization-cfd-tutorial.html`](PlanarAlternatingDeflectorMixer/docs/bayesian-optimization-cfd-tutorial.html) — the study end to end, a six-exercise assignment with answers, and a reproduction appendix. |
+| **The study itself** | [`PlanarAlternatingDeflectorMixer/`](PlanarAlternatingDeflectorMixer/) and [its README](PlanarAlternatingDeflectorMixer/README.md) |
 
-**The decks need nothing installed.** They are plain HTML with local CSS and JS —
-no reveal.js, no plugins, no CDN, no build step. Double-click either file, or
-serve the folder:
+Both decks are plain HTML with local CSS and JS — no reveal.js, no plugins, no
+CDN, no build step, no network access of any kind. **Double-click either file.**
+Arrow keys or space to advance, `Home`/`End` for the ends, `N` toggles the
+speaker notes. Every diagram is computed in the browser at load time from the
+algebra it illustrates, so there are no image dependencies to go missing. To
+serve the folder instead, for presenting from another device:
 
 ```bash
 cd PlanarAlternatingDeflectorMixer/docs && ./serve.sh
 ```
 
-Navigate with the arrow keys or space; `Home`/`End` jump to the ends; `N` toggles
-the speaker notes. They work offline and in any modern browser.
+**Assignment tasks 5 and 6 also run from a bare clone, with no CFD and no
+container.** They refit the GP on the twelve designs the campaign already paid
+for, rank the six parameters by their ARD length scales, and maximise UCB at
+κ = 0, 2 and 10. The campaign summaries they read ship with the repository —
+`all_samples.csv` (9.8 kB), `screening_gate.json` and `baseline_summary.csv` —
+and only a Python environment with BoTorch is needed:
 
-To *run* the study rather than read about it, start at
+```bash
+python3 PlanarAlternatingDeflectorMixer/docs/exercises/surrogate.py
+```
+
+### What requires your own machine
+
+Everything below runs CFD, so it needs the container built once — the single
+step that cannot happen inside the container:
+
+```bash
+./apptainer/build.sh            # ~1.3 GB, or --remote to build on a cluster and copy back
+```
+
+| what | why |
+|---|---|
+| **Building the image** | It carries OpenFOAM v2512, cfMesh, CadQuery, BoTorch and Snakemake. The `.sif` is 1.3 GB and is deliberately **not** tracked. |
+| **Building the function objects** | `pressureDrop` and `patchMixingQuality` are `dlopen`ed by the container's OpenFOAM and produce *both* objectives, so they must be compiled in the same environment that runs the solvers. |
+| **Assignment tasks 1–4** | They run real CFD — a few minutes each. Task 1 checks the straight baseline against the analytic 12νUL/H²; tasks 2–4 edit the CAD parameters and re-run. |
+| **Re-running the campaign** | `research_sequence.py next` advances it one bounded evaluation at a time. |
+| **Rebuilding the figures or the animation** | `snakemake visualize` needs a campaign directory you have generated. The finished animation already ships in `docs/assets/`, so the results slide works without it. |
+| **The cluster path** | `profiles/slurm` and `run-bo.sbatch`, on a SLURM site. See [CLUSTER.md](PlanarAlternatingDeflectorMixer/CLUSTER.md). |
+
+**The 3.4 GB of fields and meshes the campaign produced is not in the
+repository**, and cannot be — only the small summaries above are. Reproducing a
+number end to end therefore means re-running that design, which is exactly what
+tasks 1–4 are for. The straight baseline is the cheapest check and gives
+Δp = 2.873688034 Pa, identical on a laptop, in the container, on a login node
+and on SLURM compute nodes.
+
+To run the study rather than read about it, start at
 [`PlanarAlternatingDeflectorMixer/README.md`](PlanarAlternatingDeflectorMixer/README.md);
-the tutorial deck's appendix gives the same four steps as slides.
+the tutorial deck's appendix gives the same steps as slides.
 
 ## Prerequisites
 
@@ -212,18 +280,6 @@ Clean generated data:
 snakemake --workflow-profile profiles/local clean
 ```
 
-## Documentation deck
-
-The Reveal.js deck documents the actual geometry, parameter transforms,
-objectives, workflow, results, and limitations:
-
-```bash
-cd PlanarAlternatingDeflectorMixer/docs
-python3 -m http.server 8000
-```
-
-Then open `http://localhost:8000/`.
-
 ## Main outputs
 
 ```text
@@ -235,6 +291,8 @@ results/corrected_boundary_v3/<sample_id>/
 ```
 
 The campaign directory contains `all_samples.csv`, `pareto_front.png`, and the
-GP checkpoint. Generated results are ignored by Git. See
+GP checkpoint. Generated results are ignored by Git, with three deliberate
+exceptions kept small enough to ship and needed by the teaching exercises:
+`all_samples.csv`, `screening_gate.json` and `baseline_summary.csv`. See
 `PlanarAlternatingDeflectorMixer/docs/RESEARCH_PLAN.md` for the staged
 verification and publication gates.
