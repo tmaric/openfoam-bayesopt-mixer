@@ -29,6 +29,26 @@ body { background: var(--paper); }
   padding: 42px 72px 48px;
 }
 
+/* Title pinned to the top, content centred in whatever height is left, so a
+   slide with three lines of text does not sit in the upper quarter of a 900px
+   canvas with dead space beneath it. */
+.reveal .slides section.present {
+  display: flex !important;
+  flex-direction: column;
+}
+.reveal .slides section.present > h1,
+.reveal .slides section.present > h2 { flex: 0 0 auto; }
+.reveal .slides section > .body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 0;
+}
+.reveal .slides section > .body > *:last-child { margin-bottom: 0; }
+/* A body that should sit against the title rather than float in the middle. */
+.reveal .slides section > .body.top { justify-content: flex-start; }
+
 .reveal h1,
 .reveal h2,
 .reveal h3 {
@@ -345,11 +365,8 @@ body { background: var(--paper); }
    =================================================================== */
 
 /* --- section dividers ------------------------------------------- */
-.reveal .slides section.divider,
-.reveal .slides section.divider.present {
+.reveal .slides section.divider {
   background: var(--ink);
-  display: flex !important;
-  flex-direction: column;
   justify-content: center;
 }
 .reveal section.divider h2 {
@@ -486,9 +503,98 @@ body { background: var(--paper); }
 .reveal table.compact-table.dense td { font-size: 22px; padding: 8px 10px; }
 
 /* a slide that is one sentence and nothing else */
-.reveal .slides section.statement,
-.reveal .slides section.statement.present {
-  display: flex !important;
-  flex-direction: column;
+.reveal .slides section.statement { justify-content: center; }
+
+/* ===================================================================
+   Revision pass: parameter→geometry figures, the kappa sweep,
+   and one-message slides.
+   =================================================================== */
+
+/* --- a parameter vector shown above its geometry ------------------ */
+.theta-vector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
   justify-content: center;
+  margin: 0 0 18px;
+}
+.theta-vector .tv {
+  background: var(--white);
+  border: 2px solid var(--line);
+  font-family: "Cambria Math", Georgia, serif;
+  font-size: 25px;
+  padding: 6px 14px;
+  white-space: nowrap;
+}
+.theta-vector .tv b { color: var(--blue); font-weight: 700; }
+.theta-vector .tv.derived { background: #f2f6f9; border-style: dashed; }
+.theta-vector .tv.derived b { color: var(--orange); }
+.theta-vector .tv i { color: var(--muted); font-style: normal; }
+
+.cell-figure { background: var(--white); border: 1px solid #d7e0e7; display: block; width: 100%; }
+.cell-figure.tall { height: 300px; }
+.cell-figure.short { height: 210px; }
+
+/* --- small multiples ---------------------------------------------- */
+.multiples { display: grid; gap: 18px; grid-template-columns: repeat(3, 1fr); }
+.multiples .mult { display: flex; flex-direction: column; }
+.multiples .mult h3 { border-top: 5px solid var(--blue); font-size: 24px; padding-top: 10px; }
+.multiples .mult.bad h3 { border-top-color: var(--red); color: var(--red); }
+.multiples .mult p { font-size: 21px; }
+.multiples svg { background: var(--white); border: 1px solid #d7e0e7; height: 168px; width: 100%; }
+
+/* --- kappa sweep panels -------------------------------------------- */
+.kappa-row { display: grid; gap: 16px; grid-template-columns: repeat(3, 1fr); }
+.kappa-row .kp { display: flex; flex-direction: column; }
+.kappa-row .kp .cap {
+  color: var(--ink);
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.kappa-row .kp .cap span { color: var(--muted); display: block; font-size: 19px; font-weight: 400; }
+.kappa-row svg { background: var(--white); border: 1px solid #d7e0e7; height: 420px; width: 100%; }
+
+/* --- big single number / takeaway ---------------------------------- */
+.takeaway {
+  align-items: baseline;
+  display: flex;
+  gap: 26px;
+  margin-top: 8px;
+}
+.takeaway .big {
+  color: var(--orange);
+  font-size: 104px;
+  font-weight: 760;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.takeaway .txt { font-size: 30px; }
+
+/* --- forbidden / allowed pair -------------------------------------- */
+.forbidden h3 { border-top: 5px solid var(--red); color: var(--red); padding-top: 12px; }
+.forbidden ul li::marker { color: var(--red); }
+
+/* --- question slide ------------------------------------------------- */
+.question {
+  font-size: 44px !important;
+  font-weight: 640;
+  line-height: 1.2 !important;
+  max-width: 20em;
+}
+.answer-big { font-size: 40px !important; font-weight: 700; line-height: 1.2 !important; }
+.answer-big em { color: var(--orange); font-style: normal; }
+
+/* --- inline emphasis rows ------------------------------------------- */
+.emph-rows { display: grid; gap: 16px; margin-top: 6px; }
+.emph-row { align-items: baseline; display: grid; gap: 22px; grid-template-columns: 96px 1fr; }
+.emph-row .n { color: var(--blue); font-size: 42px; font-weight: 760; line-height: 1; }
+.emph-row .t { font-size: 27px; }
+.emph-row .t strong { display: block; }
+
+/* Inline code on the dark closing slide: the light-background chip style is
+   unreadable there. */
+.reveal section.closing code {
+  background: rgba(255, 255, 255, 0.12);
+  color: #f8d7b0;
 }
