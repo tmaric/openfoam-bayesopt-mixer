@@ -5,15 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bayesian Optimization of a Planar Alternating-Deflector Micromixer</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
-  <link rel="stylesheet" href="slides.css?v=20260725">
+  <link rel="stylesheet" href="slides.css?v=20260831">
 </head>
 <body>
   <div class="reveal">
     <div class="slides">
+
+      <!-- ============================================================ -->
       <section class="title-slide">
         <div class="eyebrow">CAD → CFD → Bayesian optimization</div>
         <h1>Planar Alternating-Deflector<br>Micromixer</h1>
-        <p class="subtitle">Boundary-audited CAD/CFD, matched baselines, and a gated sequential search for a defensible mixing–pressure Pareto front.</p>
+        <p class="subtitle">A worked, reproducible study: what we optimise, how Bayesian optimization actually works, and how to build the whole thing with agents.</p>
         <svg class="geometry-strip" viewBox="0 0 1450 170" role="img" aria-label="Five-cell planar alternating-deflector channel">
           <rect x="5" y="24" width="1440" height="122" fill="#fffdf8" stroke="#2f78a8" stroke-width="6"/>
           <g fill="#f6b66e" stroke="#ad5c10" stroke-width="3">
@@ -26,404 +28,699 @@
             <rect x="390" y="80" width="30" height="11"/><rect x="640" y="80" width="30" height="11"/><rect x="890" y="80" width="30" height="11"/><rect x="1140" y="80" width="30" height="11"/><rect x="1390" y="80" width="30" height="11"/>
           </g>
         </svg>
-        <div class="footline">Renamed from “SplitAndRecombineMixer” after geometry and field review</div>
-        <aside class="notes">[Sources] Current geometry generator: ../FlowCase/alternating_deflector_cad.py. Historical source deck: ../../docs/obsidian/02-Technical-Notes/Split-And-Recombine-Mixer-Explanation.pptx.</aside>
+        <div class="footline">OpenFOAM v2512 · cfMesh · CadQuery · BoTorch · Snakemake · Apptainer</div>
+        <aside class="notes">Four parts: the problem, the method, how it is built, and what came out. The honest headline is that this topology failed its gate — and that is a result.</aside>
+      </section>
+
+      <!-- ============================================================
+           PART 1 — THE PROBLEM
+           ============================================================ -->
+      <section class="divider">
+        <div class="part">Part one</div>
+        <h2>The problem</h2>
+        <p>What the device is, which numbers we are allowed to change, and what exactly counts as “better”.</p>
       </section>
 
       <section>
-        <h2>The boundary audit invalidated every former objective</h2>
+        <h2>A passive micromixer: no moving parts, only geometry</h2>
         <div class="two-col">
           <div>
-            <p class="claim">Normal-based patch assignment turned internal deflector faces into inlets and outlets.</p>
+            <p>A flat channel, 1 mm tall and 24 mm long, carrying two co-flowing streams. One enters with scalar <code>T=1</code>, the other with <code>T=0</code>. We want them mixed by the outlet.</p>
+            <p class="claim">There is no stirrer. The only thing we can design is the <strong>shape of the walls</strong>.</p>
             <ul>
-              <li>old inlet bounds: <code>x = 0…22 mm</code>;</li>
-              <li>old outlet bounds: <code>x = 2…24 mm</code>;</li>
-              <li>old inlet area: 2.85 times the physical cross-section;</li>
-              <li>velocity and scalar were injected through obstacle faces.</li>
+              <li>five identical unit cells, 4 mm each;</li>
+              <li>a centre baffle that splits the stream and re-merges it;</li>
+              <li>a pair of cosine deflectors per cell, one on each wall, of <em>different</em> amplitude — hence “alternating”.</li>
             </ul>
           </div>
           <div>
-            <p class="definition"><strong>Repair:</strong> every point of an inlet/outlet CAD face must lie on <code>x=0</code> or <code>x=L</code>.</p>
-            <p>Independent polyMesh reconstruction now checks patch bounds and areas. Full <code>checkMesh</code>, flow-rate, and mass-balance checks run before an objective can be written.</p>
-            <p class="caution">The legacy and <code>verified_flux_sequential_v2</code> fronts are provenance only.</p>
+            <table class="compact-table">
+              <thead><tr><th>Fixed</th><th>Value</th></tr></thead>
+              <tbody>
+                <tr><td>Channel height H</td><td>1 mm</td></tr>
+                <tr><td>Total length L</td><td>24 mm</td></tr>
+                <tr><td>Unit cells N</td><td>5</td></tr>
+                <tr><td>Cell length</td><td>4 mm</td></tr>
+                <tr><td>Fluid</td><td>water, ν = 10⁻⁶ m²/s</td></tr>
+                <tr><td>Mean velocity</td><td>0.01 m/s</td></tr>
+                <tr><td>Diffusivity D</td><td>10⁻⁹ m²/s</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
-        <aside class="notes">[Sources] Corrected classification and CAD manifest: ../FlowCase/alternating_deflector_cad.py. Independent checks: ../validate_mesh_patches.py and ../validate_flow_balance.py.</aside>
+        <aside class="notes">Geometry generator: FlowCase/alternating_deflector_cad.py. Operating point: research_config.yaml.</aside>
       </section>
 
       <section>
-        <h2>Corrected matched baselines set a demanding starting point</h2>
-        <table class="compact-table">
-          <thead><tr><th>Baseline</th><th>Pressure (Pa)</th><th>Δp/Δp<sub>0</sub></th><th>1−√I<sub>s,flux</sub></th></tr></thead>
+        <h2>Why this is hard: laminar flow, and diffusion that will not help</h2>
+        <div class="metrics">
+          <div class="metric"><div class="value">Re = 10</div><div class="label">Inertia is negligible. The flow is steady and laminar — there is no turbulence to do the mixing for us.</div></div>
+          <div class="metric"><div class="value">Sc = 1000</div><div class="label">Momentum diffuses a thousand times faster than the scalar does.</div></div>
+          <div class="metric"><div class="value">Pe = 10⁴</div><div class="label">Over the residence time, molecular diffusion crosses only a sliver of the channel.</div></div>
+        </div>
+        <div class="callout">
+          <p><strong>So mixing has to come from geometry.</strong> The walls must <em>stretch and fold</em> the material interface until diffusion has a short enough distance left to finish the job. Every bit of that stretching costs pressure.</p>
+        </div>
+        <p class="caution" style="margin-top:24px">That tension — interface area against pumping cost — is the entire optimisation problem.</p>
+        <aside class="notes">Pe = Re·Sc = 10 000. This is why a straight channel mixes essentially not at all over 24 mm.</aside>
+      </section>
+
+      <section>
+        <h2>Six numbers we are allowed to change</h2>
+        <table class="compact-table dense">
+          <thead><tr><th>BO coordinate</th><th>Bounds</th><th>What it does to the device</th></tr></thead>
           <tbody>
-            <tr><td>Straight channel</td><td>2.874</td><td>1.000</td><td>0.1003</td></tr>
-            <tr><td>Symmetric deflectors</td><td>10.812</td><td>3.762</td><td>0.0901</td></tr>
-            <tr><td>Strong alternating</td><td>30.509</td><td>10.617</td><td>0.1450</td></tr>
-            <tr><td>Best screen ≤20 Pa: 00003</td><td>16.469</td><td>5.731</td><td>0.1126</td></tr>
-            <tr><td>Best screen overall: 00007</td><td>34.060</td><td>11.852</td><td>0.1698</td></tr>
+            <tr><td class="k">a<sub>weak</sub></td><td>0 – 0.12 H</td><td>amplitude of the shallow wall deflector</td></tr>
+            <tr><td class="k">a<sub>strong,ratio</sub></td><td>0 – 1</td><td>maps into a<sub>strong</sub> ∈ [max(0.12, a<sub>weak</sub>+0.04), 0.35] — the asymmetry that drives transverse flow</td></tr>
+            <tr><td class="k">t<sub>s</sub></td><td>0.04 – 0.15 H</td><td>centre-baffle thickness in the split section</td></tr>
+            <tr><td class="k">t<sub>m,ratio</sub></td><td>0 – 1</td><td>maps into the mesh-safe merge-baffle thickness interval</td></tr>
+            <tr><td class="k">L<sub>c</sub></td><td>0.40 – 2.40 H</td><td>length over which the two deflectors interact</td></tr>
+            <tr><td class="k">L<sub>s,ratio</sub></td><td>0 – 1</td><td>splits the remaining cell length between split and merge sections</td></tr>
           </tbody>
         </table>
-        <div class="two-col" style="margin-top:45px">
-          <p class="evidence">Straight-channel CFD differs from the parallel-plate analytical pressure drop by only 0.039%.</p>
-          <p class="claim">All twelve corrected designs remain far below the 0.60 target; the best mixer also exceeds 20 Pa.</p>
+        <div class="callout blue">
+          <p>Three of the six are <strong>ratios, not lengths</strong>. They map into intervals whose endpoints depend on the other parameters, so the optimiser searches a plain unit box and every corner of that box is a geometry that can actually be built and meshed.</p>
         </div>
-        <aside class="notes">[Sources] Corrected baselines: ../results/corrected_boundary_v3_baselines/baseline_summary.csv. Tracked screen summary: ../research/corrected_screening_summary.yaml.</aside>
+        <aside class="notes">bo_to_geo() in bayes_optimize_sequential.py. k is pinned to 0, so all five cells share one amplitude pair.</aside>
       </section>
 
       <section>
-        <h2>The predeclared screen gives a decisive NO-GO</h2>
+        <h2>Two objectives, both minimised, both measured not modelled</h2>
         <div class="two-col">
           <div>
-            <p class="evidence"><strong>12/12</strong> designs passed mesh, flow, mass-balance, scalar-stability, and rendering checks.</p>
-            <p class="evidence"><strong>0%</strong> numerical failures, below the allowed 25%.</p>
-          </div>
-          <div>
-            <p class="caution"><strong>0.1698</strong> best mixing index, versus the required 0.60.</p>
-            <p class="caution"><strong>34.060 Pa</strong> for that best mixer, versus the 20 Pa budget.</p>
-          </div>
-        </div>
-        <table class="compact-table" style="margin-top:45px">
-          <thead><tr><th>Decision input</th><th>Observed</th><th>Required</th><th>Result</th></tr></thead>
-          <tbody>
-            <tr><td>Successful corrected designs</td><td>12</td><td>12</td><td>pass</td></tr>
-            <tr><td>Failure fraction</td><td>0.00</td><td>≤0.25</td><td>pass</td></tr>
-            <tr><td>Best mixing index</td><td>0.1698</td><td>≥0.60</td><td>fail</td></tr>
-          </tbody>
-        </table>
-        <p class="claim">Do not spend the 32+80 BO budget on this topology. Introduce a genuine interface-multiplication mechanism and repeat the matched screen.</p>
-        <aside class="notes">[Sources] Formal runtime gate: ../results/corrected_boundary_v3/screening_gate.json. Tracked result summary: ../research/corrected_screening_summary.yaml.</aside>
-      </section>
-
-      <section>
-        <h2>Legacy fields show why the device is not a true SAR mixer</h2>
-        <div class="two-col wide-right">
-          <div>
-            <p class="claim">The scalar interface bends and smears, but it does not multiply into four or eight lamellae.</p>
-            <ul>
-              <li>one strictly planar flow domain;</li>
-              <li>no out-of-plane branch exchange;</li>
-              <li>top and bottom streams retain their ordering;</li>
-              <li>mixing comes from interface stretching plus physical and numerical diffusion.</li>
-            </ul>
-          </div>
-          <div>
-            <img class="hero-field" src="assets/sample-00027-T.png" alt="Computed scalar concentration for the best-mixing sample">
-            <p class="image-caption">Legacy sample 00027 is not valid quantitative evidence. Qualitatively, its red/blue interface remains a single ordered transition across the outlet.</p>
-          </div>
-        </div>
-        <aside class="notes">[Sources] Field render: ../results/00027/visualizations/00027_T.png. Geometry topology: ../FlowCase/alternating_deflector_cad.py. The old four/eight-layer diagrams are in ../../docs/obsidian/03-Resources/.</aside>
-      </section>
-
-      <section>
-        <h2>Each cell combines a centre baffle with alternating wall bias</h2>
-        <svg class="geometry-svg" viewBox="0 0 1450 430" role="img" aria-label="Parameterization of one alternating-deflector cell">
-          <defs>
-            <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#5d7285"/></marker>
-          </defs>
-          <rect x="70" y="90" width="1310" height="220" fill="#fffdf8" stroke="#2f78a8" stroke-width="7"/>
-          <rect x="330" y="187" width="260" height="26" fill="#f6b66e" stroke="#ad5c10" stroke-width="4"/>
-          <path d="M590 310 Q725 136 860 310 Z" fill="#8bc1df" stroke="#2f78a8" stroke-width="4"/>
-          <path d="M590 90 Q725 210 860 90 Z" fill="#f3a2a2" stroke="#c84b4b" stroke-width="4"/>
-          <rect x="860" y="193" width="210" height="14" fill="#8fc77c" stroke="#3a8f57" stroke-width="4"/>
-          <line x1="330" x2="590" y1="55" y2="55" stroke="#5d7285" stroke-width="3" marker-start="url(#arrow)" marker-end="url(#arrow)"/><text x="460" y="44" text-anchor="middle" fill="#102a43" font-size="31">L<tspan baseline-shift="sub" font-size="21">s</tspan></text>
-          <line x1="590" x2="860" y1="55" y2="55" stroke="#5d7285" stroke-width="3" marker-start="url(#arrow)" marker-end="url(#arrow)"/><text x="725" y="44" text-anchor="middle" fill="#102a43" font-size="31">L<tspan baseline-shift="sub" font-size="21">c</tspan></text>
-          <line x1="860" x2="1070" y1="55" y2="55" stroke="#5d7285" stroke-width="3" marker-start="url(#arrow)" marker-end="url(#arrow)"/><text x="965" y="44" text-anchor="middle" fill="#102a43" font-size="31">L<tspan baseline-shift="sub" font-size="21">m</tspan></text>
-          <line x1="300" x2="300" y1="90" y2="310" stroke="#5d7285" stroke-width="3" marker-start="url(#arrow)" marker-end="url(#arrow)"/><text x="270" y="210" text-anchor="middle" fill="#102a43" font-size="31">H</text>
-          <line x1="405" x2="405" y1="187" y2="213" stroke="#102a43" stroke-width="4"/><text x="405" y="250" text-anchor="middle" fill="#102a43" font-size="28">t<tspan baseline-shift="sub" font-size="19">s</tspan></text>
-          <text x="725" y="250" text-anchor="middle" fill="#102a43" font-size="28">a<tspan baseline-shift="sub" font-size="19">strong</tspan> − a<tspan baseline-shift="sub" font-size="19">weak</tspan> = δ</text>
-          <text x="965" y="242" text-anchor="middle" fill="#102a43" font-size="28">t<tspan baseline-shift="sub" font-size="19">m</tspan></text>
-          <text x="725" y="382" text-anchor="middle" fill="#5d7285" font-size="27">The stronger wall alternates top → bottom → top across five cells</text>
-        </svg>
-        <p class="evidence">The centre plate is continuous across adjacent merge/split segments; the wall-deflector bias is piecewise constant within each cell.</p>
-        <aside class="notes">[Sources] Exact construction and delta profile: ../FlowCase/alternating_deflector_cad.py, especially CELL_DELTAS and the obstacle_solids loops. Defaults: ../FlowCase/alternating_deflector_cad.yaml.</aside>
-      </section>
-
-      <section>
-        <h2>Six BO coordinates expose amplitude and contrast</h2>
-        <div class="mapping">
-          <div>
-            <h3>BO coordinates</h3>
-            <ul><li><code>a_weak</code>, <code>a_strong_ratio</code></li><li><code>t_s</code>, <code>t_m_ratio</code></li><li><code>L_c</code>, <code>L_s_ratio</code></li></ul>
-          </div>
-          <div class="arrow">→</div>
-          <div>
-            <h3>Realized CAD vector</h3>
-            <p class="formula">θ = (a<sub>weak</sub>, a<sub>strong</sub>, t<sub>s</sub>, t<sub>m</sub>, L<sub>s</sub>, L<sub>c</sub>, L<sub>m</sub>)</p>
-            <p><code>w_s = 0.5 − a_weak</code>, <code>δ = a_strong − a_weak</code>, <code>k = 0</code></p>
-          </div>
-        </div>
-        <table class="compact-table">
-          <thead><tr><th>Coordinate</th><th>Range</th><th>Dependent range</th><th>Purpose</th></tr></thead>
-          <tbody>
-            <tr><td><code>a_weak</code></td><td>0–0.12</td><td><code>w_s = 0.5 − a_weak</code></td><td>include an almost flat weak wall</td></tr>
-            <tr><td><code>a_strong_ratio</code></td><td>0–1</td><td><code>max(0.12,a_weak+0.04) ≤ a_strong ≤ 0.35</code></td><td>search strength and contrast directly</td></tr>
-            <tr><td><code>t_s</code></td><td>0.04–0.15</td><td><code>0.025 ≤ t_m ≤ t_s − 0.0125</code></td><td>resolve the centre-plate step</td></tr>
-            <tr><td><code>L_c</code></td><td>0.40–2.40</td><td><code>0.8 ≤ L_s,L_m ≤ 1.8</code></td><td>keep every streamwise segment finite</td></tr>
-          </tbody>
-        </table>
-        <aside class="notes">[Sources] Current mappings and validation: ../bayes_optimize_sequential.py. Bounds: ../bayes_optimize_sequential.yaml.</aside>
-      </section>
-
-      <section>
-        <h2>Interval transforms make contrast and meshability explicit</h2>
-        <div class="two-col">
-          <div>
-            <p class="formula">0 ≤ a<sub>weak</sub> ≤ 0.12</p>
-            <p class="formula">0.12 ≤ a<sub>strong</sub> ≤ 0.35</p>
-            <p class="formula">a<sub>strong</sub> − a<sub>weak</sub> ≥ 0.04</p>
-            <p class="formula">k = 0: all five cells share one amplitude pair</p>
-          </div>
-          <div>
-            <p class="claim">The optimizer searches a latent box; every point is deterministically projected into a CAD-feasible interval.</p>
-            <ul>
-              <li>fine-cell size: <code>0.0125 H</code>;</li>
-              <li>minimum merge thickness: two fine cells;</li>
-              <li>minimum splitter-side gap: four fine cells;</li>
-              <li>CAD validation runs again before OpenCASCADE operations;</li>
-              <li>the old weak/strong ambiguity and downstream slope are removed.</li>
-            </ul>
-          </div>
-        </div>
-        <aside class="notes">[Sources] BO constraints: ../bayes_optimize_sequential.yaml and ../bayes_optimize_sequential.py. CAD guards G0–G6: ../FlowCase/alternating_deflector_cad.py. Mesh resolution: ../FlowCase/system/meshDict.</aside>
-      </section>
-
-      <section>
-        <h2>The CFD model is steady, laminar, and convection dominated</h2>
-        <div class="two-col">
-          <div>
-            <h3>Flow</h3>
-            <p class="formula">∇·u = 0</p>
-            <p class="formula">(u·∇)u = −∇p + ν∇²u</p>
-            <ul>
-              <li><code>simpleFoam</code>, laminar;</li>
-              <li><code>ν = 10⁻⁶ m²/s</code>;</li>
-              <li><code>H = 1 mm</code>, mean inlet speed 0.01 m/s;</li>
-              <li><strong>Re = 10</strong>.</li>
-            </ul>
-          </div>
-          <div>
-            <h3>Passive scalar</h3>
-            <p class="formula">u·∇T = D<sub>T</sub>∇²T</p>
-            <ul>
-              <li><code>scalarTransportFoam</code>;</li>
-              <li><code>D_T = 10⁻⁹ m²/s</code>, <strong>Sc = 1000</strong>;</li>
-              <li>bottom inlet half <code>T=1</code>, top half <code>T=0</code>;</li>
-              <li>bounded Gauss <code>limitedLinear 1</code> for <code>div(phi,T)</code>;</li>
-              <li>PBiCGStab/DILU with equation relaxation 0.7.</li>
-            </ul>
-          </div>
-        </div>
-        <p class="caution">Scalar transport advances in resumable 600-iteration chunks, up to 2400, and stops at the first final-50 flux-mean/intensity span below 10⁻⁴.</p>
-        <aside class="notes">[Sources] Flow dictionaries: ../FlowCase/0/U, ../FlowCase/constant/transportProperties, ../FlowCase/constant/turbulenceProperties. Scalar dictionaries: ../ScalarTransportCase/0/T, ../ScalarTransportCase/constant/transportProperties, ../ScalarTransportCase/system/fvSchemes.</aside>
-      </section>
-
-      <section>
-        <h2>Each candidate yields two objectives in an isolated workflow</h2>
-        <div class="pipeline">
-          <div class="stage"><strong>1 · Propose</strong><span>Sobol or qLogNEHVI in latent coordinates</span></div>
-          <div class="stage"><strong>2 · Generate</strong><span>CadQuery subtracts baffles from the channel slab</span></div>
-          <div class="stage"><strong>3 · Mesh</strong><span>cfMesh builds a uniform-fine 2-D mesh</span></div>
-          <div class="stage"><strong>4 · Flow</strong><span><code>simpleFoam</code> writes pressure-drop history</span></div>
-          <div class="stage"><strong>5 · Scalar</strong><span><code>scalarTransportFoam</code> writes outlet statistics</span></div>
-          <div class="stage"><strong>6 · Learn</strong><span>Last CSV rows update the GP and Pareto set</span></div>
-        </div>
-        <p class="evidence" style="margin-top:70px">Every sample runs under its campaign directory. Failed or unconverged workflows retain blank targets and are excluded from the GP—no fictitious penalty observations.</p>
-        <aside class="notes">[Sources] Orchestration and convergence gates: ../Snakefile and ../verify_scalar_convergence.py. Candidate execution, resume, and aggregation: ../bayes_optimize_sequential.py.</aside>
-      </section>
-
-      <section>
-        <h2>The goal is a Pareto set, not one “best” geometry</h2>
-        <div class="two-col">
-          <div>
-            <h3>Hydraulic objective</h3>
+            <h3>Pumping cost</h3>
             <p class="formula">J<sub>dp</sub>(θ) = Δp(θ) / Δp<sub>straight</sub></p>
-            <p>The objective is dimensionless and matched to the validated straight channel. Raw kinematic pressure and physical pascals remain in every result row.</p>
-            <p class="evidence">The acquisition reference pressure corresponds to a predeclared 20 Pa engineering budget.</p>
+            <p>Normalised by the validated straight channel at the same operating point, so it reads as “how many times more expensive to pump than an empty pipe”.</p>
+            <p class="definition">Δp<sub>straight</sub> = 2.874 Pa, within <strong>0.039 %</strong> of the analytic parallel-plate solution 12νUL/H².</p>
           </div>
           <div>
-            <h3>Mixing objective</h3>
-            <p class="formula">J<sub>mix</sub>(θ) = I<sub>s,flux</sub> = σ²<sub>T,flux</sub> / 0.25</p>
-            <p><code>I_s = 1</code> preserves the inlet variance; <code>I_s = 0</code> is uniform.</p>
-            <p class="definition"><strong>Optimization:</strong> minimize <code>(J_dp, I_s,flux)</code>. Plots use the literature-comparable index <code>1 − sqrt(I_s,flux)</code>.</p>
+            <h3>Remaining segregation</h3>
+            <p class="formula">J<sub>mix</sub>(θ) = I<sub>s,flux</sub> = σ²<sub>T,flux</sub> ⁄ 0.25</p>
+            <p>Flux-weighted variance of the outlet scalar, normalised by the fully segregated value. <strong>0 = perfectly mixed, 1 = untouched.</strong></p>
+            <p class="definition">Reported as the mixing index <strong>1 − √I<sub>s,flux</sub></strong>, where 1 is perfect.</p>
           </div>
         </div>
-        <aside class="notes">[Sources] Pressure calculation: ../../src/functionObjects/pressureDrop/pressureDrop.C and ../FlowCase/0/p. Mixing calculation: ../../src/functionObjects/patchMixingQuality/patchMixingQuality.C. Objective column selection: ../bayes_optimize_sequential.py.</aside>
+        <div class="callout green">
+          <p>Flux weighting matters: an area average would credit mixing in slow corners that barely any fluid passes through.</p>
+        </div>
+        <aside class="notes">Both come from custom OpenFOAM function objects — pressureDrop and patchMixingQuality in src/functionObjects.</aside>
       </section>
 
       <section>
-        <h2>Flux weighting measures the transported outlet stream</h2>
-        <div class="two-col wide-left">
-          <div>
-            <p class="formula">T̄<sub>q</sub> = Σ q<sub>i</sub>T<sub>i</sub> / Σ q<sub>i</sub></p>
-            <p class="formula">σ²<sub>q</sub> = Σ q<sub>i</sub>(T<sub>i</sub>−T̄<sub>q</sub>)² / Σ q<sub>i</sub></p>
-            <p class="formula">I<sub>s,q</sub> = σ²<sub>q</sub> / [0.5(1−0.5)]</p>
-            <p class="evidence">The BO reads <code>flux_weighted_intensity_of_segregation</code>; unweighted statistics remain diagnostics.</p>
-          </div>
-          <div>
-            <p class="claim">This asks how mixed the transported outlet stream is, not how many mesh faces carry each concentration.</p>
-            <ul>
-              <li>positive outlet flux supplies the weights;</li>
-              <li>the mean follows the realized inlet stream ratio;</li>
-              <li>the reported RSD index is <code>1 − sqrt(I_s,q)</code>;</li>
-              <li>literature comparisons still require matched definitions and conditions.</li>
-            </ul>
-          </div>
-        </div>
-        <aside class="notes">[Sources] Exact loops and formulas: ../../src/functionObjects/patchMixingQuality/patchMixingQuality.C. Original area-integral claim: ../../docs/obsidian/02-Technical-Notes/Benchmark-Problem-Specification.md. Current objective selection: ../bayes_optimize_sequential.py.</aside>
-      </section>
-
-      <section>
-        <h2>Sequential BO maximizes hypervolume one point at a time</h2>
+        <h2>Constraints: what the optimiser is not allowed to propose</h2>
         <div class="two-col">
           <div>
-            <h3>Surrogate</h3>
+            <h3>Manufacturable and meshable</h3>
             <ul>
-              <li><code>SingleTaskGP(X, −Y)</code> with two outputs;</li>
-              <li>input normalization in six dimensions;</li>
-              <li>output standardization;</li>
-              <li>exact marginal-likelihood fitting;</li>
-              <li>checkpointed hyperparameters warm-start later runs.</li>
+              <li>minimum feature ≥ 0.01 H (10 µm) — the wall-refinement cell size;</li>
+              <li>merge baffle ≥ 2 fine cells;</li>
+              <li>peak-to-peak gap ≥ 4 fine cells;</li>
+              <li>split-to-merge step ≥ 1 fine cell.</li>
             </ul>
+            <p class="definition">Enforced by interval arithmetic <em>before</em> CAD runs, so no CFD time is spent on a sliver.</p>
           </div>
           <div>
-            <h3>Acquisition</h3>
+            <h3>Admissible as evidence</h3>
             <ul>
-              <li><code>qLogNoisyExpectedHypervolumeImprovement</code>;</li>
-              <li>fallback to <code>qNEHVI</code> for older BoTorch;</li>
-              <li><code>q = 1</code>, 32 restarts, 1024 raw samples;</li>
-              <li>reference: 20 Pa and segregation intensity 1.0;</li>
-              <li>12-point feasibility gate, then 32 Sobol total + 80 sequential suggestions.</li>
+              <li>every inlet/outlet face exactly on x = 0 / x = L;</li>
+              <li><code>checkMesh</code> must report <code>Mesh OK</code>;</li>
+              <li>flow rate within 3 % of U·A;</li>
+              <li>mass imbalance &lt; 10⁻⁵;</li>
+              <li>outlet metric stationary, not merely residual-converged.</li>
             </ul>
+            <p class="caution">Fail any of these and no objective is written at all.</p>
           </div>
         </div>
-        <aside class="notes">[Sources] Model and acquisition implementation: ../bayes_optimize_sequential.py, fit_model and next_candidate. Campaign size: ../bayes_optimize_sequential.yaml.</aside>
+        <div class="verdict">Reference budget: <strong>Δp ≤ 20 Pa</strong> · useful mixing index <strong>≥ 0.60</strong> — declared before any data was taken.</div>
+        <aside class="notes">Predeclaring the gate is what makes the later no-go a result rather than a rationalisation.</aside>
+      </section>
+
+      <!-- ============================================================
+           PART 2 — BAYESIAN OPTIMIZATION
+           ============================================================ -->
+      <section class="divider">
+        <div class="part">Part two</div>
+        <h2>Bayesian optimization</h2>
+        <p>From Bayes’ theorem, to a belief about a whole function, to knowing which simulation to run next.</p>
       </section>
 
       <section>
-        <h2>The former pilots are retained only as invalid provenance</h2>
-        <table class="compact-table">
-          <thead><tr><th>Pilot</th><th>J<sub>dp</sub> (m²/s²)</th><th>Flux I<sub>s</sub></th><th>1−√I<sub>s</sub></th><th>Final-50 span</th></tr></thead>
-          <tbody>
-            <tr><td>first Sobol</td><td>0.00141115</td><td>0.780094</td><td>0.1168</td><td>3.8×10⁻⁵</td></tr>
-            <tr><td>second Sobol</td><td>0.00119273</td><td>0.889416</td><td>0.0569</td><td>2.0×10⁻⁶</td></tr>
-          </tbody>
-        </table>
-        <div class="two-col" style="margin-top:45px">
-          <div>
-            <p class="claim">Their numerical convergence does not rescue their incorrect physical boundary conditions.</p>
-            <p>They must not seed, normalize, or validate the corrected campaign.</p>
-          </div>
-          <div>
-            <p>The second geometry exposed a GAMG coarse-grid singularity. PBiCGStab/DILU completed the exact same high-Péclet case.</p>
-            <p class="evidence"><code>--max-new-evaluations 1</code> advances the campaign by only one candidate.</p>
-          </div>
-        </div>
-        <aside class="notes">[Sources] Pilot output: ../results/verified_flux_sequential_v2/00002 and 00003 (ignored by Git). Stability rule: ../verify_scalar_convergence.py. Solver: ../ScalarTransportCase/system/fvSolution.</aside>
-      </section>
-
-      <section>
-        <h2>The legacy front cannot seed the verified campaign</h2>
-        <svg id="pareto-chart" role="img" aria-label="Pareto scatter plot for 28 mixer samples"></svg>
-        <div class="legend"><span><i class="dot" style="background:#2f78a8"></i>legacy Sobol (8)</span><span><i class="dot" style="background:#f28e2b"></i>legacy BO (20)</span><span>different scheme, variables, and objective</span></div>
-        <aside class="notes">[Sources] All points and sample IDs: ../results/all_samples.csv (28 rows, generated 2026-04-11). Pareto definition matches ../visualize_results.py. Legacy pressure values are interpreted as kinematic pressure.</aside>
-      </section>
-
-      <section>
-        <h2>Legacy extremes retain one ordered scalar interface</h2>
-        <div class="field-compare">
-          <div>
-            <img src="assets/sample-00022-T.png" alt="Scalar field for lowest-pressure sample 00022">
-            <h3>00022 · lowest kinematic pressure drop</h3>
-            <p><strong>J<sub>dp</sub> = 1.00487×10⁻³ m²/s²</strong><br>legacy face-count <code>1−I_s</code> = 0.119014<br><code>w_s=.45, t_s=.15, t_m=.1375, δ=.15, k=0</code></p>
-          </div>
-          <div>
-            <img src="assets/sample-00027-T.png" alt="Scalar field for best-mixing sample 00027">
-            <h3>00027 · best legacy objective</h3>
-            <p><strong>I<sub>s</sub> = 0.499471</strong> · legacy face-count <code>1−I_s</code> = 0.500529<br>J<sub>dp</sub> = 1.98601×10⁻³ m²/s²<br><code>w_s=.45, t_s=.04, t_m=.025, δ=.15, k=−.09</code></p>
-          </div>
-        </div>
-        <aside class="notes">[Sources] Metrics and geometry coordinates: ../results/all_samples.csv. Images: ../results/00022/visualizations/00022_T.png and ../results/00027/visualizations/00027_T.png.</aside>
-      </section>
-
-      <section>
-        <h2>Legacy bound-seeking motivated new coordinates</h2>
+        <h2>Is John a librarian or a mathematician?</h2>
+        <p class="claim">“John is quiet, tidy, and loves patterns and order. Is John more likely to be a librarian or a mathematician?”</p>
         <div class="two-col">
           <div>
-            <div class="metrics">
-              <div class="metric"><div class="value">0.45</div><div class="label">w<sub>s</sub> on the upper bound across much of the Pareto front</div></div>
-              <div class="metric"><div class="value">0.15</div><div class="label">δ at its upper bound for most non-dominated designs</div></div>
-              <div class="metric"><div class="value">15/28</div><div class="label">non-dominated points in a small campaign</div></div>
+            <p>Almost everyone says librarian. The description <em>sounds</em> like one.</p>
+            <p>But there are perhaps <strong>20×</strong> as many mathematicians as librarians in the population we drew John from. Even if the description fits a librarian four times better, mathematicians still win — by a factor of five.</p>
+          </div>
+          <div>
+            <p class="formula">P(H | D) = P(D | H) · P(H) / P(D)</p>
+            <ul>
+              <li><strong>P(H)</strong> — the prior: how common is the hypothesis <em>before</em> we look;</li>
+              <li><strong>P(D|H)</strong> — the likelihood: how well the hypothesis explains what we saw;</li>
+              <li><strong>P(H|D)</strong> — the posterior: what we should now believe.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="callout">
+          <p>The intuition that fails here is exactly the one that fails in optimisation: <strong>we judge by fit to the evidence and forget how much space the hypothesis occupied to begin with.</strong></p>
+        </div>
+        <aside class="notes">Kahneman &amp; Tversky's base-rate neglect, transplanted. The point is that a posterior is an area ratio, which the next slide makes literal.</aside>
+      </section>
+
+      <section>
+        <h2>Bayes’ theorem is an area ratio</h2>
+        <svg class="bayes-square" viewBox="0 0 1180 470" role="img" aria-label="Probability square showing prior, likelihood and posterior as areas">
+          <!-- prior split: H (narrow) vs not-H (wide) -->
+          <rect x="60" y="60" width="1000" height="330" fill="#fffdf8" stroke="#102a43" stroke-width="3"/>
+          <!-- H column -->
+          <rect x="60" y="60" width="200" height="330" fill="#cfe5f2"/>
+          <!-- D within H -->
+          <rect x="60" y="60" width="200" height="264" fill="#2f78a8"/>
+          <!-- D within not-H -->
+          <rect x="260" y="60" width="800" height="66" fill="#f28e2b"/>
+          <line x1="260" y1="60" x2="260" y2="390" stroke="#102a43" stroke-width="3"/>
+
+          <text x="160" y="42" text-anchor="middle" fill="#102a43" font-size="24" font-weight="700">H  (prior 20 %)</text>
+          <text x="660" y="42" text-anchor="middle" fill="#5d7285" font-size="24">not H  (80 %)</text>
+
+          <text x="160" y="200" text-anchor="middle" fill="#fffdf8" font-size="23" font-weight="700">D and H</text>
+          <text x="160" y="230" text-anchor="middle" fill="#fffdf8" font-size="21">0.20 × 0.80</text>
+          <text x="160" y="256" text-anchor="middle" fill="#fffdf8" font-size="23" font-weight="700">= 0.16</text>
+
+          <text x="660" y="88" text-anchor="middle" fill="#102a43" font-size="23" font-weight="700">D and not H</text>
+          <text x="660" y="114" text-anchor="middle" fill="#102a43" font-size="21">0.80 × 0.10 = 0.08</text>
+
+          <text x="160" y="362" text-anchor="middle" fill="#5d7285" font-size="20">no D</text>
+          <text x="660" y="300" text-anchor="middle" fill="#5d7285" font-size="20">no D</text>
+
+          <text x="60" y="436" fill="#102a43" font-size="26">
+            Seeing D, we live in the coloured strip only:
+            <tspan font-weight="700">P(H | D) = 0.16 / (0.16 + 0.08) = 2⁄3</tspan>
+          </text>
+        </svg>
+        <aside class="notes">The whole square is 1. The likelihood carves a slice out of each column; the posterior is the blue share of the coloured region. Everything later is this picture with continuous variables.</aside>
+      </section>
+
+      <section>
+        <h2>Now put a prior on a whole <em>function</em></h2>
+        <div class="two-col">
+          <div>
+            <p>Our unknown is not a coin bias. It is the map</p>
+            <p class="formula">θ ↦ J(θ)</p>
+            <p>from six geometry numbers to an objective — and every single evaluation costs a CFD run.</p>
+            <p class="claim">A <strong>Gaussian process</strong> is a prior over functions instead of over numbers.</p>
+          </div>
+          <div>
+            <h3>In one sentence</h3>
+            <p>A GP says: <em>I do not know the function, but I believe similar designs give similar answers</em> — and it makes “similar” precise with a kernel.</p>
+            <p>Feed it the runs you have. Bayes’ rule turns the prior into a posterior. Because everything is Gaussian, that posterior is available <strong>in closed form</strong>.</p>
+            <p class="definition">Matérn-5/2 with ARD: one length scale per parameter, so the model learns which of the six actually matter.</p>
+          </div>
+        </div>
+        <aside class="notes">ARD length scales are a free sensitivity analysis — see part three.</aside>
+      </section>
+
+      <section>
+        <h2>What you get back is a mean <em>and</em> an error bar, everywhere</h2>
+        <svg id="gp-chart"></svg>
+        <svg id="ucb-chart"></svg>
+        <aside class="notes">Both panels are computed live from a squared-exponential kernel and an exact posterior — the mean interpolates the five points and the variance collapses there. Nothing is drawn by hand.</aside>
+      </section>
+
+      <section>
+        <h2>The two closed forms that make this cheap</h2>
+        <div class="two-col">
+          <div>
+            <p class="formula">μ(θ) = k(θ)ᵀ K⁻¹ y</p>
+            <p class="formula">σ²(θ) = k(θ,θ) − k(θ)ᵀ K⁻¹ k(θ)</p>
+            <p>K is n×n where n is the number of simulations you have run. For us <strong>n ≤ 100</strong>.</p>
+          </div>
+          <div>
+            <div class="callout blue">
+              <p><strong>Inverting a 100×100 matrix is free.</strong> Evaluating μ and σ at a million candidate designs is free. One CFD run is ten minutes.</p>
+            </div>
+            <p style="margin-top:20px">That asymmetry is the whole reason the method works — and it is why the surrogate happily lives on a login node while the simulations go to the queue.</p>
+          </div>
+        </div>
+        <p class="caution">σ(θ) is not decoration. It is the model telling you where it is guessing, which is precisely where a new run is worth paying for.</p>
+      </section>
+
+      <section>
+        <h2>Combining them: exploitation + exploration in one number</h2>
+        <p class="formula">α<sub>UCB</sub>(θ) = μ(θ) + κ · σ(θ)</p>
+        <div class="three-col">
+          <div>
+            <h3>μ — exploit</h3>
+            <p>Go where the model already predicts a good answer. On its own this gets stuck in the first decent basin it finds.</p>
+          </div>
+          <div>
+            <h3>σ — explore</h3>
+            <p>Go where the model is ignorant. On its own this samples the corners forever and never refines anything.</p>
+          </div>
+          <div>
+            <h3>κ — the dial</h3>
+            <p>How many error bars of optimism you allow. Large κ early, small κ late; κ ≈ 2 is a sane default.</p>
+          </div>
+        </div>
+        <div class="callout">
+          <p>In the figure two slides back, UCB picked <strong>x = 0.77</strong> — not the best observed point at 0.66, and not the emptiest region either. It bought the most information per run.</p>
+        </div>
+        <aside class="notes">UCB is the easiest to explain. The campaign actually uses qLogNEHVI, which does the same trick in the multi-objective setting; see part three.</aside>
+      </section>
+
+      <section>
+        <h2>Optimising the acquisition is a different kind of problem</h2>
+        <div class="pipeline">
+          <div class="stage"><strong>1 · Fit</strong><span>Maximise the marginal likelihood for kernel hyperparameters. Seconds.</span></div>
+          <div class="pipeline-arrow">→</div>
+          <div class="stage"><strong>2 · Search α</strong><span>Multi-start L-BFGS from 1024 raw samples, 32 restarts. Seconds.</span></div>
+          <div class="pipeline-arrow">→</div>
+          <div class="stage"><strong>3 · Simulate</strong><span>One CAD → mesh → flow → scalar chain. Minutes to hours.</span></div>
+          <div class="pipeline-arrow">→</div>
+        </div>
+        <div class="callout blue">
+          <p>Step 2 is a <em>global</em> optimisation over the analytic surrogate. It is allowed to be greedy, restart everywhere, and evaluate the objective a million times — because that objective is two matrix products, not a solver.</p>
+        </div>
+        <p style="margin-top:22px">The expensive function is called <strong>exactly once per outer iteration</strong>. Everything else is arithmetic.</p>
+      </section>
+
+      <section>
+        <h2>Data efficiency is why this fits CFD at all</h2>
+        <div class="two-col">
+          <div>
+            <table class="compact-table">
+              <thead><tr><th>Method</th><th>Evaluations for a 6-D problem</th></tr></thead>
+              <tbody>
+                <tr><td>Full factorial, 5 levels</td><td>15 625</td></tr>
+                <tr><td>Genetic algorithm</td><td>10³ – 10⁴</td></tr>
+                <tr><td>Adjoint (if available)</td><td>10¹ – 10², local</td></tr>
+                <tr class="pick"><td><strong>Bayesian optimization</strong></td><td><strong>10¹ – 10², global</strong></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div>
+            <p>At ten minutes per design, 15 625 runs is <strong>three months of continuous compute</strong>. A hundred runs is an afternoon and an evening.</p>
+            <div class="callout green">
+              <p>And in CFD you rarely need to tune the optimiser: <strong>stock BoTorch settings</strong> — ARD Matérn-5/2, normalised inputs, standardised outputs — already work. The engineering effort belongs in the geometry and the mesh, not in the acquisition function.</p>
             </div>
           </div>
+        </div>
+        <aside class="notes">This campaign: 3 baselines + 12 screening designs was enough to reach a defensible decision.</aside>
+      </section>
+
+      <!-- ============================================================
+           PART 3 — HANDS-ON
+           ============================================================ -->
+      <section class="divider">
+        <div class="part">Part three</div>
+        <h2>Building it</h2>
+        <p>OpenFOAM, Bayesian optimization, and what actually changed now that agents write the code.</p>
+      </section>
+
+      <section class="statement">
+        <p class="bombastic">The bottleneck in computational engineering was never typing. It was <em>trust</em>.</p>
+        <p style="margin-top:34px">An agent will write you a CAD generator, a Snakefile, a GP model and a cluster profile in an afternoon. It will do it confidently whether or not any of it is correct.</p>
+        <div class="callout">
+          <p><strong>So the scarce skill moved.</strong> It is no longer knowing the API. It is being able to state, in executable form, what “working” means — and then refusing to believe anything that has not passed.</p>
+        </div>
+        <aside class="notes">This is the honest version of "AI writes the code now". The productivity gain is real, and it is entirely conditional on having a verification harness.</aside>
+      </section>
+
+      <section>
+        <h2>Test-driven, from the top down</h2>
+        <div class="two-col">
           <div>
-            <p class="claim">The archived campaign suggested where to redesign the variables; it did not demonstrate a global or interior optimum.</p>
+            <p class="claim">Write the test that quantifies the result <em>before</em> the code that produces it.</p>
+            <ol>
+              <li><strong>Top-level, physical.</strong> “The straight channel must match 12νUL/H² to 15 %.” That test is the study.</li>
+              <li><strong>Structural.</strong> Inlet patch area equals H×depth. Mass imbalance &lt; 10⁻⁵.</li>
+              <li><strong>Numerical.</strong> The outlet metric must be stationary over the last 50 samples, not merely residual-converged.</li>
+              <li><strong>Unit.</strong> Does <code>bo_to_geo</code> respect its interval?</li>
+            </ol>
+          </div>
+          <div>
+            <div class="callout blue">
+              <p>A top-level test <strong>forces quantification</strong>. You cannot write “the mixer should mix well”; you have to commit to a number, a tolerance and a reference — which is the same discipline a referee will apply later.</p>
+            </div>
+            <p style="margin-top:22px">In this repository those tests are not prose. They are rules in a Snakefile and standalone validators that any run must pass before an objective is allowed to exist.</p>
+            <p class="caution">If the test lives only in a chat transcript, it does not exist.</p>
+          </div>
+        </div>
+        <aside class="notes">validate_mesh_patches.py, validate_flow_balance.py, verify_flow_convergence.py, verify_scalar_convergence.py — each one is a gate wired into the DAG.</aside>
+      </section>
+
+      <section>
+        <h2>What a top-level test caught here</h2>
+        <div class="two-col">
+          <div>
+            <p class="claim">The CAD generator assigned patches by face normal. Every x-normal face of every internal deflector became an inlet or an outlet.</p>
             <ul>
-              <li>thicker centre baffles correlate with worse mixing;</li>
-              <li>larger gaps and wall bias generally reduce both objectives;</li>
-              <li>the best-mixing designs use thin baffles and a negative bias slope;</li>
-              <li>the new amplitude/contrast coordinates test those boundary trends directly.</li>
+              <li>“inlet” spanned <code>x = 0…22 mm</code>;</li>
+              <li>“outlet” spanned <code>x = 2…24 mm</code>;</li>
+              <li>inlet area was <strong>2.85×</strong> the physical cross-section;</li>
+              <li>velocity and scalar were being injected <em>through obstacle faces</em>.</li>
+            </ul>
+            <p class="caution">Every objective from that era is void. An entire 28-design campaign, discarded.</p>
+          </div>
+          <div>
+            <div class="callout">
+              <p>Nothing crashed. Every solver converged. <code>checkMesh</code> said <code>Mesh OK</code>. The Pareto fronts looked plausible and were completely meaningless.</p>
+            </div>
+            <p style="margin-top:20px"><strong>The repair is a test, not a fix:</strong> every point of an inlet or outlet face must lie on <code>x = 0</code> or <code>x = L</code>, checked by reconstructing the polyMesh patches independently of the CAD that made them.</p>
+            <p class="definition">This is why the gates run <em>before</em> an objective is allowed to be written, and why the archived results are kept as provenance and never pooled.</p>
+          </div>
+        </div>
+        <aside class="notes">validate_mesh_patches.py reconstructs patch polygons from constant/polyMesh and compares against the CAD manifest — deliberately not trusting the generator that produced both.</aside>
+      </section>
+
+      <section>
+        <h2>Codify the tests in a language that outlives the session</h2>
+        <div class="three-col">
+          <div>
+            <h3>Snakemake</h3>
+            <p>Rules with declared inputs and outputs. The DAG <em>is</em> the specification of what must exist and in which order.</p>
+          </div>
+          <div>
+            <h3>pytest</h3>
+            <p>For the Python layer: parameter transforms, interval arithmetic, config validation.</p>
+          </div>
+          <div>
+            <h3>Assertions in the workflow</h3>
+            <p>Non-negotiables inline: <code>grep -q "Mesh OK"</code>, bad-face count, analytic pressure check.</p>
+          </div>
+        </div>
+        <div class="callout">
+          <p>The common property: <strong>a machine can re-run all of it without you</strong>, on a different host, next year. That is the difference between a verification harness and a memory of having checked.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Separate the writer from the reviewer</h2>
+        <div class="two-col">
+          <div>
+            <h3>Why</h3>
+            <p>An agent that just wrote a function is the worst possible reviewer of it. Its context is full of the reasons the code <em>should</em> work.</p>
+            <ul>
+              <li>one session — one model — <strong>develops</strong>;</li>
+              <li>a <strong>clean</strong> session, ideally a <strong>different model</strong>, tests and reports;</li>
+              <li>the reviewer gets the artefacts and the acceptance criteria, not the reasoning.</li>
+            </ul>
+          </div>
+          <div>
+            <div class="callout green">
+              <p><strong>It works because the failure modes are uncorrelated.</strong> Two models rarely hallucinate the same API in the same place, and a fresh context has no sunk cost in the design.</p>
+            </div>
+            <p style="margin-top:20px">Live example from this very study: a laptop <code>cartesian2DMesh</code> was aborting with <code>free(): invalid pointer</code>. The workflow was blamed first. Only re-running the binary <em>outside</em> the workflow located it.</p>
+            <p class="caution">Report what the run did, not what it was supposed to do.</p>
+          </div>
+        </div>
+        <aside class="notes">The cfMesh crash was real: rebuilt from the ESI integration fork instead of SourceForge, the same case meshes in 7 s.</aside>
+      </section>
+
+      <section>
+        <h2>Snakemake: the DAG is the experiment</h2>
+        <div class="two-col">
+          <div>
+            <p>A rule declares what it needs and what it makes. Snakemake works out the order, what is already done, and what must be redone.</p>
+            <pre><code>rule hydro_simpleFoam:
+    threads: NP
+    resources: nodes=1
+    input:  ".workflow/hydro_decompose.done"
+    output: "pressureDrop.csv"
+    shell:  sh("hydro_simpleFoam",
+        "{MPI_PREFIX}simpleFoam -parallel | tee log")</code></pre>
+          </div>
+          <div>
+            <h3>Why it earns its place</h3>
+            <ul>
+              <li><strong>Resumable.</strong> Kill it at design 40 of 95; restart continues at 40.</li>
+              <li><strong>Provenance.</strong> Change the mesh dict and only the affected rules re-run.</li>
+              <li><strong>Honest failure.</strong> A rule either produced its output or it did not.</li>
+              <li><strong>Portable.</strong> The same DAG runs on a laptop and on SLURM.</li>
             </ul>
           </div>
         </div>
-        <aside class="notes">[Sources] Boundary values and the 15-point Pareto set were calculated from ../results/all_samples.csv. Correlation observations are exploratory, not causal: t_s versus Is r≈0.90; t_m versus Is r≈0.88 across 28 samples.</aside>
+        <aside class="notes">16 rules per design, grouped into three cheap serial groups plus the two MPI solves.</aside>
       </section>
 
-      <section class="long-title">
-        <h2>The renamed study is portable across clone locations</h2>
-        <div class="two-col wide-left">
-          <pre class="repo-tree"><code>PlanarAlternatingDeflectorMixer/
-├── FlowCase/
-│   ├── alternating_deflector_cad.py
-│   └── alternating_deflector_cad.yaml
-├── ScalarTransportCase/
-├── docs/index.html
-├── Snakefile
-├── bayes_optimize_sequential.py
-└── results/&lt;sample_id&gt;/</code></pre>
+      <section>
+        <h2>One workflow, any machine — the backend is a profile</h2>
+        <div class="two-col">
           <div>
-            <p class="claim">No project or OpenFOAM installation path is hard-coded.</p>
-            <ol>
-              <li>source the chosen OpenFOAM <code>etc/bashrc</code>;</li>
-              <li>run <code>./Allwmake</code> at repository root;</li>
-              <li>advance with <code>python bayes_optimize_sequential.py --max-new-evaluations 1</code>.</li>
-            </ol>
-            <p class="evidence">The custom library is built under repository-local <code>platforms/$WM_OPTIONS/lib</code>. Result CSVs store sample-relative locations.</p>
+            <pre><code>--profile profiles/local   # laptop / login node
+--profile profiles/local2  # one design at a time
+--profile profiles/slurm   # compute nodes</code></pre>
+            <p>No <code>if cluster:</code> anywhere in the workflow. A different workload manager is a new profile directory, not a fork of the study.</p>
+            <p class="definition"><strong>np</strong> is one config key and is the single source of truth for both the MPI launcher and <code>numberOfSubdomains</code> — so the launcher can never disagree with the decomposition.</p>
+          </div>
+          <div>
+            <h3>Measured, same design, np = 2</h3>
+            <table class="compact-table dense">
+              <thead><tr><th>Where</th><th>Δp [Pa]</th><th>wall/CPU</th></tr></thead>
+              <tbody>
+                <tr><td>laptop, native</td><td>2.873688034</td><td>1.004</td></tr>
+                <tr><td>laptop, container</td><td>2.873688034</td><td>1.006</td></tr>
+                <tr><td>login node</td><td>2.873688034</td><td>1.027</td></tr>
+                <tr><td>compute node, SLURM</td><td>2.873688034</td><td>1.056</td></tr>
+              </tbody>
+            </table>
+            <p class="caution" style="margin-top:14px"><strong>wall/CPU ≈ 1</strong> is the check that catches MPI ranks silently sharing one core. It emits no error of its own.</p>
           </div>
         </div>
-        <aside class="notes">[Sources] Repository-local build: ../../Allwmake. Runtime library discovery and template staging: ../Snakefile. Relative result metadata: ../postprocessing_agglomeration.py and ../visualize_results.py.</aside>
+        <aside class="notes">Identical to every digit. Comparability is the deliverable — otherwise a laptop-vs-cluster discrepancy tells you nothing.</aside>
+      </section>
+
+      <section>
+        <h2>Which BO library?</h2>
+        <table class="compare-table">
+          <thead><tr><th>&nbsp;</th><th>scikit-learn</th><th>Ax</th><th>BoTorch</th></tr></thead>
+          <tbody>
+            <tr><td class="k">What it is</td><td>GP regression + your own loop</td><td>Managed service on top of BoTorch</td><td>BO primitives on PyTorch</td></tr>
+            <tr><td class="k">Getting started</td><td>Minutes</td><td>Minutes — it picks the model</td><td>An afternoon</td></tr>
+            <tr><td class="k">Multi-objective</td><td>Roll your own</td><td>Built in</td><td>qLogNEHVI, qEHVI, …</td></tr>
+            <tr><td class="k">Control of the model</td><td>Total, but you write everything</td><td>Deliberately hidden</td><td>Total, and batteries included</td></tr>
+            <tr><td class="k">Failed evaluations</td><td>Manual</td><td>Supported</td><td>Manual — you decide the policy</td></tr>
+            <tr class="pick"><td class="k">Used here</td><td>—</td><td>—</td><td><strong>✓ ARD Matérn-5/2, qLogNEHVI, q = 1</strong></td></tr>
+          </tbody>
+        </table>
+        <div class="callout">
+          <p><strong>Start with scikit-learn</strong> to feel how a GP behaves. <strong>Use Ax</strong> if you want answers, not decisions. <strong>Use BoTorch</strong> when you need to say exactly how failures are handled, how objectives are transformed, and what the reference point is — because a referee will ask.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>The cost asymmetry is the whole argument</h2>
+        <div class="cost-rows">
+          <div class="cost-row">
+            <div class="who">Fit the GP to 100 points</div>
+            <div class="bar"><span class="gp" style="width:0.4%"></span></div>
+            <div class="cost">~1 s · login node</div>
+          </div>
+          <div class="cost-row">
+            <div class="who">Optimise the acquisition</div>
+            <div class="bar"><span class="gp" style="width:1.2%"></span></div>
+            <div class="cost">~3 s · login node</div>
+          </div>
+          <div class="cost-row">
+            <div class="who">One CFD evaluation (np = 2)</div>
+            <div class="bar"><span class="cfd" style="width:100%"></span></div>
+            <div class="cost">~9 min · compute node</div>
+          </div>
+        </div>
+        <div class="callout blue">
+          <p>The surrogate half of Bayesian optimization <strong>never needs the cluster</strong>. 100 designs × 6 parameters is a 100×100 matrix. The BO driver runs on one core for the whole campaign; Snakemake sends only the simulations to the queue.</p>
+        </div>
+        <p style="margin-top:20px">This is why the orchestrator job asks for <strong>one core and 4 GB for seven days</strong>, and everything expensive is a separate allocation.</p>
+      </section>
+
+      <section>
+        <h2>Batch BO: available, and often not the point</h2>
+        <div class="two-col">
+          <div>
+            <p>q &gt; 1 proposes several designs at once and fills a machine. The acquisition already supports it.</p>
+            <p class="claim">But with a budget of ~100 simulations, the sequential loop is usually <em>better</em>, not merely simpler.</p>
+            <ul>
+              <li>every design is chosen knowing all previous results;</li>
+              <li>a batch of 8 makes 8 decisions from stale information;</li>
+              <li>you are running other projects on the same allocation anyway.</li>
+            </ul>
+          </div>
+          <div>
+            <div class="callout">
+              <p><strong>Use q &gt; 1 when wall-clock is the binding constraint</strong> — a deadline, a reservation, an idle machine. Use q = 1 when <em>total simulation count</em> is the binding constraint, which in CFD it nearly always is.</p>
+            </div>
+            <p style="margin-top:20px">This campaign fixes q = 1 in config and the driver refuses anything else, so the record cannot drift.</p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Semi-automatic, not fire-and-forget</h2>
+        <div class="loop">
+          <div class="node cheap"><strong>Propose</strong><span>Acquisition over the posterior.</span><span class="price">seconds</span></div>
+          <div class="node dear"><strong>Simulate</strong><span>CAD → mesh → flow → scalar.</span><span class="price">minutes</span></div>
+          <div class="node cheap"><strong>Refit</strong><span>New posterior, new length scales.</span><span class="price">seconds</span></div>
+          <div class="node cheap"><strong>Read it</strong><span>Which parameters moved? Which are inert?</span><span class="price">free</span></div>
+          <div class="node"><strong>Decide</strong><span>Continue, re-bound, or re-parameterise.</span><span class="price">you</span></div>
+        </div>
+        <div class="callout green">
+          <p><strong>ARD length scales are a free sensitivity analysis.</strong> A parameter with a huge length scale does nothing over its whole range; a tiny one means the objective is twitchy there. You get this after every single evaluation, at no cost.</p>
+        </div>
+        <p style="margin-top:20px" class="caution">Acting on it — tightening bounds, dropping a dead parameter, changing the parameterisation — is a human decision, and it is where most of the value is.</p>
+      </section>
+
+      <section>
+        <h2>One study becomes the prior for the next</h2>
+        <div class="two-col">
+          <div>
+            <p>When a screen tells you the topology cannot reach the target, the correct move is not more samples. It is a <strong>new hypothesis</strong>.</p>
+            <p class="formula">P(topology works | 12 designs) ≪ P(topology works)</p>
+            <p>The twelve runs did not find an optimum. They bought a posterior over <em>study designs</em> — and that posterior said: change the mechanism.</p>
+          </div>
+          <div>
+            <div class="callout blue">
+              <p>This is Bayes at the level above the optimiser. The prior for the next campaign — which bounds are plausible, which mechanism is needed, what the pressure cost of asymmetry is — is <strong>entirely inherited</strong> from the one that failed.</p>
+            </div>
+            <p style="margin-top:20px">A negative result with a predeclared gate is cheap, publishable, and reusable. A negative result without one is just a shrug.</p>
+          </div>
+        </div>
+        <aside class="notes">This is exactly how TwoLayerSerpentineCrossingMixer came to exist: the planar mechanism stretches the interface but never multiplies it.</aside>
+      </section>
+
+      <section>
+        <h2>Two objectives: a front, not a winner</h2>
+        <div class="two-col">
+          <div>
+            <p>With one objective there is a best design. With two there is a set: every design where you cannot improve mixing without paying more pressure.</p>
+            <p class="definition">In d objectives the Pareto set is a <strong>(d−1)-dimensional surface</strong> in objective space, drawn from a 6-dimensional design space.</p>
+            <h3>How BO targets a surface</h3>
+            <p>Not by scalarising into one number and losing the trade-off. By maximising the <strong>hypervolume</strong> the front encloses against a fixed reference point.</p>
+          </div>
+          <div>
+            <p class="formula">ref = (20 Pa, I<sub>s</sub> = 1)</p>
+            <ul>
+              <li><strong>qLogNEHVI</strong> — expected gain in that volume from the next design, noise-aware, log-scaled for numerical sanity;</li>
+              <li>the reference point is <em>declared in config</em>, because it silently defines what “improvement” means;</li>
+              <li>failed designs are excluded, never given a fictitious penalty.</li>
+            </ul>
+            <div class="callout">
+              <p>You sample the surface, then <strong>re-simulate the interesting corners</strong> at higher fidelity to confirm. The front is a hypothesis until you do.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>What CAD-in-the-loop BO actually delivers</h2>
+        <div class="three-col">
+          <div>
+            <h3>Manufacturable by construction</h3>
+            <p>Feature-size constraints live in the parameterisation, so every proposal is a shape that can be etched or printed — not one to be repaired afterwards.</p>
+          </div>
+          <div>
+            <h3>A trade-off, not a point</h3>
+            <p>The output is a front. Choosing on it is an engineering decision with a pump curve and a budget attached.</p>
+          </div>
+          <div>
+            <h3>Auditable</h3>
+            <p>Every design keeps its CAD parameters, its mesh report, its flow balance and its logs. A number without provenance is not a result.</p>
+          </div>
+        </div>
+        <div class="verdict">Concretely: <strong>microreactors</strong>, lab-on-chip, process intensification — devices where geometry <em>is</em> the process, and where a prototype costs weeks.</div>
+      </section>
+
+      <!-- ============================================================
+           PART 4 — RESULTS
+           ============================================================ -->
+      <section class="divider">
+        <div class="part">Part four</div>
+        <h2>Results</h2>
+        <p>Twelve corrected designs, a front that never rises, and a gate that was written down first.</p>
+      </section>
+
+      <section>
+        <h2>The campaign, running</h2>
+        <video class="video-frame" autoplay loop muted playsinline controls
+               src="assets/pareto_animation.mp4" poster="assets/pareto_front_corrected.png">
+          <img src="assets/pareto_animation.gif" alt="Animated reconstruction of the Pareto front" class="video-frame">
+        </video>
+        <p class="video-caption">One frame per completed CFD evaluation — the front assembling above, that design’s outlet scalar field below. Produced by <code>snakemake visualize</code>: the animation is a rule in the workflow, not a manual step.</p>
+        <aside class="notes">Regenerate with: snakemake visualize --workflow-profile profiles/local --config results_dir=results/corrected_boundary_v3</aside>
+      </section>
+
+      <section>
+        <h2>Twelve designs, zero failures, and a front far below the gate</h2>
+        <svg id="pareto-chart"></svg>
+        <aside class="notes">Orange circles are the twelve corrected screening designs, outlined ones are non-dominated. Open squares are the three matched baselines. The green dashed line is the predeclared 0.60 gate.</aside>
+      </section>
+
+      <section>
+        <h2>The decision was predeclared, so it is a result</h2>
+        <div class="two-col">
+          <div>
+            <table class="compact-table">
+              <thead><tr><th>&nbsp;</th><th>Achieved</th><th>Required</th></tr></thead>
+              <tbody>
+                <tr><td>Best mixing index</td><td><strong>0.1698</strong> at 34.06 Pa</td><td>≥ 0.60</td></tr>
+                <tr><td>Best within 20 Pa</td><td>0.1126 at 16.47 Pa</td><td>—</td></tr>
+                <tr><td>Failed designs</td><td>0 / 12</td><td>≤ 25 %</td></tr>
+                <tr><td>Numerical validation</td><td>12 / 12 passed</td><td>all</td></tr>
+              </tbody>
+            </table>
+            <div class="verdict"><strong>NO-GO</strong> — <code>adapt_topology_before_full_sequential_bo</code></div>
+          </div>
+          <div>
+            <p class="claim">Nothing failed numerically. The physics simply is not there.</p>
+            <p>This planar topology <strong>stretches and diffuses</strong> the inlet interface. It never <em>multiplies</em> it. No setting of the six parameters buys a factor of four in mixing index, and the one design that got closest cost 11.9× the straight-channel pressure.</p>
+            <div class="callout">
+              <p>The full 32 + 80 campaign is blocked in code. Running it would have cost <strong>~19 hours of CFD</strong> to confirm what twelve designs already showed.</p>
+            </div>
+          </div>
+        </div>
+        <aside class="notes">results/corrected_boundary_v3/screening_gate.json records this decision as data, not prose.</aside>
+      </section>
+
+      <section>
+        <h2>What the twelve runs actually bought</h2>
+        <div class="three-col">
+          <div>
+            <h3>A verified pipeline</h3>
+            <p>CAD, mesh, flow, scalar, objectives and their gates — reproducible on four different machines to the digit.</p>
+          </div>
+          <div>
+            <h3>A quantified mechanism limit</h3>
+            <p>Interface stretching alone tops out near a mixing index of 0.17 at this Re and Sc. That is a number the next study starts from.</p>
+          </div>
+          <div>
+            <h3>A cheaper next question</h3>
+            <p>Not “tune this harder” but “does a three-dimensional crossing topology multiply the interface?” — a different hypothesis, same harness.</p>
+          </div>
+        </div>
+        <div class="callout green">
+          <p><strong>The harness is the transferable asset.</strong> Swapping the CAD generator and the mesh dictionary points all of this at a new device; the profiles, the gates, the failure classification and the container do not change.</p>
+        </div>
       </section>
 
       <section class="closing">
-        <h2>The screen worked: now change the mixing mechanism</h2>
-        <p class="claim">The corrected evidence rejects full BO of this planar alternating-deflector topology. The next publishable step is topology adaptation, not a larger optimization budget.</p>
-        <div class="two-col">
-          <div>
-            <h3 style="color:white">Immediate validation</h3>
-            <ul>
-              <li>freeze the corrected 12-point screen as the PADM no-go result;</li>
-              <li>implement one topology with interface multiplication;</li>
-              <li>repeat the matched baselines and 12-point gate;</li>
-              <li>spend the full BO budget only after a pass.</li>
-            </ul>
-          </div>
-          <div>
-            <h3 style="color:white">If true SAR is the goal</h3>
-            <ul>
-              <li>introduce separate branches with a demonstrable permutation;</li>
-              <li>use a 3-D crossing/stacking topology or a planar network with distinct outlets/inlets;</li>
-              <li>verify layer multiplication from cross-sectional scalar fields;</li>
-              <li>then re-run BO on the new topology.</li>
-            </ul>
-          </div>
-        </div>
-        <aside class="notes">[Sources] Research gates and bounded execution plan: RESEARCH_PLAN.md. Historical conceptual material and the legacy campaign are retained for provenance, not pooled with the verified objectives.</aside>
+        <h2>Reproducing all of this</h2>
+        <pre><code>git clone …/openfoam-bayesopt-mixer &amp;&amp; cd openfoam-bayesopt-mixer
+./apptainer/build.sh
+apptainer exec --bind "$PWD" apptainer/padm.sif bash -c "./Allwclean &amp;&amp; ./Allwmake"
+
+cd PlanarAlternatingDeflectorMixer
+apptainer exec --bind "$PWD/.." ../apptainer/padm.sif \
+    python3 research_sequence.py next --max-new-evaluations 1 --profile profiles/local</code></pre>
+        <p style="margin-top:26px">Swap <code>--profile profiles/slurm</code> and the same study runs on compute nodes. Nothing else changes.</p>
+        <p class="footline">README.md · QUICKSTART.md · CLUSTER.md · docs/RESEARCH_PLAN.md</p>
+        <aside class="notes">The image carries OpenFOAM v2512, cfMesh, CadQuery, BoTorch and Snakemake. Verified on WSL and on Lichtenberg.</aside>
       </section>
+
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/math/math.js"></script>
-<script src="slides.js?v=20260725"></script>
+  <script src="slides.js?v=20260831"></script>
 </body>
 </html>

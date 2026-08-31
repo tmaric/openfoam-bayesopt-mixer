@@ -13,6 +13,8 @@ From: ubuntu:24.04
 #   BoTorch/GPyTorch    the optimiser
 #   Snakemake           the workflow engine, so the whole driver -- BO loop and
 #                       DAG -- runs INSIDE the image on every backend
+#   ffmpeg              only for the `visualize` rule's MP4 export; the GIF is
+#                       Pillow and needs nothing
 #
 # The image deliberately contains NO study data.  Bind the repository in:
 #
@@ -49,7 +51,8 @@ From: ubuntu:24.04
         python3 python3-pip python3-venv \
         libgl1 libglu1-mesa libxrender1 libxcursor1 libxft2 libxinerama1 \
         libsm6 libice6 libxext6 libxi6 libfontconfig1 libfreetype6 \
-        procps rsync less vim-tiny
+        procps rsync less vim-tiny \
+        ffmpeg
 
     # ---------------------------------------------------------------- OpenFOAM
     # The -dev metapackage pulls flex, scotch, ptscotch, boost, cgal, fftw and
