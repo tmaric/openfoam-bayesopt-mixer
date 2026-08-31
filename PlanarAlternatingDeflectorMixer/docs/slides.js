@@ -1584,14 +1584,29 @@ function renderObjectiveSpaces() {
 /* Author attribution on every slide.  Injected rather than written out 67
    times, so it cannot drift out of sync -- and injected INTO the section rather
    than positioned against the viewport, so it scales with the slide. */
-const AUTHOR = 'Tomislav Maric \u2013 MMA TU Darmstadt \u2013 maric@mma.tu-darmstadt.de';
+const AUTHOR_NAME = 'Tomislav Maric';
+const AUTHOR_REST = ['MMA TU Darmstadt', 'maric@mma.tu-darmstadt.de'];
 
 function addAuthorLine() {
   document.querySelectorAll('.reveal .slides > section').forEach((section) => {
     if (section.querySelector(':scope > .deck-author')) return;
     const el = document.createElement('div');
     el.className = 'deck-author';
-    el.textContent = AUTHOR;
+    /* the name is set apart from the affiliation so the line reads as an
+       attribution rather than as one long grey string */
+    const name = document.createElement('span');
+    name.className = 'who';
+    name.textContent = AUTHOR_NAME;
+    el.appendChild(name);
+    AUTHOR_REST.forEach((part) => {
+      const sep = document.createElement('span');
+      sep.className = 'sep';
+      sep.textContent = '\u2013';
+      const bit = document.createElement('span');
+      bit.textContent = part;
+      el.appendChild(sep);
+      el.appendChild(bit);
+    });
     section.appendChild(el);
   });
 }

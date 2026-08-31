@@ -234,7 +234,7 @@ body { background: var(--paper); }
 }
 
 .title-slide .footline {
-  bottom: 34px;
+  bottom: 64px;
   color: var(--muted);
   font-size: 19px;
   left: 72px;
@@ -779,17 +779,29 @@ body { background: var(--paper); }
    left padding.  Positioned against the viewport instead, it was clipped at the
    left edge and floated outside the painted area of the dark slides. */
 .reveal .slides section > .deck-author {
-  bottom: 14px;
+  align-items: baseline;
+  bottom: 16px;
   color: var(--muted);
-  font-size: 15px;
+  display: flex;
+  font-size: 20px;
+  gap: 10px;
   left: 72px;
   letter-spacing: 0.01em;
   margin: 0;
   position: absolute;
   z-index: 40;
 }
+.reveal .slides section > .deck-author .who {
+  color: var(--ink);
+  font-weight: 700;
+}
+.reveal .slides section > .deck-author .sep { color: var(--line); }
 .reveal .slides section.divider > .deck-author,
-.reveal .slides section.closing > .deck-author { color: rgba(255, 255, 255, 0.55); }
+.reveal .slides section.closing > .deck-author { color: rgba(255, 253, 248, 0.72); }
+.reveal .slides section.divider > .deck-author .who,
+.reveal .slides section.closing > .deck-author .who { color: var(--white); }
+.reveal .slides section.divider > .deck-author .sep,
+.reveal .slides section.closing > .deck-author .sep { color: rgba(255, 253, 248, 0.40); }
 
 /* --- roadmap on the section dividers -------------------------------
    Repeating the whole arc on every divider, with the current part lit,
