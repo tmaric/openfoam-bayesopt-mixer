@@ -1,3 +1,84 @@
+/* ===================================================================
+   Minimal slide engine.  Replaces reveal.js entirely: no CDN, no
+   plugins, no build step.  The deck is a 1600x900 stage scaled to fit
+   whatever window it is opened in, so a single HTML file works from a
+   web server AND from a bare file:// double-click, online or offline.
+   =================================================================== */
+html, body { height: 100%; margin: 0; overflow: hidden; }
+
+.reveal { height: 100vh; overflow: hidden; position: relative; width: 100vw; }
+
+.reveal .slides {
+  height: 900px;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(var(--deck-scale, 1));
+  transform-origin: center center;
+  width: 1600px;
+}
+
+.reveal .slides > section {
+  display: none;
+  inset: 0;
+  overflow: hidden;
+  position: absolute;
+}
+.reveal .slides > section.present { display: block; }
+
+/* Speaker notes are authored inline; hidden by default, toggled with N. */
+.reveal .slides aside.notes { display: none; }
+.reveal.show-notes .slides section.present aside.notes {
+  background: #102a43;
+  bottom: 0;
+  color: #e8eef4;
+  display: block;
+  font-size: 19px;
+  left: 0;
+  line-height: 1.35;
+  padding: 14px 72px 16px;
+  position: absolute;
+  right: 0;
+  z-index: 60;
+}
+
+.deck-counter {
+  bottom: 12px;
+  color: var(--muted);
+  font-size: 15px;
+  position: absolute;
+  right: 22px;
+  z-index: 50;
+}
+.deck-nav {
+  bottom: 6px;
+  display: flex;
+  gap: 4px;
+  position: absolute;
+  right: 96px;
+  z-index: 50;
+}
+.deck-nav button {
+  background: none;
+  border: none;
+  color: var(--line);
+  cursor: pointer;
+  font-size: 26px;
+  line-height: 1;
+  padding: 2px 8px;
+}
+.deck-nav button:hover { color: var(--ink); }
+.deck-nav button:disabled { opacity: 0.25; cursor: default; }
+.deck-help {
+  bottom: 12px;
+  color: var(--line);
+  font-size: 13px;
+  left: 50%;
+  position: absolute;
+  transform: translateX(-50%);
+  z-index: 50;
+}
+
 :root {
   --ink: #102a43;
   --muted: #5d7285;

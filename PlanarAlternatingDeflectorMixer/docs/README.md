@@ -1,68 +1,76 @@
-# PADM slide deck
+# Slide decks
 
-Reveal.js presentation for the Planar Alternating-Deflector Micromixer study.
+Two standalone decks for the **Delft Workshop on Bayesian Optimization for CFD**.
+
+| file | what |
+|---|---|
+| [`bayesian-optimization-cfd-theory.html`](bayesian-optimization-cfd-theory.html) | **Theory.** Gaussian distribution → multivariate Gaussian → Gaussian process → Bayes and GP conditioning → acquisition functions → multi-objective and hypervolume → PINN surrogates and concurrent workflows. |
+| [`bayesian-optimization-cfd-tutorial.html`](bayesian-optimization-cfd-tutorial.html) | **Hands-on.** The planar alternating-deflector micromixer end to end: the problem, the method, building it with agents, the results, a six-exercise assignment with answers, and a reproduction appendix. |
+
+## No installation, no plugins, no build step
+
+Both decks are plain HTML plus a local `slides.css` and `slides.js`. There is
+**no reveal.js, no plugin, no CDN and no package manager** — the slide engine is
+about 90 lines at the top of `slides.js`. Consequences worth knowing:
+
+- **double-click either file** and it opens; `file://` works, no server needed;
+- they work **offline**, on any modern browser, on any machine;
+- nothing to install for anyone you hand them to.
+
+To serve the folder instead (useful when presenting from another device):
 
 ```bash
 ./serve.sh          # python3 -m http.server 8000
 ```
 
-Open <http://localhost:8000/>. Arrow keys navigate, `Esc` is the overview, `S`
-opens speaker notes, `F` is full screen.
+### Navigating
 
-## Structure
+| key | |
+|---|---|
+| `→` `space` `PageDown` | next slide |
+| `←` `PageUp` | previous slide |
+| `Home` `End` | first / last |
+| `N` | toggle speaker notes |
 
-| Part | Slides | Content |
-|---|---|---|
-| **1 · The problem** | the device, why Re = 10 / Sc = 1000 makes mixing hard, the six design parameters, both objectives, the constraints |
-| **2 · Bayesian optimization** | Bayes' theorem and the probability square, GPs as priors over functions, the closed-form mean and variance, UCB, optimising the acquisition, data efficiency |
-| **3 · Building it** | development with agents, test-driven from the top down, Snakemake, local/SLURM profiles, BoTorch vs Ax vs scikit-learn, the cost asymmetry, batch BO, semi-automatism, multi-objective fronts |
-| **4 · Results** | the campaign animation, the corrected Pareto front, the predeclared NO-GO |
-| **5 · Your turn** | six hands-on exercises, each a task slide followed by its answer with the exact commands |
+The URL carries the slide number (`#/23`), so any slide can be linked directly.
 
 ## Figures are computed, not drawn
 
-`slides.js` renders two SVGs at load time:
+`slides.js` renders every diagram at load time from real algebra or real data:
 
-- **the GP panel** — a squared-exponential kernel and an *exact* posterior over
-  five synthetic observations, plus its UCB acquisition. The mean interpolates
-  the data and the variance collapses there because the algebra is real; the
-  argmax it marks (x ≈ 0.771) is genuinely where UCB points.
-- **the Pareto chart** — the twelve corrected screening designs, straight from
-  `../results/corrected_boundary_v3/all_samples.csv`, with the three matched
-  baselines and the predeclared 0.60 gate.
+- **GP posterior and UCB** — exact squared-exponential posterior over five
+  observations; the mean interpolates the data and the variance collapses there
+  because the algebra is real, not because it was drawn that way.
+- **The κ sweep** — the Forrester function, one shared posterior, three values
+  of κ. κ = 0 picks 0.63 (next to a sample it already has), κ = 3 lands on the
+  true optimum at 0.758.
+- **GP prior samples** — five functions drawn by Cholesky-factorising the kernel
+  matrix and multiplying by standard normals.
+- **Unit-cell geometry** — drawn *from* the parameter vector shown above it,
+  following the section layout in `../FlowCase/alternating_deflector_cad.py`.
+- **Pareto front and hypervolume** — the dominated staircase against the
+  declared reference point, and the area one candidate would add.
+- **The campaign Pareto chart** — the twelve corrected designs, read from
+  `../results/corrected_boundary_v3/all_samples.csv`.
 
-Editing either figure means editing the data or the kernel, not moving pixels.
+Editing a figure means editing the data or the kernel, not moving pixels.
 
 ## The assignment
 
-Part 5 is a teaching section: six exercises that alternate **task → answer**.
-Tasks 1–4 run CFD (a few minutes each); tasks 5–6 run none at all, reusing the
-twelve designs the campaign already paid for.
-
-| # | Task | Teaches |
-|---|---|---|
-| 1 | Run the straight baseline, check it against 12νUL/H² | the workflow, the container, the profile switch |
-| 2 | Find which yaml keys the CAD actually reads | read the source, not the field names |
-| 3 | Halve the asymmetry, predict then measure | parameters → geometry → objectives, and the trade-off |
-| 4 | Delete outputs, predict what Snakemake re-runs | the DAG is target-driven, not a file watcher |
-| 5 | Fit a GP to the finished designs, rank the parameters | GP + ARD as a free sensitivity analysis |
-| 6 | Maximise UCB for κ = 0, 2, 10 | exploration vs exploitation on real data |
-
-The whole assignment runs **inside the container** — building the image is the
-only step that cannot. Students enter it once and stay there:
+Part five of the tutorial deck is six exercises alternating **task → answer**,
+with the exact commands. Tasks 1–4 run CFD (minutes each); tasks 5–6 run none,
+reusing the twelve designs the campaign already paid for. The whole assignment
+runs **inside the container** — building the image is the only step that cannot:
 
 ```bash
 apptainer shell --bind "$PWD" apptainer/padm.sif
 ```
 
-Every number on the answer slides was produced by running the exercise. The
-reference solution for 5 and 6 is [`exercises/surrogate.py`](exercises/surrogate.py),
-run from inside as `python3 docs/exercises/surrogate.py`.
+Reference solution for tasks 5 and 6: [`exercises/surrogate.py`](exercises/surrogate.py).
 
 ## Assets
 
-`assets/pareto_animation.mp4` and `.gif` are produced by a workflow rule, not by
-hand:
+`assets/pareto_animation.mp4` and `.gif` come from a workflow rule, not by hand:
 
 ```bash
 cd .. && snakemake visualize --workflow-profile profiles/local \
@@ -70,19 +78,19 @@ cd .. && snakemake visualize --workflow-profile profiles/local \
 cp results/corrected_boundary_v3/visualizations/pareto_animation.* docs/assets/
 ```
 
-MP4 export needs ffmpeg (present in the Apptainer image); the GIF is Pillow and
-always works.
+## Source material
+
+`2026-BayesianOptimization-CFD.pptx` and `.pdf` are the **input** lecture slides
+the theory deck was derived from. They are deliberately **not tracked** (see
+`.gitignore`) and are not modified by anything here.
 
 ## Data provenance
 
-- **corrected** baselines: `../results/corrected_boundary_v3_baselines/`;
-- **corrected** gated campaign (the only data shown): `../results/corrected_boundary_v3/`;
+- **corrected** baselines: `../results/corrected_boundary_v3_baselines/`
+- **corrected** gated campaign, the only data shown: `../results/corrected_boundary_v3/`
 - the archived 28-point campaign and `../results/verified_flux_sequential_v2/`
-  predate the boundary repair. They are retained to document the defect and are
-  **never pooled** with the corrected results.
+  predate the boundary repair. Retained to document the defect; **never pooled**
+  with the corrected results.
 
-The deck is self-contained apart from Reveal.js and KaTeX, pinned from jsDelivr.
-All paths are relative, so the folder moves with the repository.
-
-See `RESEARCH_PLAN.md` for the topology, verification and publication gates, and
-`../README.md` for how to run the study.
+See `RESEARCH_PLAN.md` for the phase gates and `../README.md` for how to run the
+study.

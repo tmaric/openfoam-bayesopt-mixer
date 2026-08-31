@@ -93,3 +93,13 @@ apptainer/*.sif
 # not -- see Allwclean in apptainer/README.md.
 src/functionObjects/Make/linux*/
 src/**/lnInclude/
+
+# Source slide decks supplied as INPUT material. Large binaries, not authored
+# here, and not to be modified -- the HTML decks in docs/ are derived from them.
+*.pptx
+*.ppt
+PlanarAlternatingDeflectorMixer/docs/*.pdf
+
+# WSL exposes NTFS alternate data streams as files; these appear next to any
+# file downloaded on Windows and are never content.
+*:Zone.Identifier

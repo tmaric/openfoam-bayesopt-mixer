@@ -219,7 +219,8 @@ reference solution for tasks 5 and 6 is `docs/exercises/surrogate.py`:
 python3 docs/exercises/surrogate.py               # from inside the image
 ```
 
-Serve the deck with `./docs/serve.sh` and open <http://localhost:8000/>.
+Open either deck directly in a browser — they are standalone HTML with no
+plugins, no CDN and no build step — or serve the folder with `./docs/serve.sh`.
 
 ## Repository map
 
@@ -235,7 +236,8 @@ Serve the deck with `./docs/serve.sh` and open <http://localhost:8000/>.
 | `FlowCase/`, `ScalarTransportCase/` | OpenFOAM case templates |
 | `FlowCase/alternating_deflector_cad.py` | the CadQuery geometry generator |
 | `validate_*.py`, `verify_*.py` | independent mesh, flow and convergence checks |
-| `docs/index.html` | the slide deck, incl. the hands-on assignment (`./docs/serve.sh`) |
+| `docs/bayesian-optimization-cfd-tutorial.html` | hands-on tutorial deck, incl. the assignment |
+| `docs/bayesian-optimization-cfd-theory.html` | theory deck: GPs, Bayes, acquisition functions |
 | `docs/exercises/` | reference solutions for the assignment |
 | [QUICKSTART.md](QUICKSTART.md) | parameterization, objectives, campaign ladder |
 | [CLUSTER.md](CLUSTER.md) | SLURM, binds, and the measured failure modes |

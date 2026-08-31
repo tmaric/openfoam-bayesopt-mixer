@@ -89,6 +89,33 @@ PBiCGStab/DILU scalar solve. Outlet objectives must satisfy a final-window
 stability test. Results still require a mesh/scheme study before physical
 publication claims.
 
+## Course and workshop material
+
+This repository is the worked example for the **Delft Workshop on Bayesian
+Optimization for CFD**. It carries two standalone slide decks and the complete,
+reproducible study they describe.
+
+| | |
+|---|---|
+| **Theory deck** | [`PlanarAlternatingDeflectorMixer/docs/bayesian-optimization-cfd-theory.html`](PlanarAlternatingDeflectorMixer/docs/bayesian-optimization-cfd-theory.html) — Gaussian distribution → multivariate Gaussian → Gaussian process → Bayes and conditioning → acquisition functions |
+| **Hands-on tutorial** | [`PlanarAlternatingDeflectorMixer/docs/bayesian-optimization-cfd-tutorial.html`](PlanarAlternatingDeflectorMixer/docs/bayesian-optimization-cfd-tutorial.html) — the micromixer study end to end, plus a six-exercise assignment with answers |
+| **The study itself** | [`PlanarAlternatingDeflectorMixer/`](PlanarAlternatingDeflectorMixer/) — CAD, cases, workflow, BO driver, results and [its README](PlanarAlternatingDeflectorMixer/README.md) |
+
+**The decks need nothing installed.** They are plain HTML with local CSS and JS —
+no reveal.js, no plugins, no CDN, no build step. Double-click either file, or
+serve the folder:
+
+```bash
+cd PlanarAlternatingDeflectorMixer/docs && ./serve.sh
+```
+
+Navigate with the arrow keys or space; `Home`/`End` jump to the ends; `N` toggles
+the speaker notes. They work offline and in any modern browser.
+
+To *run* the study rather than read about it, start at
+[`PlanarAlternatingDeflectorMixer/README.md`](PlanarAlternatingDeflectorMixer/README.md);
+the tutorial deck's appendix gives the same four steps as slides.
+
 ## Prerequisites
 
 The environment is packaged as an Apptainer image (`apptainer/padm.def`) so a

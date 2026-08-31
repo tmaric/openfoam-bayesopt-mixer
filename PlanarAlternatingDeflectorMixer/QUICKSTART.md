@@ -150,5 +150,6 @@ All stored paths are clone-relative. Corrected results are written below
 `results/corrected_boundary_v3_baselines/` and
 `results/corrected_boundary_v3/`; runtime results are not version controlled.
 
-See `docs/index.html` for the Reveal.js presentation and
+See `docs/bayesian-optimization-cfd-tutorial.html` and
+`docs/bayesian-optimization-cfd-theory.html` for the slide decks, and
 `docs/RESEARCH_PLAN.md` for the publication decision gates.

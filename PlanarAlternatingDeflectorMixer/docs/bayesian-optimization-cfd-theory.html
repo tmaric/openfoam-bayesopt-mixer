@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bayesian Optimization in CFD &mdash; Theory</title>
+  <link rel="stylesheet" href="slides.css">
+</head>
+<body>
+  <div class="reveal">
+    <div class="slides">
+
+      <section class="title-slide">
+        <div class="eyebrow">Course notes &middot; theoretical part</div>
+        <h1>Bayesian Optimization<br>in Computational Fluid Dynamics</h1>
+        <p class="subtitle">From the Gaussian distribution to a working acquisition function &mdash; and why 100 simulations are enough.</p>
+        <div class="footline">Companion to the hands-on tutorial: <code>bayesian-optimization-cfd-tutorial.html</code></div>
+      </section>
+
+      <!-- ============ PART 1 ============ -->
+      <section class="divider">
+        <div class="part">Part one</div>
+        <h2>Why Bayesian optimization</h2>
+        <p>What it is, what it costs, and how it compares with the alternatives you already know.</p>
+      </section>
+
+      <section class="statement">
+        <div class="body">
+          <p class="bombastic">Efficient <em>global</em> optimization of expensive, <em>derivative-free</em>, multi-modal functions.</p>
+          <p style="margin-top:32px">That single sentence is the whole promise. Every property below follows from it &mdash; and every one of them matters in CFD, where one function evaluation is a simulation.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>What Bayesian optimization buys you</h2>
+        <div class="body">
+          <ul>
+            <li><strong>Sample-efficient</strong> &mdash; finds a global optimum in roughly <strong>100 evaluations</strong>.</li>
+            <li><strong>Integrates expert knowledge</strong> rigorously, through the prior and the kernel.</li>
+            <li><strong>Computes variance</strong> &mdash; uncertainty quantification comes free with the model.</li>
+            <li>Supports <strong>multi-objective, multi-fidelity and constrained</strong> optimization.</li>
+            <li>Handles real, integer and categorical (integer-encoded) components of <strong>x</strong>.</li>
+            <li>Proven at scale in machine learning &mdash; hyperparameter tuning and AutoML, including AlphaFold and AlphaGo.</li>
+          </ul>
+          <div class="callout blue">
+            <p><strong>Scope:</strong> f : ℝ<sup>d</sup> → ℝ with d ≲ 60. We can parameterise a fluid-dynamics simulation or an experiment in sixty search dimensions.</p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Compared with gradient-based optimization</h2>
+        <div class="body">
+          <div class="two-col">
+            <div>
+              <h3>What it costs you</h3>
+              <ul>
+                <li>can get stuck in a <strong>local</strong> optimum;</li>
+                <li>requires deriving <em>and</em> implementing an <strong>adjoint problem</strong> &mdash; per objective, per model;</li>
+                <li>on complex problems, density- and gradient-based topology optimization often yields disconnected topology, or shapes that cannot be manufactured.</li>
+              </ul>
+            </div>
+            <div>
+              <div class="callout">
+                <p>The adjoint is not free labour. Every change to the physics &mdash; a new turbulence model, a new boundary condition &mdash; is a new derivation.</p>
+              </div>
+              <p style="margin-top:20px" class="definition">Where an adjoint <em>is</em> available and the problem is unimodal, it wins on cost. BO is for the case where it is not.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Compared with evolutionary algorithms</h2>
+        <div class="body">
+          <div class="emph-rows">
+            <div class="emph-row"><div class="n">10³</div><div class="t"><strong>Evaluations, empirically.</strong> An order of magnitude more than BO needs &mdash; decisive when each one is a simulation.</div></div>
+            <div class="emph-row"><div class="n">—</div><div class="t"><strong>Heuristic, with no measure of uncertainty.</strong> You get a best-so-far, not a model you can interrogate.</div></div>
+            <div class="emph-row"><div class="n">d &lt; 200</div><div class="t"><strong>But they scale further in dimension.</strong> Above roughly 60 parameters, this is the honest choice.</div></div>
+          </div>
+          <div class="callout green">
+            <p>The trade is simple: <strong>BO spends thinking to save evaluations.</strong> That is the right trade exactly when evaluations are simulations.</p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Two CFD applications</h2>
+        <div class="body">
+          <div class="two-col">
+            <div>
+              <h3>Chip cooling</h3>
+              <p>A parameterised cooling geometry. Objectives in tension: <strong>heat removed</strong> against <strong>pressure loss</strong>. The result is a Pareto front, sampled and then confirmed, from which an engineer picks against a pump curve.</p>
+            </div>
+            <div>
+              <h3>Passive chaotic micromixing</h3>
+              <p>No moving parts: the walls must stretch and fold the interface. Objectives in tension: <strong>mixing quality</strong> against <strong>pressure loss</strong>. This is the device the hands-on tutorial optimises.</p>
+            </div>
+          </div>
+          <div class="verdict">Both are <strong>CAD-in-the-loop</strong>: the design variables are geometry, so every proposal must be built, meshed and solved before it can be scored.</div>
+        </div>
+      </section>
+
+      <!-- ============ PART 2 ============ -->
+      <section class="divider">
+        <div class="part">Part two</div>
+        <h2>The loop, end to end</h2>
+        <p>What has to happen between proposing a parameter vector and getting a number back.</p>
+      </section>
+
+      <section>
+        <h2>CAD → mesh → solve → score</h2>
+        <div class="body">
+          <div class="pipeline">
+            <div class="stage"><strong>1 · Parametric CAD</strong><span>x becomes a solid model. Scripted, not clicked.</span></div>
+            <div class="pipeline-arrow">→</div>
+            <div class="stage"><strong>2 · Mesh</strong><span>Automatic, unattended, and it must not fail silently.</span></div>
+            <div class="pipeline-arrow">→</div>
+            <div class="stage"><strong>3 · Simulate</strong><span>The expensive step. Minutes to core-days.</span></div>
+            <div class="pipeline-arrow">→</div>
+            <div class="stage"><strong>4 · Score</strong><span>Objectives, plus the gates that decide whether they count.</span></div>
+          </div>
+          <div class="callout">
+            <p>Steps 1, 2 and 4 are where a CAD-in-the-loop study actually fails. Step 3 is only where it spends its money.</p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Constraining the parametric CAD</h2>
+        <div class="body">
+          <p class="claim">The optimiser will propose the corners of your box. Every corner must be a shape that can be built, meshed and solved.</p>
+          <div class="two-col">
+            <div>
+              <h3>Why it matters</h3>
+              <p>An unconstrained box contains slivers, self-intersections and features below the mesh resolution. Each one costs a wasted CFD run to discover &mdash; or worse, produces a number that looks fine.</p>
+            </div>
+            <div>
+              <h3>How to do it</h3>
+              <p>Express dependent parameters as <strong>ratios into admissible intervals</strong> whose endpoints depend on the other parameters. The optimiser then searches a plain unit box, and feasibility is structural rather than checked after the fact.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ PART 3 ============ -->
+      <section class="divider">
+        <div class="part">Part three</div>
+        <h2>Bayesian optimization at a glance</h2>
+        <p>The goal, the two building blocks, and the loop &mdash; before the mathematics.</p>
+      </section>
+
+      <section>
+        <h2>The goal</h2>
+        <div class="body">
+          <p class="formula">x* = argmax<sub>x ∈ X</sub> f(x),&nbsp;&nbsp; x ∈ I<sup>d</sup>,&nbsp; d ≲ 20&ndash;60</p>
+          <p>f is an <strong>expensive black box</strong>: no formula, no gradient, and each evaluation is a simulation.</p>
+          <div class="callout blue">
+            <p>Bayesian optimization models f with a cheap <strong>probabilistic surrogate</strong> &mdash; a Gaussian process &mdash; and optimises <em>that</em> instead, using it to decide where the next expensive evaluation should go.</p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Two building blocks, one loop</h2>
+        <div class="body">
+          <div class="two-col">
+            <div>
+              <h3>The Gaussian process</h3>
+              <p>A probabilistic surrogate for the expensive function. It supplies closed-form, inexpensive <strong>mean μ(x)</strong> and <strong>variance σ²(x)</strong>.</p>
+              <p class="definition">Globally optimising f is replaced by globally optimising the GP.</p>
+            </div>
+            <div>
+              <h3>The acquisition function</h3>
+              <p>Optimising μ alone would only <strong>exploit</strong>. Including σ² lets us <strong>explore</strong> where the GP is uncertain.</p>
+              <p class="definition">The acquisition function combines the two into one number to maximise.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>The Bayesian optimization loop</h2>
+        <div class="body">
+          <p class="formula">while |f(x*<sub>k</sub>) − f(x*<sub>k−1</sub>)| &gt; ε</p>
+          <div class="emph-rows">
+            <div class="emph-row"><div class="n">1</div><div class="t">Introduce more samples.</div></div>
+            <div class="emph-row"><div class="n">2</div><div class="t">Fit a Gaussian-process surrogate to the samples.</div></div>
+            <div class="emph-row"><div class="n">3</div><div class="t">Construct the acquisition function from the GP's mean and variance, balancing exploitation and exploration.</div></div>
+            <div class="emph-row"><div class="n">4</div><div class="t">Globally optimise the cheap acquisition to find where to sample next &mdash; possibly several points at once.</div></div>
+            <div class="emph-row"><div class="n">5</div><div class="t">Go to 1.</div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ PART 4 ============ -->
+      <section class="divider">
+        <div class="part">Part four</div>
+        <h2>Building blocks</h2>
+        <p>Gaussian distribution → multivariate Gaussian → Gaussian process. Each step adds exactly one idea.</p>
+      </section>
+
+      <section>
+        <h2>The Gaussian distribution</h2>
+        <div class="body">
+          <div class="two-col">
+            <div>
+              <p class="formula">p(x) = (2πσ²)<sup>−1/2</sup> exp( −(x−μ)² / 2σ² )</p>
+              <p><strong>μ</strong> &mdash; the mean, ∫ x p(x) dx</p>
+              <p><strong>σ</strong> &mdash; the standard deviation, the spread</p>
+              <p><strong>σ²</strong> &mdash; the variance</p>
+            </div>
+            <div>
+              <svg data-fig="gauss1d" style="background:var(--white);border:1px solid #d7e0e7;width:100%;height:330px"></svg>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>From one variable to a random vector</h2>
+        <div class="body">
+          <p>Take n Gaussian variables, y<sub>i</sub> ~ N(μ<sub>i</sub>, σ<sub>i</sub>), and collect them:</p>
+          <p class="formula">y = ( y<sub>1</sub> = f<sub>1</sub>(x<sub>1</sub>), … , y<sub>n</sub> = f<sub>n</sub>(x<sub>n</sub>) )<sup>T</sup></p>
+          <p class="claim">Assume for now they are <strong>independent</strong>. Then the joint density is just the product of the individual ones.</p>
+          <p class="formula">p(y) = (2πσ²)<sup>−1</sup> exp( −[ (y<sub>1</sub>−μ)² + (y<sub>2</sub>−μ)² ] / 2σ² )</p>
+          <p class="definition">Written here for n = 2 with σ<sub>1</sub> = σ<sub>2</sub> = σ and μ<sub>1</sub> = μ<sub>2</sub> = μ, to keep the algebra visible.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>What do the iso-probability contours look like?</h2>
+        <div class="body">
+          <div class="two-col">
+            <div>
+              <p>Set p(y) = λ and take the logarithm:</p>
+              <p class="formula">(y<sub>1</sub>−μ)² + (y<sub>2</sub>−μ)² = 2σ² log( 1 / 2πσλ )</p>
+              <p class="claim">The right-hand side is a constant. So this is the equation of a <strong>circle</strong>.</p>
+              <p class="definition">Independence ⇒ a diagonal covariance matrix ⇒ circular contours. No direction in the plane is special.</p>
+            </div>
+            <div>
+              <svg data-fig="iso-independent" style="background:var(--white);border:1px solid #d7e0e7;width:100%;height:400px"></svg>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>The independent multivariate Gaussian, in vector form</h2>
+        <div class="body">
+          <p>Collecting the normalisation constants and combining the exponents gives</p>
+          <p class="formula">p(y) = (2π)<sup>−n/2</sup> |Σ|<sup>−1/2</sup> exp( −½ (y − μ)<sup>T</sup> Σ<sup>−1</sup> (y − μ) )</p>
+          <div class="callout">
+            <p>The quadratic form −½ (y − μ)<sup>T</sup> Σ<sup>−1</sup> (y − μ) is the squared <strong>Mahalanobis distance</strong> between the random vector and the mean &mdash; distance measured in units of the distribution's own spread.</p>
+          </div>
+          <p class="caution" style="margin-top:18px">So far Σ is diagonal. Everything interesting happens when it is not.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Adding dependence: the simplest possible coupling</h2>
+        <div class="body">
+          <p>Dependence means off-diagonal entries in Σ. The simplest way to create them is a <strong>linear transformation</strong> &mdash; an affine map:</p>
+          <p class="formula">y<sub>d</sub> = A y<sub>i</sub> + b&nbsp;&nbsp;&nbsp;⇔&nbsp;&nbsp;&nbsp; y<sub>i</sub> = A<sup>−1</sup>(y<sub>d</sub> − b)</p>
+          <p>We invert it because we want to use the product rule, which only holds for the <em>independent</em> vector.</p>
+          <div class="callout blue">
+            <p>Changing variables in a density costs a Jacobian factor:</p>
+            <p class="formula" style="margin-bottom:0">p(y<sub>d</sub>) = p<sub>y<sub>i</sub></sub>( A<sup>−1</sup>(y<sub>d</sub> − b) ) &middot; |det A<sup>−1</sup>|</p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>The dependent multivariate Gaussian</h2>
+        <div class="body">
+          <div class="two-col">
+            <div>
+              <p>Substituting and tidying, with</p>
+              <p class="formula">m := Aμ + b,&nbsp;&nbsp; Σ<sub>d</sub> = A Σ<sub>i</sub> A<sup>T</sup></p>
+              <p class="formula">p(y<sub>d</sub>) = (2π)<sup>−n/2</sup>|Σ<sub>d</sub>|<sup>−1/2</sup> exp( −½ (y<sub>d</sub>−m)<sup>T</sup> Σ<sub>d</sub><sup>−1</sup> (y<sub>d</sub>−m) )</p>
+              <p class="claim">Same shape as before &mdash; only Σ has changed.</p>
+            </div>
+            <div>
+              <svg data-fig="iso-dependent" style="background:var(--white);border:1px solid #d7e0e7;width:100%;height:400px"></svg>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Three properties of Σ that we will need</h2>
+        <div class="body">
+          <div class="emph-rows">
+            <div class="emph-row"><div class="n">1</div><div class="t"><strong>Symmetric.</strong> Σ<sub>d</sub><sup>T</sup> = (A Σ<sub>i</sub> A<sup>T</sup>)<sup>T</sup> = A Σ<sub>i</sub> A<sup>T</sup> = Σ<sub>d</sub>.</div></div>
+            <div class="emph-row"><div class="n">2</div><div class="t"><strong>Positive definite.</strong> Σ<sub>i</sub> is diagonal and positive definite; if A is invertible, so is Σ<sub>d</sub>.</div></div>
+            <div class="emph-row"><div class="n">3</div><div class="t"><strong>Invertible.</strong> Non-negotiable &mdash; every expression we are heading for contains Σ<sub>d</sub><sup>−1</sup>.</div></div>
+          </div>
+          <div class="callout green">
+            <p>These become the load-bearing conditions the moment we replace the <em>numbers</em> in Σ with the values of a <strong>kernel function</strong>. That is the next step, and it is the whole idea of a Gaussian process.</p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>The Gaussian process</h2>
+        <div class="body">
+          <p>Let X be the N parameter vectors we have sampled. Replace the entries of Σ by a covariance function k:</p>
+          <p class="formula">f(x) ~ N( μ(x), K(X) ),&nbsp;&nbsp; K(X)<sub>ij</sub> = k(x<sub>i</sub>, x<sub>j</sub>)</p>
+          <div class="callout">
+            <p><strong>A Gaussian process is a finite set of random variables drawn from a dependent multivariate Gaussian</strong> &mdash; one whose covariance matrix is generated by a kernel rather than tabulated.</p>
+          </div>
+          <p class="claim" style="margin-top:18px">Because k must produce a symmetric, positive-definite K, you cannot choose <em>any</em> function k.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>A prior over functions, not over numbers</h2>
+        <div class="body">
+          <svg data-fig="gp-prior" data-ell="0.13" style="background:var(--white);border:1px solid #d7e0e7;width:100%;height:340px"></svg>
+          <p style="margin-top:14px">Every coloured line is one function drawn from the prior. Before any data, the GP says: <strong>the truth is some function like these</strong> &mdash; mean zero, and smooth on the length scale ℓ set by the kernel.</p>
+        </div>
+        <aside class="notes">Drawn by Cholesky-factorising the kernel matrix over the grid and multiplying by standard normals — the same construction as the maths on the previous slides, run for real.</aside>
+      </section>
+
+      <section>
+        <h2>What you actually choose</h2>
+        <div class="body">
+          <ul>
+            <li>A GP is a surrogate model that <strong>assumes the system is random</strong>.</li>
+            <li>Not merely random &mdash; specifically <strong>Gaussian</strong>. That may not be the best assumption for a given problem; in CFD, practice shows it works.</li>
+            <li>As the engineer, you choose the <strong>covariance kernel and its parameters</strong>.</li>
+          </ul>
+          <div class="verdict">Choosing the kernel <strong>is</strong> the modelling step. It encodes what you believe about smoothness, length scales, and which parameters matter.</div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Fitting the GP to data: maximum likelihood</h2>
+        <div class="body">
+          <p>The GP is a parametric density GP(y, θ), where θ collects the kernel parameters and the noise σ. Fitting means</p>
+          <p class="formula">θ* = argmax<sub>θ</sub> GP(y, θ)</p>
+          <p>Because the GP is a multivariate Gaussian, efficient closed-form expressions for ∂<sub>θᵢ</sub>GP exist. Since it involves exponentials, we maximise the <strong>log</strong> marginal likelihood:</p>
+          <p class="formula">log p(y | θ) = −½ y<sup>T</sup> (K<sub>θ</sub> + σ²I)<sup>−1</sup> y − ½ log|K<sub>θ</sub> + σ²I| − (n/2) log 2π</p>
+          <div class="callout blue">
+            <p>The three terms trade off against each other: <strong>data fit</strong>, a <strong>complexity penalty</strong>, and a constant. The middle term is why maximum likelihood does not simply drive the length scales to zero.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ PART 5 ============ -->
+      <section class="divider">
+        <div class="part">Part five</div>
+        <h2>Bayes, and conditioning the GP</h2>
+        <p>How observing data turns the prior over functions into a posterior.</p>
+      </section>
+
+      <section class="statement">
+        <div class="body">
+          <p class="question">John is quiet, nerdy, and loves solving logic puzzles.</p>
+          <p class="question" style="margin-top:26px">Is John more likely to be a <em>mathematician</em> or a <em>librarian</em>?</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>The description is not the whole story</h2>
+        <div class="body">
+          <p class="claim">Statistically there are far more librarians than mathematicians.</p>
+          <p>Even if a mathematician matches that description better, the sheer <strong>base rate</strong> of librarians can outweigh it. Which way the answer falls depends entirely on the ratio of the two populations &mdash; a number the description never mentions.</p>
+          <div class="callout">
+            <p>This is the mistake Bayes' theorem exists to prevent: <strong>judging by fit to the evidence while ignoring how much space the hypothesis occupied to begin with.</strong></p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Bayes' theorem</h2>
+        <div class="body">
+          <p>Given an observation, what is the probability that the hypothesis is true?</p>
+          <p class="formula">P(H | D) = P(D | H) P(H) / [ P(D | H) P(H) + P(D | ¬H) P(¬H) ]</p>
+          <div class="three-col">
+            <div><h3>P(H)</h3><p>the <strong>prior</strong> &mdash; how plausible H was before we looked</p></div>
+            <div><h3>P(D | H)</h3><p>the <strong>likelihood</strong> &mdash; how well H explains what we saw</p></div>
+            <div><h3>P(H | D)</h3><p>the <strong>posterior</strong> &mdash; what to believe now</p></div>
+          </div>
+          <p class="caution" style="margin-top:18px">The denominator is just the total probability of seeing D at all, by either route. The posterior is a ratio of areas.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Conditioning a GP is Bayes in a continuous setting</h2>
+        <div class="body">
+          <p class="formula">GP(y′ | y) = GP(y′) GP(y | y′) / GP(y)</p>
+          <h3 style="margin-top:20px">The recipe</h3>
+          <ol class="steps">
+            <li><p>Write the joint distribution GP(y, y′) as likelihood × prior.</p></li>
+            <li><p>Marginalise the joint over y′.</p></li>
+            <li><p>Divide, cancel terms, apply the <strong>block-matrix inverse</strong>, and recognise the result as another Gaussian.</p></li>
+          </ol>
+          <p class="claim" style="margin-top:14px">The posterior of a Gaussian conditioned on Gaussian data is again Gaussian. That closure is the reason any of this is cheap.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>The two formulas everything rests on</h2>
+        <div class="body">
+          <p class="formula">μ′(x′) = μ(x′) + k(x′,X)<sup>T</sup> (K(X) + σ²I)<sup>−1</sup> ( y − μ(X) )</p>
+          <p class="formula">(σ′)²(x′) = k(x′,x′) − k(x′,X)<sup>T</sup> (K(X) + σ²I)<sup>−1</sup> k(x′,X)</p>
+          <div class="two-col" style="margin-top:12px">
+            <div>
+              <p><strong>μ′</strong> &mdash; the updated mean: it interpolates the data.</p>
+              <p><strong>(σ′)²</strong> &mdash; the updated variance: it collapses at the data and grows away from it.</p>
+            </div>
+            <div>
+              <div class="verdict" style="margin-top:0">VERY CHEAP FUNCTIONS TO GLOBALLY OPTIMISE</div>
+            </div>
+          </div>
+          <p class="caution" style="margin-top:16px">K is N × N where N is the number of simulations you have run. For a CFD campaign, N ≤ 100 &mdash; a solve measured in microseconds.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Posterior: the mean interpolates, the variance collapses</h2>
+        <div class="body">
+          <svg id="gp-chart"></svg>
+          <svg id="ucb-chart"></svg>
+        </div>
+        <aside class="notes">Computed live from an exact posterior over five observations — the mean passes through every point and the band pinches to zero there, exactly as the two formulas require.</aside>
+      </section>
+
+      <!-- ============ PART 6 ============ -->
+      <section class="divider">
+        <div class="part">Part six</div>
+        <h2>The acquisition function</h2>
+        <p>Turning a mean and a variance into a decision about where to spend the next simulation.</p>
+      </section>
+
+      <section>
+        <h2>Upper confidence bound</h2>
+        <div class="body">
+          <p class="formula">α<sub>UCB</sub>(x) = μ′(x) + κ σ′(x),&nbsp;&nbsp; κ ∈ ℝ⁺</p>
+          <div class="three-col">
+            <div><h3>μ′ &mdash; exploit</h3><p>Go where the posterior already predicts a good value.</p></div>
+            <div><h3>σ′ &mdash; explore</h3><p>Go where the posterior is uncertain.</p></div>
+            <div><h3>κ &mdash; the dial</h3><p>How much exploration you are willing to pay for.</p></div>
+          </div>
+          <div class="callout">
+            <p>UCB is the simplest useful acquisition. Expected improvement, knowledge gradient and the hypervolume-based multi-objective forms all make the same trade with more machinery.</p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Turning the dial on a known test function</h2>
+        <div class="body">
+          <div class="kappa-row">
+            <div class="kp"><div class="cap">κ = 0<span>pure exploitation</span></div><svg data-kappa="0"></svg></div>
+            <div class="kp"><div class="cap">κ = 1<span>a little optimism</span></div><svg data-kappa="1"></svg></div>
+            <div class="kp"><div class="cap">κ = 3<span>balanced</span></div><svg data-kappa="3"></svg></div>
+          </div>
+        </div>
+        <aside class="notes">Forrester function, five samples, one shared posterior. Grey dashed is the hidden truth; the green tick is the true optimum at x = 0.758.</aside>
+      </section>
+
+      <section>
+        <h2>An optimization inside the optimization</h2>
+        <div class="body">
+          <p class="claim">Maximising α(x) is itself a global optimization problem. Why is that affordable?</p>
+          <div class="two-col">
+            <div>
+              <h3>Because the objective changed</h3>
+              <p>α is built from μ′ and σ′ &mdash; two matrix products. Evaluating it a million times costs less than one time step of the simulation it is standing in for.</p>
+            </div>
+            <div>
+              <h3>So it may be greedy</h3>
+              <p>Multi-start, many restarts, dense raw sampling. Exactly the brute force you could never afford on f itself.</p>
+            </div>
+          </div>
+          <div class="callout blue">
+            <p>Then: sample f at the maximiser, add the point, refit, and go round again. <strong>The expensive function is called once per iteration.</strong></p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Several objectives at once</h2>
+        <div class="body">
+          <svg data-objspace="hypervolume" style="background:var(--white);border:1px solid #d7e0e7;width:100%;height:430px"></svg>
+          <p style="margin-top:12px">With two objectives there is no single best design, only a <strong>Pareto front</strong>. To rank one front against another you need a scalar: the <strong>hypervolume</strong> it dominates with respect to a declared reference point. The acquisition then asks which candidate adds the most area.</p>
+        </div>
+      </section>
+
+      <!-- ============ PART 7 ============ -->
+      <section class="divider">
+        <div class="part">Part seven</div>
+        <h2>Where this is going</h2>
+        <p>Learned surrogates, and running the loop concurrently with the simulation.</p>
+      </section>
+
+      <section>
+        <h2>Physics-informed neural networks as surrogates</h2>
+        <div class="body">
+          <div class="two-col">
+            <div>
+              <h3>The idea</h3>
+              <p>A PINN is trained not only against data but against the <strong>governing equations themselves</strong>: the PDE residual, the boundary conditions and the initial conditions all enter the loss.</p>
+              <p class="formula">L = L<sub>data</sub> + L<sub>PDE</sub> + L<sub>BC</sub> + L<sub>IC</sub></p>
+            </div>
+            <div>
+              <h3>Why it is interesting for BO</h3>
+              <p>A trained PINN can evaluate a design far more cheaply than a solver, so it can stand in for f &mdash; or provide a cheap fidelity level in a multi-fidelity scheme.</p>
+              <p class="caution">The catch: a PINN is only trustworthy where it was trained, and BO deliberately proposes points where nothing has been sampled.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Online training and concurrent workflows</h2>
+        <div class="body">
+          <p>If the surrogate learns <em>while</em> the simulations run, the loop stops being strictly sequential:</p>
+          <ul>
+            <li>simulations stream data to the learner as they compute, rather than at the end;</li>
+            <li>the surrogate is retrained online and improves during the campaign;</li>
+            <li>proposal, simulation and training overlap instead of queueing.</li>
+          </ul>
+          <div class="callout">
+            <p>Frameworks such as <strong>SmartSim</strong> and <strong>SmartRedis</strong> exist to wire this together: an in-memory database between the running solver and the learner, so neither has to wait on the filesystem.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ PART 8 ============ -->
+      <section class="divider">
+        <div class="part">Part eight</div>
+        <h2>Conclusions</h2>
+      </section>
+
+      <section>
+        <h2>What to take away</h2>
+        <div class="body">
+          <div class="outcomes">
+            <div><strong>BO is for expensive, derivative-free, multi-modal problems</strong> &mdash; which is what a CAD-in-the-loop CFD study is.</div>
+            <div><strong>The GP is a prior over functions</strong>, made concrete by a kernel; conditioning it on data is Bayes' theorem in a continuous setting.</div>
+            <div><strong>The posterior mean and variance are closed-form and cheap</strong>, which is what makes an inner global optimization affordable.</div>
+            <div><strong>The acquisition function is where exploration is bought</strong>, and κ is the price you set.</div>
+            <div><strong>Constraining the CAD is not housekeeping</strong> &mdash; it is what stops the optimiser spending simulations on shapes that cannot exist.</div>
+          </div>
+          <div class="verdict">Next: the hands-on tutorial builds all of this for a real micromixer &mdash; <code>bayesian-optimization-cfd-tutorial.html</code></div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+  <script src="slides.js"></script>
+</body>
+</html>

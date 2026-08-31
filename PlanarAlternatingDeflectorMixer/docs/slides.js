@@ -1,4 +1,225 @@
 /* ===================================================================
+   Minimal slide engine -- the whole of what reveal.js was doing here.
+   No CDN, no plugins, no build step: these decks open from a web server
+   or from a bare file:// double-click, online or offline.
+
+   Keys:  right / space / page-down  next      left / page-up  previous
+          home / end                 first / last
+          n                          toggle speaker notes
+   =================================================================== */
+
+/* ===================================================================
+   6. Figures for the theory deck: the Gaussian, iso-probability
+   contours, and samples drawn from a GP prior.  All computed.
+   =================================================================== */
+function seededRandom(seed) {           /* deterministic, so the slide never changes */
+  let a = seed >>> 0;
+  return () => {
+    a = (a * 1664525 + 1013904223) >>> 0;
+    return a / 4294967296;
+  };
+}
+function gaussPair(rnd) {               /* Box-Muller */
+  const u = Math.max(rnd(), 1e-12), v = rnd();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+function cholesky(A) {
+  const n = A.length;
+  const L = Array.from({ length: n }, () => new Array(n).fill(0));
+  for (let i = 0; i < n; i += 1) {
+    for (let j = 0; j <= i; j += 1) {
+      let sum = A[i][j];
+      for (let k = 0; k < j; k += 1) sum -= L[i][k] * L[j][k];
+      if (i === j) L[i][i] = Math.sqrt(Math.max(sum, 1e-12));
+      else L[i][j] = sum / L[j][j];
+    }
+  }
+  return L;
+}
+
+function renderGaussian1D(svg) {
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const W = 760, H = 330, m = { left: 60, right: 40, top: 30, bottom: 56 };
+  const mu = 0, sd = 1, lo = -3.6, hi = 3.6;
+  const pdf = (x) => Math.exp(-((x - mu) ** 2) / (2 * sd * sd)) / (sd * Math.sqrt(2 * Math.PI));
+  const X = (v) => m.left + (v - lo) / (hi - lo) * (W - m.left - m.right);
+  const Y = (v) => H - m.bottom - (v / pdf(mu)) * (H - m.top - m.bottom);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+  const pts = [];
+  for (let i = 0; i <= 300; i += 1) { const x = lo + (i / 300) * (hi - lo); pts.push(`${X(x)},${Y(pdf(x))}`); }
+  /* +/- one sigma, shaded */
+  const band = [`${X(-sd)},${Y(0)}`];
+  for (let i = 0; i <= 120; i += 1) { const x = -sd + (i / 120) * 2 * sd; band.push(`${X(x)},${Y(pdf(x))}`); }
+  band.push(`${X(sd)},${Y(0)}`);
+  svg.appendChild(svgElement('polygon', { points: band.join(' '), fill: BLUE, opacity: 0.18 }));
+  svg.appendChild(svgElement('polyline', { points: pts.join(' '), fill: 'none', stroke: BLUE, 'stroke-width': 4 }));
+  svg.appendChild(svgElement('line', { x1: m.left, x2: W - m.right, y1: Y(0), y2: Y(0), stroke: INK, 'stroke-width': 2 }));
+  svg.appendChild(svgElement('line', {
+    x1: X(mu), x2: X(mu), y1: Y(0), y2: Y(pdf(mu)), stroke: INK, 'stroke-width': 2, 'stroke-dasharray': '7 5' }));
+  svg.appendChild(svgSym(X(mu), Y(0) + 30, 'μ', '', { 'text-anchor': 'middle', fill: INK, 'font-size': 24, 'font-weight': 700 }));
+  [-sd, sd].forEach((v) => {
+    svg.appendChild(svgElement('line', { x1: X(v), x2: X(v), y1: Y(0), y2: Y(pdf(v)), stroke: MUTED, 'stroke-width': 2 }));
+    svg.appendChild(svgSym(X(v), Y(0) + 30, v < 0 ? 'μ−σ' : 'μ+σ', '',
+      { 'text-anchor': 'middle', fill: MUTED, 'font-size': 20 }));
+  });
+  svg.appendChild(svgText(X(0), Y(pdf(0)) - 14, '68 % of the mass lies within one σ',
+    { 'text-anchor': 'middle', fill: INK, 'font-size': 20, 'font-weight': 700 }));
+}
+
+function renderIsoContours(svg, mode) {
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const W = 560, H = 420, m = 54;
+  const cx = W / 2, cy = H / 2 - 6, unit = 46;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.appendChild(svgElement('line', { x1: m, x2: W - m, y1: cy, y2: cy, stroke: GRID, 'stroke-width': 2 }));
+  svg.appendChild(svgElement('line', { x1: cx, x2: cx, y1: m - 20, y2: H - m, stroke: GRID, 'stroke-width': 2 }));
+
+  /* dependent case: a linear map tilts and stretches the circles into ellipses */
+  const rot = mode === 'dependent' ? -28 : 0;
+  const sx = mode === 'dependent' ? 1.55 : 1;
+  const sy = mode === 'dependent' ? 0.62 : 1;
+  [1, 2, 3].forEach((k, i) => {
+    const e = svgElement('ellipse', {
+      cx, cy, rx: unit * k * sx, ry: unit * k * sy,
+      fill: 'none', stroke: BLUE, 'stroke-width': 3, opacity: 1 - i * 0.24,
+    });
+    e.setAttribute('transform', `rotate(${rot} ${cx} ${cy})`);
+    svg.appendChild(e);
+  });
+  svg.appendChild(svgElement('circle', { cx, cy, r: 6, fill: INK }));
+  svg.appendChild(svgSym(cx + 12, cy - 10, 'μ', '', { fill: INK, 'font-size': 21, 'font-weight': 700 }));
+  svg.appendChild(svgSym(W - m + 6, cy + 6, 'y', '1', { fill: MUTED, 'font-size': 20 }));
+  svg.appendChild(svgSym(cx + 8, m - 24, 'y', '2', { fill: MUTED, 'font-size': 20 }));
+  svg.appendChild(svgText(W / 2, H - 12,
+    mode === 'dependent' ? 'off-diagonal Σ: tilted ellipses' : 'diagonal Σ: circles',
+    { 'text-anchor': 'middle', fill: INK, 'font-size': 20, 'font-weight': 700 }));
+}
+
+function renderGPPrior(svg, lengthScale) {
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  /* aspect chosen to match the full-width CSS box, otherwise the drawing is
+     letterboxed into the middle third of the slide */
+  const W = 1450, H = 340, m = { left: 60, right: 50, top: 30, bottom: 34 };
+  const n = 70;
+  const xs = Array.from({ length: n }, (_, i) => i / (n - 1));
+  const k = (a, b) => Math.exp(-((a - b) ** 2) / (2 * lengthScale * lengthScale));
+  const K = xs.map((a, i) => xs.map((b, j) => k(a, b) + (i === j ? 1e-8 : 0)));
+  const L = cholesky(K);
+  const X = (v) => m.left + v * (W - m.left - m.right);
+  const Y = (v) => H / 2 - v * ((H - m.top - m.bottom) / 6.2);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+  svg.appendChild(svgElement('rect', {
+    x: m.left, y: Y(2), width: W - m.left - m.right, height: Y(-2) - Y(2),
+    fill: BLUE, opacity: 0.12 }));
+  svg.appendChild(svgElement('line', { x1: m.left, x2: W - m.right, y1: Y(0), y2: Y(0), stroke: BLUE, 'stroke-width': 3 }));
+
+  const colours = [INK, ORANGE, GREEN, '#7a2fa8', '#c84b4b'];
+  for (let s = 0; s < 5; s += 1) {
+    const rnd = seededRandom(1234 + s * 977);
+    const z = Array.from({ length: n }, () => gaussPair(rnd));
+    const f = L.map((row) => row.reduce((acc, v, j) => acc + v * z[j], 0));
+    svg.appendChild(svgElement('polyline', {
+      points: xs.map((x, i) => `${X(x)},${Y(f[i])}`).join(' '),
+      fill: 'none', stroke: colours[s], 'stroke-width': 2.5, opacity: 0.85,
+    }));
+  }
+  svg.appendChild(svgText(m.left + 8, m.top + 4,
+    `five functions drawn from the prior   ℓ = ${lengthScale}`,
+    { fill: MUTED, 'font-size': 19 }));
+  svg.appendChild(svgText(W - m.right - 4, Y(0) - 10, 'prior mean μ = 0',
+    { 'text-anchor': 'end', fill: BLUE, 'font-size': 18 }));
+}
+
+function renderTheoryFigures() {
+  document.querySelectorAll('svg[data-fig]').forEach((svg) => {
+    if (svg.dataset.rendered) return;
+    svg.dataset.rendered = 'true';
+    const kind = svg.dataset.fig;
+    if (kind === 'gauss1d') renderGaussian1D(svg);
+    else if (kind === 'iso-independent') renderIsoContours(svg, 'independent');
+    else if (kind === 'iso-dependent') renderIsoContours(svg, 'dependent');
+    else if (kind === 'gp-prior') renderGPPrior(svg, parseFloat(svg.dataset.ell || '0.15'));
+  });
+}
+
+const Deck = (() => {
+  let sections = [];
+  let index = 0;
+  const listeners = [];
+
+  function scale() {
+    const root = document.querySelector('.reveal');
+    if (!root) return;
+    const s = Math.min(window.innerWidth / 1600, window.innerHeight / 900);
+    root.style.setProperty('--deck-scale', s);
+  }
+
+  function show(i, push = true) {
+    index = Math.max(0, Math.min(i, sections.length - 1));
+    sections.forEach((el, k) => el.classList.toggle('present', k === index));
+    const counter = document.querySelector('.deck-counter');
+    if (counter) counter.textContent = `${index + 1} / ${sections.length}`;
+    const prev = document.querySelector('.deck-nav .prev');
+    const next = document.querySelector('.deck-nav .next');
+    if (prev) prev.disabled = index === 0;
+    if (next) next.disabled = index === sections.length - 1;
+    if (push) {
+      const h = `#/${index}`;
+      if (location.hash !== h) history.replaceState(null, '', h);
+    }
+    listeners.forEach((fn) => fn());
+  }
+
+  function fromHash() {
+    const m = /^#\/(\d+)/.exec(location.hash);
+    return m ? parseInt(m[1], 10) : 0;
+  }
+
+  function init() {
+    sections = Array.from(document.querySelectorAll('.reveal .slides > section'));
+    if (!sections.length) return;
+
+    const reveal = document.querySelector('.reveal');
+    const counter = document.createElement('div');
+    counter.className = 'deck-counter';
+    reveal.appendChild(counter);
+    const nav = document.createElement('div');
+    nav.className = 'deck-nav';
+    nav.innerHTML = '<button class="prev" aria-label="previous slide">&#8249;</button>'
+                  + '<button class="next" aria-label="next slide">&#8250;</button>';
+    reveal.appendChild(nav);
+    nav.querySelector('.prev').addEventListener('click', () => show(index - 1));
+    nav.querySelector('.next').addEventListener('click', () => show(index + 1));
+
+    document.addEventListener('keydown', (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      switch (e.key) {
+        case 'ArrowRight': case 'PageDown': case ' ': show(index + 1); e.preventDefault(); break;
+        case 'ArrowLeft':  case 'PageUp':          show(index - 1); e.preventDefault(); break;
+        case 'Home': show(0); e.preventDefault(); break;
+        case 'End':  show(sections.length - 1); e.preventDefault(); break;
+        case 'n': case 'N': reveal.classList.toggle('show-notes'); break;
+        default: break;
+      }
+    });
+
+    window.addEventListener('resize', scale);
+    window.addEventListener('hashchange', () => show(fromHash(), false));
+    scale();
+    show(fromHash(), false);
+  }
+
+  return {
+    init,
+    on: (fn) => listeners.push(fn),
+    current: () => sections[index],
+    go: show,
+  };
+})();
+
+/* ===================================================================
    Slide figures for the PADM deck.
    Rendered as SVG at run time so every number on a chart comes from the
    data or from real kernel algebra -- nothing here is a drawn cartoon.
@@ -664,20 +885,6 @@ function renderObjectiveSpaces() {
   });
 }
 
-Reveal.initialize({
-  /* Slides are laid out by CSS flex (title pinned top, body centred in the rest),
-     which needs full-height sections.  Reveal's default vertical centring sizes
-     each section to its content instead, leaving the dead space at the bottom. */
-  center: false,
-  hash: true,
-  height: 900,
-  margin: 0.035,
-  navigationMode: 'linear',
-  plugins: [RevealMath.KaTeX, RevealNotes],
-  slideNumber: 'c/t',
-  transition: 'fade',
-  width: 1600,
-});
 
 /* Author attribution on every slide.  Injected rather than written out 67
    times, so it cannot drift out of sync -- and injected INTO the section rather
@@ -701,7 +908,11 @@ function renderAll() {
   renderAllCells();
   renderForresterAll();
   renderObjectiveSpaces();
+  renderTheoryFigures();
 }
 
-Reveal.on('ready', renderAll);
-Reveal.on('slidechanged', renderAll);
+Deck.on(renderAll);
+document.addEventListener('DOMContentLoaded', () => {
+  Deck.init();
+  renderAll();
+});

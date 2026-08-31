@@ -3,9 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bayesian Optimization of a Planar Alternating-Deflector Micromixer</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
-  <link rel="stylesheet" href="slides.css?v=20260831b">
+  <title>Bayesian Optimization in CFD &mdash; Hands-on Tutorial</title>
+  <link rel="stylesheet" href="slides.css">
 </head>
 <body>
   <div class="reveal">
@@ -1220,27 +1219,121 @@ rm results/ex3/objectives.csv                     &amp;&amp; $DRY   # step 2</co
         </div>
       </section>
 
-      <section class="closing">
-        <h2>Reproducing all of this</h2>
-        <div class="body">
-          <pre><code>git clone &hellip;/openfoam-bayesopt-mixer &amp;&amp; cd openfoam-bayesopt-mixer
-./apptainer/build.sh
-apptainer exec --bind "$PWD" apptainer/padm.sif bash -c "./Allwclean &amp;&amp; ./Allwmake"
+      <section class="divider">
+        <div class="part">Appendix</div>
+        <h2>Reproducing this study</h2>
+        <p>Every number in this deck, from a clean clone, in four steps.</p>
+      </section>
 
-cd PlanarAlternatingDeflectorMixer
-apptainer exec --bind "$PWD/.." ../apptainer/padm.sif \
-    python3 research_sequence.py next --max-new-evaluations 1 --profile profiles/local</code></pre>
-          <p style="margin-top:26px">Swap <code>--profile profiles/slurm</code> and the same study runs on compute nodes. Nothing else changes.</p>
-          <p class="footline">README.md &middot; QUICKSTART.md &middot; CLUSTER.md &middot; docs/RESEARCH_PLAN.md</p>
+      <section>
+        <h2>Step 1 &mdash; what you need, and what you do not</h2>
+        <div class="body">
+          <div class="two-col">
+            <div>
+              <h3>You need</h3>
+              <ul>
+                <li><strong>git</strong>;</li>
+                <li><strong>Apptainer</strong> (or Singularity) &mdash; and for building it, either the <code>uidmap</code> package or a setuid installation;</li>
+                <li>about <strong>4 GB</strong> of disk for the image and a first campaign.</li>
+              </ul>
+            </div>
+            <div>
+              <h3>You do <em>not</em> need</h3>
+              <ul>
+                <li>OpenFOAM, cfMesh, CadQuery, PyTorch, BoTorch or Snakemake installed;</li>
+                <li>a cluster &mdash; a laptop runs the whole study;</li>
+                <li>an internet connection, once the image is built.</li>
+              </ul>
+              <p class="definition">The image carries OpenFOAM v2512, cfMesh, CadQuery, BoTorch, Snakemake and ffmpeg.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Step 2 &mdash; clone and build the environment</h2>
+        <div class="body">
+          <p class="cmd"><code>git clone https://github.com/tmaric/openfoam-bayesopt-mixer.git
+cd openfoam-bayesopt-mixer
+
+./apptainer/build.sh              # builds apptainer/padm.sif   (~20 min)
+./apptainer/build.sh --remote     # or: build on a cluster and copy the .sif back</code></p>
+          <div class="callout">
+            <p>Then build the study&rsquo;s OpenFOAM function objects <strong>inside</strong> the image. They are <code>dlopen</code>ed by the container&rsquo;s OpenFOAM and produce <em>both</em> objectives &mdash; without them every design yields an empty <code>objectives.csv</code>.</p>
+          </div>
+          <p class="cmd"><code>apptainer shell --bind "$PWD" apptainer/padm.sif
+Apptainer&gt; ./Allwclean &amp;&amp; ./Allwmake</code></p>
+          <p class="caution"><code>Allwclean</code> first is not optional when switching environments: <code>wmake</code> keys its object files on <code>$WM_OPTIONS</code>, which is <code>linux64GccDPInt32Opt</code> for <em>every</em> OpenFOAM version, so a stale tree looks current and is not.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Step 3 &mdash; run the campaign</h2>
+        <div class="body">
+          <p>Still inside the image, from the study directory:</p>
+          <p class="cmd"><code>cd PlanarAlternatingDeflectorMixer
+python3 research_sequence.py status                       # what stage are we at?
+python3 research_sequence.py next --max-new-evaluations 1 --profile profiles/local</code></p>
+          <p>The driver is <strong>gated</strong> and advances one bounded step at a time: three matched baselines first, then the twelve-design screen, and the full campaign only if the screen passes.</p>
+          <div class="two-col">
+            <div>
+              <h3>On a cluster</h3>
+              <p class="cmd" style="margin:0"><code>sbatch --parsable --export=ALL,N=1     run-bo.sbatch &gt;&gt; .padm_jobs</code></p>
+            </div>
+            <div>
+              <h3>Rebuild the figures</h3>
+              <p class="cmd" style="margin:0"><code>snakemake visualize   --workflow-profile profiles/local   --config results_dir=results/corrected_boundary_v3</code></p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Step 4 &mdash; check you got what we got</h2>
+        <div class="body">
+          <p>The straight baseline is the first thing the driver runs, and it is checkable against theory:</p>
+          <div class="expect">
+            <div class="lbl">Δp analytic</div><div class="val">2.8748 Pa</div><div class="note">12νUL/H² × ρ</div>
+            <div class="lbl">Δp measured</div><div class="val">2.8737 Pa</div><div class="note">0.039 % low &mdash; discretisation</div>
+            <div class="lbl">mixing index</div><div class="val">0.10028</div><div class="note">agrees to 5 significant figures across all four backends</div>
+            <div class="lbl">wall / CPU</div><div class="val">≈ 1</div><div class="note">from <code>log.simpleFoam</code> &mdash; <strong>not</strong> ≈ np</div>
+          </div>
+          <div class="callout blue">
+            <p>Δp is identical to every digit on laptop, in-image, login node and compute node. The mixing index varies in the fifth figure &mdash; that is the scalar solve&rsquo;s iterative tolerance, not a backend difference.</p>
+          </div>
+          <p class="caution" style="margin-top:14px">If <code>wall/CPU ≈ np</code> instead of ≈ 1, your MPI ranks are sharing a single core. Nothing else will tell you.</p>
+        </div>
+      </section>
+
+      <section class="closing">
+        <h2>Where everything lives</h2>
+        <div class="body">
+          <div class="two-col">
+            <div>
+              <h3>Read next</h3>
+              <ul>
+                <li><code>PlanarAlternatingDeflectorMixer/README.md</code> &mdash; the study, end to end</li>
+                <li><code>CLUSTER.md</code> &mdash; SLURM, binds, measured failure modes</li>
+                <li><code>QUICKSTART.md</code> &mdash; parameterisation and objectives</li>
+                <li><code>docs/RESEARCH_PLAN.md</code> &mdash; the phase gates</li>
+              </ul>
+            </div>
+            <div>
+              <h3>The decks</h3>
+              <ul>
+                <li><code>docs/bayesian-optimization-cfd-theory.html</code> &mdash; the theory</li>
+                <li><code>docs/bayesian-optimization-cfd-tutorial.html</code> &mdash; this one</li>
+              </ul>
+              <p class="definition">Both are standalone HTML: no plugins, no CDN, no build step. Open either by double-clicking it.</p>
+            </div>
+          </div>
+          <p class="footline">Delft Workshop on Bayesian Optimization for CFD</p>
         </div>
       </section>
 
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/math/math.js"></script>
-  <script src="slides.js?v=20260831b"></script>
+  <script src="slides.js"></script>
 </body>
 </html>
