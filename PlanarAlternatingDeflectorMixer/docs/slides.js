@@ -72,8 +72,8 @@ function renderIsoContours(svg, mode) {
   const W = 560, H = 420, m = 54;
   const cx = W / 2, cy = H / 2 - 6, unit = 46;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.appendChild(svgElement('line', { x1: m, x2: W - m, y1: cy, y2: cy, stroke: GRID, 'stroke-width': 2 }));
-  svg.appendChild(svgElement('line', { x1: cx, x2: cx, y1: m - 20, y2: H - m, stroke: GRID, 'stroke-width': 2 }));
+  svg.appendChild(svgElement('line', { x1: m, x2: W - m, y1: cy, y2: cy, stroke: GRID_C, 'stroke-width': 2 }));
+  svg.appendChild(svgElement('line', { x1: cx, x2: cx, y1: m - 20, y2: H - m, stroke: GRID_C, 'stroke-width': 2 }));
 
   /* dependent case: a linear map tilts and stretches the circles into ellipses */
   const rot = mode === 'dependent' ? -28 : 0;
@@ -96,11 +96,13 @@ function renderIsoContours(svg, mode) {
     { 'text-anchor': 'middle', fill: INK, 'font-size': 20, 'font-weight': 700 }));
 }
 
-function renderGPPrior(svg, lengthScale) {
+function renderGPPrior(svg, lengthScale, narrow = false) {
   while (svg.firstChild) svg.removeChild(svg.firstChild);
-  /* aspect chosen to match the full-width CSS box, otherwise the drawing is
-     letterboxed into the middle third of the slide */
-  const W = 1450, H = 340, m = { left: 60, right: 50, top: 30, bottom: 34 };
+  /* aspect chosen to match the CSS box, otherwise the drawing is letterboxed:
+     wide for a full-slide figure, near-square for one cell of a panel row */
+  const W = narrow ? 480 : 1450, H = narrow ? 330 : 340;
+  const m = narrow ? { left: 20, right: 16, top: 32, bottom: 16 }
+                   : { left: 60, right: 50, top: 30, bottom: 34 };
   const n = 70;
   const xs = Array.from({ length: n }, (_, i) => i / (n - 1));
   const k = (a, b) => Math.exp(-((a - b) ** 2) / (2 * lengthScale * lengthScale));
@@ -125,10 +127,10 @@ function renderGPPrior(svg, lengthScale) {
       fill: 'none', stroke: colours[s], 'stroke-width': 2.5, opacity: 0.85,
     }));
   }
-  svg.appendChild(svgText(m.left + 8, m.top + 4,
-    `five functions drawn from the prior   ℓ = ${lengthScale}`,
-    { fill: MUTED, 'font-size': 19 }));
-  svg.appendChild(svgText(W - m.right - 4, Y(0) - 10, 'prior mean μ = 0',
+  svg.appendChild(svgText(m.left + 4, narrow ? m.top - 12 : m.top + 4,
+    narrow ? `ℓ = ${lengthScale}` : `five functions drawn from the prior   ℓ = ${lengthScale}`,
+    { fill: narrow ? INK : MUTED, 'font-size': narrow ? 23 : 19, 'font-weight': narrow ? 700 : 400 }));
+  if (!narrow) svg.appendChild(svgText(W - m.right - 4, Y(0) - 10, 'prior mean μ = 0',
     { 'text-anchor': 'end', fill: BLUE, 'font-size': 18 }));
 }
 
@@ -140,7 +142,267 @@ function renderTheoryFigures() {
     if (kind === 'gauss1d') renderGaussian1D(svg);
     else if (kind === 'iso-independent') renderIsoContours(svg, 'independent');
     else if (kind === 'iso-dependent') renderIsoContours(svg, 'dependent');
-    else if (kind === 'gp-prior') renderGPPrior(svg, parseFloat(svg.dataset.ell || '0.15'));
+    else if (kind === 'gp-prior') renderGPPrior(svg, parseFloat(svg.dataset.ell || '0.15'), 'narrow' in svg.dataset);
+  });
+}
+
+
+/* ===================================================================
+   7. The didactic core of the theory deck.  A reusable GP, then four
+   figures that SHOW what the algebra claims:
+     - conditioning tightening the posterior as data arrives
+     - what the kernel choice actually decides
+     - the BO loop running, iteration by iteration
+     - BO against random search and a grid, on the same budget
+   =================================================================== */
+const KERNELS = {
+  rbf: (l, sf = 1) => (a, b) => sf * sf * Math.exp(-((a - b) ** 2) / (2 * l * l)),
+};
+
+/* Exact GP posterior. Returns a predictor over a grid. */
+function fitGP(X, Y, k, noise = 1e-6) {
+  const K = X.map((a, i) => X.map((b, j) => k(a, b) + (i === j ? noise : 0)));
+  const alpha = X.length ? solve(K, Y) : [];
+  return (xs) => xs.map((x) => {
+    if (!X.length) return { x, mean: 0, sd: Math.sqrt(k(x, x)) };
+    const ks = X.map((xi) => k(x, xi));
+    const mean = ks.reduce((acc, v, i) => acc + v * alpha[i], 0);
+    const v = solve(K, ks);
+    const sd = Math.sqrt(Math.max(k(x, x) - ks.reduce((acc, kk, i) => acc + kk * v[i], 0), 1e-12));
+    return { x, mean, sd };
+  });
+}
+
+const GRID = Array.from({ length: 221 }, (_, i) => i / 220);
+
+/* Shared axes helper for the 1-D figures. */
+function axes1d(svg, W, H, m, lo, hi) {
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const X = (v) => m.left + v * (W - m.left - m.right);
+  const Y = (v) => H - m.bottom - ((v - lo) / (hi - lo)) * (H - m.top - m.bottom);
+  return { X, Y };
+}
+
+function drawPosterior(svg, pred, X, Y, opts = {}) {
+  const band = pred.map((p) => `${X(p.x)},${Y(p.mean + 2 * p.sd)}`)
+    .concat(pred.slice().reverse().map((p) => `${X(p.x)},${Y(p.mean - 2 * p.sd)}`)).join(' ');
+  svg.appendChild(svgElement('polygon', { points: band, fill: BLUE, opacity: opts.bandOpacity || 0.16 }));
+  svg.appendChild(svgElement('polyline', {
+    points: pred.map((p) => `${X(p.x)},${Y(p.mean)}`).join(' '),
+    fill: 'none', stroke: BLUE, 'stroke-width': opts.meanWidth || 3.5,
+  }));
+}
+
+/* ---- A. conditioning: the posterior tightening as data arrives ---------- */
+const COND_X = [0.10, 0.34, 0.52, 0.72, 0.90, 0.22];
+function renderConditioning(svg, n) {
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const W = 730, H = 280, m = { left: 26, right: 22, top: 34, bottom: 18 };
+  const { X, Y } = axes1d(svg, W, H, m, -2.9, 2.5);
+  const k = KERNELS.rbf(0.14, 1.1);
+  const xs = COND_X.slice(0, n);
+  const ys = xs.map(forrester);
+  const pred = fitGP(xs, ys, k, 1e-6)(GRID);
+
+  svg.appendChild(svgElement('polyline', {
+    points: GRID.map((x) => `${X(x)},${Y(forrester(x))}`).join(' '),
+    fill: 'none', stroke: MUTED, 'stroke-width': 2, 'stroke-dasharray': '7 5',
+  }));
+  drawPosterior(svg, pred, X, Y);
+  xs.forEach((xi, i) => svg.appendChild(svgElement('circle', { cx: X(xi), cy: Y(ys[i]), r: 7, fill: INK })));
+
+  const avgSd = pred.reduce((a, p) => a + p.sd, 0) / pred.length;
+  svg.appendChild(svgText(m.left + 4, m.top - 12,
+    n === 0 ? 'no data yet' : `${n} observation${n > 1 ? 's' : ''}`,
+    { fill: INK, 'font-size': 21, 'font-weight': 700 }));
+  svg.appendChild(svgText(W - m.right - 4, m.top - 12, `average σ = ${avgSd.toFixed(2)}`,
+    { 'text-anchor': 'end', fill: MUTED, 'font-size': 20 }));
+}
+
+/* ---- B. what the kernel decides ---------------------------------------- */
+function renderKernel(svg, ell) {
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const W = 480, H = 330, m = { left: 20, right: 16, top: 32, bottom: 16 };
+  /* an over-smooth prior overshoots hard where there is no data, down to about
+     -4, so the shared range has to hold it -- clipping it would hide the lesson */
+  const { X, Y } = axes1d(svg, W, H, m, -4.5, 2.8);
+  const k = KERNELS.rbf(ell, 1.1);
+  const xs = COND_X.slice(0, 5), ys = xs.map(forrester);
+  const pred = fitGP(xs, ys, k, 1e-6)(GRID);
+  svg.appendChild(svgElement('polyline', {
+    points: GRID.map((x) => `${X(x)},${Y(forrester(x))}`).join(' '),
+    fill: 'none', stroke: MUTED, 'stroke-width': 2, 'stroke-dasharray': '7 5' }));
+  drawPosterior(svg, pred, X, Y);
+  xs.forEach((xi, i) => svg.appendChild(svgElement('circle', { cx: X(xi), cy: Y(ys[i]), r: 7, fill: INK })));
+  const err = Math.max(...pred.map((p) => Math.abs(p.mean - forrester(p.x))));
+  svg.appendChild(svgText(m.left + 4, m.top - 12, `ℓ = ${ell.toFixed(2)}`,
+    { fill: INK, 'font-size': 23, 'font-weight': 700 }));
+  svg.appendChild(svgText(W - m.right - 4, m.top - 12, `worst error ${err.toFixed(2)}`,
+    { 'text-anchor': 'end', fill: MUTED, 'font-size': 20 }));
+}
+
+/* ---- C. the loop running ------------------------------------------------ */
+function boRun(steps, kappa = 2.0) {
+  const k = KERNELS.rbf(0.14, 1.1);
+  const xs = [0.10, 0.52, 0.90];
+  const ys = xs.map(forrester);
+  const picks = [];
+  for (let t = 0; t < steps; t += 1) {
+    const pred = fitGP(xs, ys, k, 1e-6)(GRID);
+    const best = pred.reduce((a, p) => ((p.mean + kappa * p.sd) > (a.mean + kappa * a.sd) ? p : a));
+    picks.push(best.x);
+    xs.push(best.x); ys.push(forrester(best.x));
+  }
+  return { xs, ys, picks, k, kappa };
+}
+function renderBOStep(svg, step) {
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const W = 730, H = 280, m = { left: 26, right: 22, top: 36, bottom: 18 };
+  const { xs, ys, k, kappa } = boRun(step + 1);
+  const shown = xs.slice(0, 3 + step), shownY = ys.slice(0, 3 + step);
+  const pred = fitGP(shown, shownY, k, 1e-6)(GRID);
+  const acq = pred.map((p) => p.mean + kappa * p.sd);
+  const lo = -2.9, hi = Math.max(3.0, Math.max(...acq));
+  const { X, Y } = axes1d(svg, W, H, m, lo, hi);
+
+  svg.appendChild(svgElement('polyline', {
+    points: GRID.map((x) => `${X(x)},${Y(forrester(x))}`).join(' '),
+    fill: 'none', stroke: MUTED, 'stroke-width': 2, 'stroke-dasharray': '7 5' }));
+  drawPosterior(svg, pred, X, Y);
+  svg.appendChild(svgElement('polyline', {
+    points: pred.map((p, i) => `${X(p.x)},${Y(acq[i])}`).join(' '),
+    fill: 'none', stroke: ORANGE, 'stroke-width': 3 }));
+  shown.forEach((xi, i) => svg.appendChild(svgElement('circle', {
+    cx: X(xi), cy: Y(shownY[i]), r: 7, fill: INK })));
+
+  const nextX = xs[3 + step];
+  if (nextX !== undefined) {
+    svg.appendChild(svgElement('line', {
+      x1: X(nextX), x2: X(nextX), y1: m.top, y2: H - m.bottom,
+      stroke: ORANGE, 'stroke-width': 3, 'stroke-dasharray': '8 5' }));
+    svg.appendChild(svgElement('circle', {
+      cx: X(nextX), cy: Y(forrester(nextX)), r: 9,
+      fill: 'none', stroke: ORANGE, 'stroke-width': 3.5 }));
+  }
+  const bestSoFar = Math.max(...shownY);
+  svg.appendChild(svgText(m.left + 4, m.top - 12,
+    `${shown.length} simulations spent`, { fill: INK, 'font-size': 21, 'font-weight': 700 }));
+  svg.appendChild(svgText(W - m.right - 4, m.top - 12,
+    `best so far  f = ${bestSoFar.toFixed(2)}  of  1.00`,
+    { 'text-anchor': 'end', fill: MUTED, 'font-size': 20 }));
+}
+
+/* ---- D. BO vs random vs grid, same budget ------------------------------- */
+function efficiencyCurves(budget = 18) {
+  const k = KERNELS.rbf(0.14, 1.1);
+  const seed = [0.10, 0.52, 0.90];
+  const runBO = (kappa) => {
+    const xs = seed.slice(), ys = xs.map(forrester);
+    const curve = [Math.max(...ys)];
+    for (let t = 3; t < budget; t += 1) {
+      const pred = fitGP(xs, ys, k, 1e-6)(GRID);
+      const best = pred.reduce((a, p) => ((p.mean + kappa * p.sd) > (a.mean + kappa * a.sd) ? p : a));
+      xs.push(best.x); ys.push(forrester(best.x));
+      curve.push(Math.max(...ys));
+    }
+    return curve;
+  };
+  /* random search averaged over 40 seeds, so the curve is not one lucky draw */
+  const rand = new Array(budget - 2).fill(0);
+  const R = 40;
+  for (let r = 0; r < R; r += 1) {
+    const rnd = seededRandom(97 + r * 31);
+    let best = -Infinity; const row = [];
+    for (let t = 0; t < budget; t += 1) {
+      best = Math.max(best, forrester(rnd()));
+      if (t >= 2) row.push(best);
+    }
+    row.forEach((v, i) => { rand[i] += v / R; });
+  }
+  return { bo: runBO(2.0), greedy: runBO(0.0), rand, budget };
+}
+
+function renderEfficiency(svg) {
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const { bo, greedy, rand, budget } = efficiencyCurves();
+  const W = 1400, H = 470, m = { left: 96, right: 392, top: 30, bottom: 74 };
+  const lo = 0, hi = 1.12;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const X = (n) => m.left + ((n - 3) / (budget - 3)) * (W - m.left - m.right);
+  const Y = (v) => H - m.bottom - ((v - lo) / (hi - lo)) * (H - m.top - m.bottom);
+
+  [0, 0.25, 0.5, 0.75, 1].forEach((t) => {
+    svg.appendChild(svgElement('line', { x1: m.left, x2: W - m.right, y1: Y(t), y2: Y(t), stroke: GRID_C }));
+    svg.appendChild(svgText(m.left - 14, Y(t) + 7, t.toFixed(2), { 'text-anchor': 'end', 'font-size': 19, fill: MUTED }));
+  });
+  svg.appendChild(svgElement('line', {
+    x1: m.left, x2: W - m.right, y1: Y(1.0032), y2: Y(1.0032),
+    stroke: GREEN, 'stroke-width': 2.5, 'stroke-dasharray': '9 6' }));
+  svg.appendChild(svgText(W - m.right - 8, Y(1.0032) - 12, 'true optimum',
+    { 'text-anchor': 'end', fill: GREEN, 'font-size': 19, 'font-weight': 700 }));
+
+  const series = [
+    [bo, ORANGE, 'Bayesian optimization, κ = 2'],
+    [rand, BLUE, 'random search (mean of 40 runs)'],
+    [greedy, RED, 'Bayesian optimization, κ = 0'],
+  ];
+  /* greedy is dashed: for the first segment it lies exactly under the kappa = 2
+     run, and a solid line there would simply hide one of the two */
+  series.forEach(([arr, colour], i) => {
+    svg.appendChild(svgElement('polyline', Object.assign({
+      points: arr.map((v, j) => `${X(j + 3)},${Y(v)}`).join(' '),
+      fill: 'none', stroke: colour, 'stroke-width': 4.5,
+      'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+    }, i === 2 ? { 'stroke-dasharray': '11 7' } : {})));
+  });
+
+  /* the two moments worth naming */
+  const hit = bo.findIndex((v) => v > 1.0);
+  if (hit >= 0) {
+    svg.appendChild(svgElement('circle', { cx: X(hit + 3), cy: Y(bo[hit]), r: 9, fill: ORANGE }));
+    svg.appendChild(svgText(X(hit + 3) + 16, Y(bo[hit]) + 30,
+      `optimum found on evaluation ${hit + 3}`, { fill: ORANGE, 'font-size': 20, 'font-weight': 700 }));
+  }
+  svg.appendChild(svgText(X(budget) - 6, Y(greedy[greedy.length - 1]) - 16,
+    `stalls at ${greedy[greedy.length - 1].toFixed(2)}`,
+    { 'text-anchor': 'end', fill: RED, 'font-size': 20, 'font-weight': 700 }));
+
+  svg.appendChild(svgElement('line', { x1: m.left, x2: W - m.right, y1: Y(lo), y2: Y(lo), stroke: INK, 'stroke-width': 2 }));
+  svg.appendChild(svgElement('line', { x1: m.left, x2: m.left, y1: m.top, y2: Y(lo), stroke: INK, 'stroke-width': 2 }));
+  [3, 6, 9, 12, 15, 18].forEach((n) => svg.appendChild(
+    svgText(X(n), H - m.bottom + 28, String(n), { 'text-anchor': 'middle', 'font-size': 19, fill: MUTED })));
+  svg.appendChild(svgText((m.left + W - m.right) / 2, H - 16, 'expensive evaluations spent',
+    { 'text-anchor': 'middle', fill: INK, 'font-size': 22 }));
+  const yl = svgText(32, H / 2, 'best value found so far', { 'text-anchor': 'middle', fill: INK, 'font-size': 22 });
+  yl.setAttribute('transform', `rotate(-90 32 ${H / 2})`);
+  svg.appendChild(yl);
+
+  series.forEach(([, colour, label], i) => {
+    const ly = m.top + 30 + i * 38;
+    svg.appendChild(svgElement('rect', Object.assign(
+      { x: W - m.right + 16, y: ly - 14, width: 30, height: 7, fill: colour, rx: 3 },
+      i === 2 ? { width: 12 } : {})));
+    if (i === 2) svg.appendChild(svgElement('rect', { x: W - m.right + 34, y: ly - 14, width: 12, height: 7, fill: colour, rx: 3 }));
+    svg.appendChild(svgText(W - m.right + 56, ly, label, { 'font-size': 20, fill: INK }));
+  });
+}
+
+function renderDidacticFigures() {
+  document.querySelectorAll('svg[data-cond]').forEach((svg) => {
+    if (svg.dataset.rendered) return; svg.dataset.rendered = 'true';
+    renderConditioning(svg, parseInt(svg.dataset.cond, 10));
+  });
+  document.querySelectorAll('svg[data-kernel]').forEach((svg) => {
+    if (svg.dataset.rendered) return; svg.dataset.rendered = 'true';
+    renderKernel(svg, parseFloat(svg.dataset.kernel));
+  });
+  document.querySelectorAll('svg[data-bostep]').forEach((svg) => {
+    if (svg.dataset.rendered) return; svg.dataset.rendered = 'true';
+    renderBOStep(svg, parseInt(svg.dataset.bostep, 10));
+  });
+  document.querySelectorAll('svg[data-efficiency]').forEach((svg) => {
+    if (svg.dataset.rendered) return; svg.dataset.rendered = 'true';
+    renderEfficiency(svg);
   });
 }
 
@@ -230,7 +492,8 @@ const MUTED = '#5d7285';
 const BLUE = '#2f78a8';
 const ORANGE = '#f28e2b';
 const GREEN = '#3a8f57';
-const GRID = '#d9e1e7';
+const RED = '#c84b4b';
+const GRID_C = '#d9e1e7';
 
 function svgElement(name, attributes = {}) {
   const element = document.createElementNS('http://www.w3.org/2000/svg', name);
@@ -306,11 +569,11 @@ function renderParetoChart() {
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
 
   [0, 5, 10, 15, 20, 25, 30, 35].forEach((t) => {
-    svg.appendChild(svgElement('line', { x1: x(t), x2: x(t), y1: m.top, y2: H - m.bottom, stroke: GRID }));
+    svg.appendChild(svgElement('line', { x1: x(t), x2: x(t), y1: m.top, y2: H - m.bottom, stroke: GRID_C }));
     svg.appendChild(svgText(x(t), H - 46, String(t), { 'text-anchor': 'middle', 'font-size': 19 }));
   });
   [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6].forEach((t) => {
-    svg.appendChild(svgElement('line', { x1: m.left, x2: W - m.right, y1: y(t), y2: y(t), stroke: GRID }));
+    svg.appendChild(svgElement('line', { x1: m.left, x2: W - m.right, y1: y(t), y2: y(t), stroke: GRID_C }));
     svg.appendChild(svgText(m.left - 18, y(t) + 7, t.toFixed(1), { 'text-anchor': 'end', 'font-size': 19 }));
   });
 
@@ -449,7 +712,7 @@ function renderGpChart() {
     points: grid.map((p) => `${x(p.x)},${y(p.mean)}`).join(' '),
     fill: 'none', stroke: BLUE, 'stroke-width': 4,
   }));
-  svg.appendChild(svgElement('line', { x1: m.left, x2: W - m.right, y1: y(0), y2: y(0), stroke: GRID }));
+  svg.appendChild(svgElement('line', { x1: m.left, x2: W - m.right, y1: y(0), y2: y(0), stroke: GRID_C }));
 
   /* The acquisition, traced on the posterior itself.  With kappa = 2 it is
      exactly the upper edge of the +/-2 sigma band -- which is the clearest way
@@ -909,6 +1172,7 @@ function renderAll() {
   renderForresterAll();
   renderObjectiveSpaces();
   renderTheoryFigures();
+  renderDidacticFigures();
 }
 
 Deck.on(renderAll);

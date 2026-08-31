@@ -1278,11 +1278,16 @@ python3 research_sequence.py next --max-new-evaluations 1 --profile profiles/loc
           <div class="two-col">
             <div>
               <h3>On a cluster</h3>
-              <p class="cmd" style="margin:0"><code>sbatch --parsable --export=ALL,N=1     run-bo.sbatch &gt;&gt; .padm_jobs</code></p>
+              <p class="cmd" style="margin:0"><code>sbatch --parsable \
+    --export=ALL,N=1 \
+    run-bo.sbatch &gt;&gt; .padm_jobs</code></p>
             </div>
             <div>
               <h3>Rebuild the figures</h3>
-              <p class="cmd" style="margin:0"><code>snakemake visualize   --workflow-profile profiles/local   --config results_dir=results/corrected_boundary_v3</code></p>
+              <p class="cmd" style="margin:0"><code>snakemake visualize \
+    --workflow-profile profiles/local \
+    --config \
+    results_dir=results/corrected_boundary_v3</code></p>
             </div>
           </div>
         </div>

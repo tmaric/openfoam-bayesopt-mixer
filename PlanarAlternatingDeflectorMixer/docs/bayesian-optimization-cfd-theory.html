@@ -22,6 +22,16 @@
         <div class="part">Part one</div>
         <h2>Why Bayesian optimization</h2>
         <p>What it is, what it costs, and how it compares with the alternatives you already know.</p>
+          <div class="roadmap">
+            <span class="now">1. Why BO</span>
+            <span>2. CFD loop</span>
+            <span>3. At a glance</span>
+            <span>4. Building blocks</span>
+            <span>5. Bayes</span>
+            <span>6. Acquisition</span>
+            <span>7. What&rsquo;s next</span>
+            <span>8. Conclusions</span>
+          </div>
       </section>
 
       <section class="statement">
@@ -106,6 +116,16 @@
         <div class="part">Part two</div>
         <h2>The loop, end to end</h2>
         <p>What has to happen between proposing a parameter vector and getting a number back.</p>
+          <div class="roadmap">
+            <span class="done">1. Why BO</span>
+            <span class="now">2. CFD loop</span>
+            <span>3. At a glance</span>
+            <span>4. Building blocks</span>
+            <span>5. Bayes</span>
+            <span>6. Acquisition</span>
+            <span>7. What&rsquo;s next</span>
+            <span>8. Conclusions</span>
+          </div>
       </section>
 
       <section>
@@ -148,6 +168,16 @@
         <div class="part">Part three</div>
         <h2>Bayesian optimization at a glance</h2>
         <p>The goal, the two building blocks, and the loop &mdash; before the mathematics.</p>
+          <div class="roadmap">
+            <span class="done">1. Why BO</span>
+            <span class="done">2. CFD loop</span>
+            <span class="now">3. At a glance</span>
+            <span>4. Building blocks</span>
+            <span>5. Bayes</span>
+            <span>6. Acquisition</span>
+            <span>7. What&rsquo;s next</span>
+            <span>8. Conclusions</span>
+          </div>
       </section>
 
       <section>
@@ -198,6 +228,16 @@
         <div class="part">Part four</div>
         <h2>Building blocks</h2>
         <p>Gaussian distribution → multivariate Gaussian → Gaussian process. Each step adds exactly one idea.</p>
+          <div class="roadmap">
+            <span class="done">1. Why BO</span>
+            <span class="done">2. CFD loop</span>
+            <span class="done">3. At a glance</span>
+            <span class="now">4. Building blocks</span>
+            <span>5. Bayes</span>
+            <span>6. Acquisition</span>
+            <span>7. What&rsquo;s next</span>
+            <span>8. Conclusions</span>
+          </div>
       </section>
 
       <section>
@@ -323,6 +363,22 @@
       </section>
 
       <section>
+        <h2>One number decides how much f is allowed to wiggle</h2>
+        <div class="body">
+          <div class="panel-row">
+            <figure><svg data-fig="gp-prior" data-ell="0.04" data-narrow></svg>
+              <figcaption><strong>short</strong>almost anything can happen between two samples</figcaption></figure>
+            <figure><svg data-fig="gp-prior" data-ell="0.15" data-narrow></svg>
+              <figcaption><strong>medium</strong>a few turns across the domain</figcaption></figure>
+            <figure><svg data-fig="gp-prior" data-ell="0.45" data-narrow></svg>
+              <figcaption><strong>long</strong>the whole domain is essentially one trend</figcaption></figure>
+          </div>
+          <p class="claim" style="margin-top:16px">Same five random draws in all three panels. Only &#8467; changed &mdash; and with it, everything the model is prepared to believe about the parts of f it has not seen.</p>
+        </div>
+        <aside class="notes">The coloured curves correspond one-to-one across the panels: identical standard normals, different Cholesky factor. This is the place to say that one length scale per dimension is exactly what ARD will later exploit.</aside>
+      </section>
+
+      <section>
         <h2>What you actually choose</h2>
         <div class="body">
           <ul>
@@ -332,6 +388,22 @@
           </ul>
           <div class="verdict">Choosing the kernel <strong>is</strong> the modelling step. It encodes what you believe about smoothness, length scales, and which parameters matter.</div>
         </div>
+      </section>
+
+      <section>
+        <h2>Same five simulations, three beliefs, three different answers</h2>
+        <div class="body">
+          <div class="panel-row">
+            <figure><svg data-kernel="0.05"></svg>
+              <figcaption><strong>Too short</strong>the mean falls back to zero between samples; the model claims to know nothing there</figcaption></figure>
+            <figure><svg data-kernel="0.25"></svg>
+              <figcaption><strong>About right</strong>the mean tracks the hidden truth and the band is honest about the gaps</figcaption></figure>
+            <figure><svg data-kernel="0.40"></svg>
+              <figcaption><strong>Too long</strong>too stiff to turn where the data asks, so it overshoots &mdash; confidently</figcaption></figure>
+          </div>
+          <p class="caution" style="margin-top:14px">The right-hand panel is the dangerous one: the band is <em>narrow</em> exactly where the mean is most wrong. An over-smooth prior does not report its own misspecification.</p>
+        </div>
+        <aside class="notes">Grey dashed is the hidden truth; the black dots are the same five observations in all three panels. Nothing changed but one kernel parameter. This is the motivation for the next slide: you do not want to be choosing this number by eye.</aside>
       </section>
 
       <section>
@@ -352,6 +424,16 @@
         <div class="part">Part five</div>
         <h2>Bayes, and conditioning the GP</h2>
         <p>How observing data turns the prior over functions into a posterior.</p>
+          <div class="roadmap">
+            <span class="done">1. Why BO</span>
+            <span class="done">2. CFD loop</span>
+            <span class="done">3. At a glance</span>
+            <span class="done">4. Building blocks</span>
+            <span class="now">5. Bayes</span>
+            <span>6. Acquisition</span>
+            <span>7. What&rsquo;s next</span>
+            <span>8. Conclusions</span>
+          </div>
       </section>
 
       <section class="statement">
@@ -370,6 +452,22 @@
             <p>This is the mistake Bayes' theorem exists to prevent: <strong>judging by fit to the evidence while ignoring how much space the hypothesis occupied to begin with.</strong></p>
           </div>
         </div>
+      </section>
+
+      <section>
+        <h2>Put numbers on it</h2>
+        <div class="body">
+          <p>Suppose there are <strong>20 librarians for every mathematician</strong>, and suppose the description fits <strong>8 in 10 mathematicians</strong> but only <strong>1 in 10 librarians</strong>. In odds form, Bayes is one multiplication:</p>
+          <div class="odds">
+            <div class="box"><div class="lab">prior odds</div><div class="num">1 : 20</div><div class="sub">how many of each exist</div></div>
+            <div class="op">&times;</div>
+            <div class="box"><div class="lab">likelihood ratio</div><div class="num">8 : 1</div><div class="sub">how well each explains the description</div></div>
+            <div class="op">=</div>
+            <div class="box result"><div class="lab">posterior odds</div><div class="num">1 : 2.5</div><div class="sub">P(mathematician | description) = 0.29</div></div>
+          </div>
+          <p class="claim" style="margin-top:16px">The description fits a mathematician <strong>eight times better</strong> &mdash; and John is still more than twice as likely to be a librarian.</p>
+        </div>
+        <aside class="notes">The odds form is worth writing out: posterior odds = prior odds x likelihood ratio, with no normalising constant to carry. Evidence multiplies the prior, it does not replace it — which is exactly what the GP posterior does on the next slides, pulling the prior around rather than overwriting it.</aside>
       </section>
 
       <section>
@@ -419,6 +517,19 @@
       </section>
 
       <section>
+        <h2>Watch the variance collapse</h2>
+        <div class="body">
+          <div class="panel-grid">
+            <figure><svg data-cond="0"></svg><figcaption><strong>No data</strong>the mean is flat and the band is the prior: the model is agnostic everywhere.</figcaption></figure>
+            <figure><svg data-cond="1"></svg><figcaption><strong>One observation</strong>it pins the mean and pinches the band shut &mdash; but only within about one length scale of it.</figcaption></figure>
+            <figure><svg data-cond="3"></svg><figcaption><strong>Three</strong>the band now bulges only in the gaps &mdash; which is precisely where the acquisition function will want to go.</figcaption></figure>
+            <figure><svg data-cond="6"></svg><figcaption><strong>Six</strong>the mean has found the shape of the hidden function, and the average &#963; has fallen by a factor of seven.</figcaption></figure>
+          </div>
+        </div>
+        <aside class="notes">Every panel is the two formulas from the previous slide evaluated on a grid — nothing else. Grey dashed is the hidden truth, which the model never sees. The number to read out is the mean uncertainty printed at the top of each panel: 1.10, 0.93, 0.57, 0.16.</aside>
+      </section>
+
+      <section>
         <h2>Posterior: the mean interpolates, the variance collapses</h2>
         <div class="body">
           <svg id="gp-chart"></svg>
@@ -432,6 +543,16 @@
         <div class="part">Part six</div>
         <h2>The acquisition function</h2>
         <p>Turning a mean and a variance into a decision about where to spend the next simulation.</p>
+          <div class="roadmap">
+            <span class="done">1. Why BO</span>
+            <span class="done">2. CFD loop</span>
+            <span class="done">3. At a glance</span>
+            <span class="done">4. Building blocks</span>
+            <span class="done">5. Bayes</span>
+            <span class="now">6. Acquisition</span>
+            <span>7. What&rsquo;s next</span>
+            <span>8. Conclusions</span>
+          </div>
       </section>
 
       <section>
@@ -482,6 +603,31 @@
       </section>
 
       <section>
+        <h2>The loop, running</h2>
+        <div class="body">
+          <div class="panel-grid">
+            <figure><svg data-bostep="0"></svg><figcaption><strong>Start</strong>the acquisition (orange) peaks in the widest gap rather than at the best point seen, so the next simulation goes to x = 0.30.</figcaption></figure>
+            <figure><svg data-bostep="1"></svg><figcaption><strong>One step later</strong>that sample was mediocre, and it was still worth it: the band there is gone, and the peak has moved on to x = 0.69.</figcaption></figure>
+            <figure><svg data-bostep="3"></svg><figcaption><strong>Three steps</strong>the optimum region has been found. The acquisition has two jobs left: refine here, and check the last unexplored corner.</figcaption></figure>
+            <figure><svg data-bostep="5"></svg><figcaption><strong>Five steps</strong>converged. The proposals stop moving because nothing is left that is both plausible and unknown.</figcaption></figure>
+          </div>
+        </div>
+        <aside class="notes">Forrester function, kappa = 2, one point added per panel. The dashed vertical is the argmax of the acquisition — the design the loop is about to simulate. Panel two spends a simulation on a point that turns out to be bad: that is the cost of exploration, and the next slide is what it buys.</aside>
+      </section>
+
+      <section>
+        <h2>What the exploration was for</h2>
+        <div class="body">
+          <svg data-efficiency style="background:var(--white);border:1px solid #d7e0e7;width:100%;height:470px"></svg>
+          <div class="two-col" style="margin-top:10px">
+            <div><p><strong>&kappa; = 0 never leaves the first hill it climbs.</strong> With no reward for uncertainty the acquisition just maximises the mean, and the mean is only informative where data already exists. It re-proposes the same design forever.</p></div>
+            <div><p><strong>Random search does not get stuck &mdash; it is only slow.</strong> Averaged over 40 runs it is still short of the optimum after 18 evaluations, which BO reached on its eighth.</p></div>
+          </div>
+        </div>
+        <aside class="notes">Same function, same three starting points, same budget; only the strategy differs. This is the concrete version of the "roughly 100 evaluations" claim from part one. Say plainly that this is a one-dimensional toy and that the gap widens with dimension — but that the kappa = 0 failure mode is real and does show up in production campaigns.</aside>
+      </section>
+
+      <section>
         <h2>Several objectives at once</h2>
         <div class="body">
           <svg data-objspace="hypervolume" style="background:var(--white);border:1px solid #d7e0e7;width:100%;height:430px"></svg>
@@ -494,6 +640,16 @@
         <div class="part">Part seven</div>
         <h2>Where this is going</h2>
         <p>Learned surrogates, and running the loop concurrently with the simulation.</p>
+          <div class="roadmap">
+            <span class="done">1. Why BO</span>
+            <span class="done">2. CFD loop</span>
+            <span class="done">3. At a glance</span>
+            <span class="done">4. Building blocks</span>
+            <span class="done">5. Bayes</span>
+            <span class="done">6. Acquisition</span>
+            <span class="now">7. What&rsquo;s next</span>
+            <span>8. Conclusions</span>
+          </div>
       </section>
 
       <section>
@@ -533,6 +689,16 @@
       <section class="divider">
         <div class="part">Part eight</div>
         <h2>Conclusions</h2>
+          <div class="roadmap">
+            <span class="done">1. Why BO</span>
+            <span class="done">2. CFD loop</span>
+            <span class="done">3. At a glance</span>
+            <span class="done">4. Building blocks</span>
+            <span class="done">5. Bayes</span>
+            <span class="done">6. Acquisition</span>
+            <span class="done">7. What&rsquo;s next</span>
+            <span class="now">8. Conclusions</span>
+          </div>
       </section>
 
       <section>
@@ -546,6 +712,13 @@
             <div><strong>Constraining the CAD is not housekeeping</strong> &mdash; it is what stops the optimiser spending simulations on shapes that cannot exist.</div>
           </div>
           <div class="verdict">Next: the hands-on tutorial builds all of this for a real micromixer &mdash; <code>bayesian-optimization-cfd-tutorial.html</code></div>
+        </div>
+      </section>
+
+      <section class="statement">
+        <div class="body">
+          <p class="bombastic">Bayesian optimization does not make a simulation cheaper.<br>It makes each one count.</p>
+          <p style="margin-top:34px">Everything in this deck &mdash; the Gaussian, the kernel, the conditioning, the acquisition &mdash; exists to answer one question: <strong>given what the simulations so far have told us, which single design is worth running next?</strong></p>
         </div>
       </section>
 

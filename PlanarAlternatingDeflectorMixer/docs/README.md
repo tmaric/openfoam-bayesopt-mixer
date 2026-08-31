@@ -46,6 +46,19 @@ The URL carries the slide number (`#/23`), so any slide can be linked directly.
   true optimum at 0.758.
 - **GP prior samples** — five functions drawn by Cholesky-factorising the kernel
   matrix and multiplying by standard normals.
+- **The length-scale triptych** — the *same* five standard-normal draws pushed
+  through three different Cholesky factors, so only ℓ varies between panels.
+- **The kernel triptych** — one RBF family, five fixed observations, ℓ = 0.05 /
+  0.25 / 0.40. The printed worst error (2.51 / 0.38 / 1.27) is measured against
+  the hidden truth, not asserted.
+- **Conditioning, four panels** — the posterior after 0, 1, 3 and 6
+  observations, with the mean posterior σ falling 1.10 → 0.93 → 0.57 → 0.16.
+- **The loop running** — UCB with κ = 2 actually iterated: each panel refits the
+  GP, maximises the acquisition over a grid, and samples there.
+- **BO vs random vs greedy** — best-so-far against evaluations spent, from three
+  strategies on one function and one starting design. κ = 2 reaches the optimum
+  on evaluation 8; κ = 0 stalls at 0.16 and never recovers; random search is
+  averaged over 40 seeded runs so the curve is not one lucky draw.
 - **Unit-cell geometry** — drawn *from* the parameter vector shown above it,
   following the section layout in `../FlowCase/alternating_deflector_cad.py`.
 - **Pareto front and hypervolume** — the dominated staircase against the
