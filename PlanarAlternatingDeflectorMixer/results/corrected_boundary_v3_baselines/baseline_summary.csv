@@ -1,0 +1,4 @@
+baseline,pressure_drop_m2_s2,pressure_drop_Pa,flux_weighted_intensity_of_segregation,flux_weighted_mixing_index,flow_rate_m3_s,pumping_power_W,analytical_pressure_drop_m2_s2,analytical_pressure_drop_Pa,analytical_relative_error,analytical_check_passed,pressure_ratio_to_straight
+straight,0.00287887,2.873688034,0.809533,0.10025948185046152,1.020076662e-10,2.9313820973520627e-10,0.0028800000000000006,2.874816000000001,0.0003923611111113408,True,1.0
+symmetric_deflector,0.0108311,10.81160402,0.827908,0.09010550062108846,1.020077167e-10,1.1028670399447412e-09,,,,,3.762274781424656
+strong_alternating,0.0305641,30.509084620000003,0.731099,0.14495672624129718,1.020077441e-10,3.112162896642206e-09,,,,,10.616700302549264

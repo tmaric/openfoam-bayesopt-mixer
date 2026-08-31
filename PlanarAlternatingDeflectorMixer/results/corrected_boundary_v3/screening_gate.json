@@ -1,0 +1,14 @@
+{
+  "attempted_designs": 12,
+  "best_flux_weighted_mixing_index": 0.16975605994382592,
+  "campaign": "corrected_boundary_v3",
+  "decision": "adapt_topology_before_full_sequential_bo",
+  "failed_designs": 0,
+  "failed_fraction": 0.0,
+  "maximum_failed_fraction": 0.25,
+  "minimum_mixing_index": 0.6,
+  "passed": false,
+  "required_successful_designs": 12,
+  "schema_version": 1,
+  "successful_designs": 12
+}
