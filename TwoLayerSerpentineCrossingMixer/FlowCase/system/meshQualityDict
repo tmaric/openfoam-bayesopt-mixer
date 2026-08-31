@@ -1,0 +1,27 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      meshQualityDict;
+}
+
+// Independent checkMesh acceptance criteria for this micromixer.  The
+// construction limits in snappyMeshQualityDict are tighter.  Both are far
+// stricter than OpenFOAM defaults, and absolute volume is scaled for the
+// micrometre geometry.
+maxNonOrtho            55;
+maxBoundarySkewness    2;
+maxInternalSkewness    2;
+// Far stricter than OpenFOAM's 80-degree default while leaving a small margin
+// for the independently evaluated snapped/cut-face concavity diagnostic.
+maxConcave             35;
+minVol                 1e-30;
+minTetQuality          1e-15;
+minArea                -1;
+minTwist               0.02;
+minDeterminant         0.01;
+minFaceWeight          0.05;
+minVolRatio            0.02;
+minTriangleTwist       -1;
+minEdgeLength          -1;

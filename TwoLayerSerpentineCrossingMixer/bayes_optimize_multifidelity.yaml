@@ -1,0 +1,92 @@
+schema_version: 1
+campaign: m10_inspired_multifidelity_v1
+results_dir: results/m10_inspired_multifidelity_v1
+
+scientific_framing:
+  classification: m10_inspired_reconstruction
+  reference_device: Hossain_et_al_2017_two_layer_serpentine_crossing_micromixer
+  exact_reproduction_claim: false
+  reason: published_sources_do_not_uniquely_specify_interlayer_apertures_leads_or_corner_treatment
+
+resources:
+  cores: 4
+  torch_threads: 1
+  q: 1
+
+design:
+  fixed_number_of_units_during_bo: 4
+  operating_reynolds_number: 10.0
+  fine_only_robustness_reynolds_numbers: [1.0, 40.0]
+  fine_validation_unit_counts: [4, 9]
+  parameters:
+    H_over_P: {lower: 1.25, upper: 1.87}
+    w_over_P: {lower: 0.24, upper: 0.56}
+    # Lower bounds give at least 120 um at P=0.64 mm: four coarse cells and
+    # eight fine cells across every depth/vertical-segment feature.
+    D_over_P: {lower: 0.375, upper: 0.62}
+    b_over_P: {lower: 0.1875, upper: 0.35}
+    diagonal_end_inset_over_w: {lower: 0.50, upper: 1.10}
+    crossing_phase_over_b: {lower: -0.30, upper: 0.30}
+
+fidelities:
+  coarse:
+    coordinate: 0.0
+    # OpenFOAM-v2606 snappyHexMesh qualification passed the reference and all
+    # six paired BO anchors at this spacing, with zero tetrahedra.
+    nominal_cell_size_m: 2.4e-5
+    nominal_relative_cost: 1.0
+    role: exploration_and_discrepancy_learning
+  fine:
+    coordinate: 1.0
+    # Deliberately non-nested with the coarse grid. The reference and all six
+    # paired BO anchors pass the fixed snappyHexMesh policy at this spacing,
+    # with zero tetrahedra and at least nine cells across the minimum feature.
+    # The same 13 um spacing is used for every target-fidelity design.
+    nominal_cell_size_m: 1.3e-5
+    nominal_relative_cost: 6.29
+    role: target_fidelity_and_publication_authority
+
+initialization:
+  coarse_sobol_designs: 24
+  paired_fine_anchors: 6
+  sobol_seed: 20260726
+
+pilot:
+  results_dir: results/m10_inspired_multifidelity_pilot
+  paired_designs: 6
+  selection: nearest_reference_then_greedy_maximin_from_initial_coarse_sobol_pool
+  minimum_spearman_rank_correlation: 0.70
+  required_objectives:
+    - pressure_ratio_to_straight
+    - flux_weighted_intensity_of_segregation
+
+model:
+  class: SingleTaskMultiFidelityGP
+  data_fidelity_dimension: last
+  outputs: [pressure_ratio_to_straight, flux_weighted_intensity_of_segregation]
+  outcome_transforms:
+    pressure_ratio_to_straight: natural_log
+    # Mixing indices near one conceal orders-of-magnitude changes in residual
+    # segregation (demonstrated by the Re=40 mesh comparison).
+    flux_weighted_intensity_of_segregation: {transform: log10, floor: 1.0e-10}
+  acquisition: qMultiFidelityKnowledgeGradient
+  multiobjective_reduction: randomized_augmented_chebyshev_scalarization
+  target_fidelity: 1.0
+  cost_aware: true
+
+budget:
+  maximum_fine_equivalent_cost: 40.0
+  final_fine_pareto_candidates: 8
+
+objectives:
+  minimize:
+    - pressure_ratio_to_straight
+    - flux_weighted_intensity_of_segregation
+  reporting:
+    mixing_index: one_minus_sqrt_flux_weighted_intensity_of_segregation
+
+constraints:
+  minimum_feature_cells_coarse: 4
+  minimum_feature_cells_fine: 8
+  minimum_fine_mixing_index: 0.90
+  exclude_failed_evaluations: true

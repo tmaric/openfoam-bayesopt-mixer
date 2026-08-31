@@ -1,0 +1,29 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volVectorField;
+    object      U;
+}
+dimensions      [0 1 -1 0 0 0 0];
+
+// Replaced in the staged case by run_case.py.
+internalField   uniform (__INLET_SPEED__ 0 0);
+
+boundaryField
+{
+    inlet
+    {
+        // Hossain et al. used uniform velocity at both inlet sections.
+        type            fixedValue;
+        value           uniform (__INLET_SPEED__ 0 0);
+    }
+    outlet
+    {
+        type            zeroGradient;
+    }
+    walls
+    {
+        type            noSlip;
+    }
+}

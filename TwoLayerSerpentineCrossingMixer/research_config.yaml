@@ -1,0 +1,101 @@
+schema_version: 1
+
+software:
+  openfoam_version: v2606
+  mesh_generator: snappyHexMesh
+  geometry_generator: CadQuery
+
+scientific_framing:
+  classification: m10_inspired_reconstruction
+  exact_reproduction_claim: false
+  literature_values_role: external_benchmark_not_geometry_acceptance_target
+
+scalar_transport_numerics:
+  transported_field: T
+  convection_scheme: Gauss linearUpwind gradT
+  gradient_scheme: cellLimited pointCellsLeastSquares 1
+  pseudo_iterations: 2400
+
+literature_reproduction:
+  source:
+    citation: Hossain et al., Chemical Engineering Journal 327 (2017) 268-277
+    doi: 10.1016/j.cej.2017.06.106
+  fluid:
+    density_kg_m3: 997.0
+    dynamic_viscosity_Pa_s: 8.8e-4
+    scalar_diffusivity_m2_s: 1.0e-11
+  reynolds_numbers: [0.2, 1.0, 10.0, 15.0, 40.0]
+  reynolds_definition: inlet_mean_velocity_times_inlet_hydraulic_diameter_over_kinematic_viscosity
+  expected_behavior:
+    mixing_index_Re_le_10: approximately_0.99
+    mixing_index_all_Re_0p2_to_120: at_least_0.96
+  acceptance:
+    mixing_index_absolute_tolerance: 0.03
+    pressure_drop_relative_tolerance: 0.10
+
+review_matched_benchmark:
+  source:
+    citation: Raza et al., Micromachines 11 (2020) 455
+    doi: 10.3390/mi11050455
+  scalar_diffusivity_m2_s: 1.0e-10
+  axial_length_m: 5.05e-3
+  number_of_units: 6
+  reynolds_numbers: [1.0, 10.0, 20.0]
+  acceptance:
+    mixing_index_absolute_tolerance: 0.03
+    pressure_drop_relative_tolerance: 0.10
+  note: This is a separate standardized protocol and must not be pooled with the original-paper reproduction.
+
+straight_pressure_reference:
+  definition: fully_developed_rectangular_duct_exact_series
+  cross_section: design_matched_outlet_w_times_D
+  axial_length: design_total_axial_length
+  mean_velocity: same_as_two_equal_area_M10_inlets
+  odd_series_terms: 50
+  note: This ideal hydraulic reference is evaluated per design and does not require an extra CFD solve for every BO observation.
+
+resources:
+  max_openfoam_ranks: 4
+  torch_threads: 1
+  sequential_q: 1
+
+validation_gates:
+  require_geometry_visual_audit: true
+  require_mesh_convergence: true
+  require_literature_reproduction_before_bo: false
+  require_multifidelity_rank_correlation_pilot_before_bo: true
+  fine_fidelity_is_authoritative: true
+  cad_to_mesh_inlet_flow_relative_tolerance:
+    coarse: 0.06
+    fine: 0.03
+  mass_balance_relative_tolerance: 1.0e-5
+  # linearUpwind gradT is deliberately not a bounded upwind scheme. The first
+  # 13 um pilot anchor produced one wall-adjacent minimum of -0.001094 while
+  # its outlet objective was stationary. Keep a strict, explicit 0.2% local
+  # excursion cap without clipping the transported field.
+  scalar_bound_excursion_tolerance: 2.0e-3
+  mesh_quality:
+    coarse:
+      # snappyHexMesh is hexahedral-dominant: oblique body-fitted boundaries
+      # necessarily introduce a thin prism/polyhedral cut-cell population.
+      minimum_hexahedral_cell_fraction: 0.90
+      maximum_tetrahedral_cell_fraction: 0.0
+      maximum_tet_wedge_cell_fraction: 1.0e-5
+      maximum_concave_cell_fraction: 1.0e-3
+      maximum_concave_angle_degrees: 35.0
+      # Six-design snappy preflight maximum was 2.11e-4; fixed with margin.
+      maximum_warped_face_fraction: 2.5e-4
+      minimum_face_flatness: 0.30
+      maximum_default_failed_checks: 1
+    fine:
+      minimum_hexahedral_cell_fraction: 0.95
+      maximum_tetrahedral_cell_fraction: 0.0
+      maximum_tet_wedge_cell_fraction: 5.0e-6
+      maximum_concave_cell_fraction: 5.0e-4
+      maximum_concave_angle_degrees: 35.0
+      # Six-design snappy preflight maximum was 4.98e-5; fixed with margin.
+      maximum_warped_face_fraction: 6.0e-5
+      minimum_face_flatness: 0.30
+      # The default concave/warped cut-cell diagnostic may be the sole failed
+      # aggregate check. Every explicit operator-oriented face count is zero.
+      maximum_default_failed_checks: 1

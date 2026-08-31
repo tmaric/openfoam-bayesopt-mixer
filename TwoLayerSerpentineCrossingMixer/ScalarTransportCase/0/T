@@ -1,0 +1,33 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    location    "0";
+    object      T;
+}
+dimensions      [0 0 0 0 0 0 0];
+internalField   uniform 0.5;
+
+boundaryField
+{
+    inlet
+    {
+        // inlet1 (upper layer) is water fraction 0; inlet2 (lower) is 1.
+        type            uniformFixedValue;
+        uniformValue
+        {
+            type        expression;
+            expression  #{ pos().z() < 0 ? 1.0 : 0.0 #};
+        }
+        value           uniform 0.5;
+    }
+    outlet
+    {
+        type            zeroGradient;
+    }
+    walls
+    {
+        type            zeroGradient;
+    }
+}

@@ -1,0 +1,26 @@
+schema_version: 1
+sources:
+  original:
+    doi: 10.1016/j.cej.2017.06.106
+    geometry_units: 9
+    diffusivity_m2_s: 1.0e-11
+    statements_to_reproduce:
+      - approximately 0.99 mixing index for Reynolds numbers from 0.2 through 10
+      - at least 0.96 mixing index over Reynolds numbers from 0.2 through 120
+      - saddle-shaped transverse flow at crossing nodes
+  standardized_review:
+    doi: 10.3390/mi11050455
+    geometry_units: 6
+    axial_length_m: 5.05e-3
+    diffusivity_m2_s: 1.0e-10
+    tabulated_targets:
+      Re_1: {mixing_index: 0.915, pressure_drop_Pa: 16.3}
+      Re_20: {mixing_index: 0.901, pressure_drop_Pa: 390.0}
+
+rules:
+  - Do not combine the original and review protocols in one error calculation.
+  - Match Reynolds, diffusivity, unit count, axial station, and mixing-index definition.
+  - Compare review targets against area-weighted 1-sqrt(intensity); retain flux-weighted intensity as the BO objective.
+  - Validate the reconstructed CAD visually against the source figure before meshing.
+  - Validate coarse-to-fine objective correlation before enabling cost-aware BO.
+  - Only fine-fidelity values may support final Pareto or publication claims.

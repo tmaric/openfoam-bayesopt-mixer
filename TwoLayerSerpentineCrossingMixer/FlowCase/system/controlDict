@@ -1,0 +1,35 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      controlDict;
+}
+application         simpleFoam;
+startFrom           startTime;
+startTime           0;
+stopAt              endTime;
+endTime             2500;
+deltaT              1;
+writeControl        timeStep;
+writeInterval       25;
+purgeWrite          2;
+writeFormat         ascii;
+writePrecision      8;
+writeCompression    off;
+runTimeModifiable   true;
+
+functions
+{
+    pressureDrop
+    {
+        type            pressureDrop;
+        libs            ("libbayesoptMixerFunctionObjects.so");
+        field           p;
+        patch1          inlet;
+        patch2          outlet;
+        csvFile         pressureDrop.csv;
+        writeControl    timeStep;
+        writeInterval   1;
+    }
+}

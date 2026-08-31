@@ -1,0 +1,19 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      createPatchDict;
+}
+
+pointSync false;
+
+patches
+(
+    {
+        name inlet;
+        patchInfo { type patch; }
+        constructFrom patches;
+        patches (inlet1 inlet2);
+    }
+);

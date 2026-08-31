@@ -1,0 +1,24 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      snappyMeshQualityDict;
+}
+
+// Construction limits used while points are snapped onto the CAD surface.
+// maxConcave is intentionally tighter than the independent checkMesh limit:
+// snappyHexMesh and checkMesh evaluate cut-face concavity differently.
+maxNonOrtho            55;
+maxBoundarySkewness    2;
+maxInternalSkewness    2;
+maxConcave             30;
+minVol                 1e-30;
+minTetQuality          1e-15;
+minArea                -1;
+minTwist               0.02;
+minDeterminant         0.01;
+minFaceWeight          0.05;
+minVolRatio            0.02;
+minTriangleTwist       -1;
+minEdgeLength          -1;

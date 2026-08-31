@@ -1,0 +1,35 @@
+# M10-inspired geometry based on Hossain et al. (2017), CEJ 327, 268-277.
+# All lengths below are millimetres. The CAD generator converts them to SI.
+# The sources give the nominal dimensions and connection locations but do not
+# publish the CAD/mask or independent inter-layer aperture dimensions.
+schema_version: 1
+geometry:
+  main_span_H: 1.07
+  diagonal_width_w: 0.30
+  vertical_segment_width_b: 0.15
+  clear_pitch_P: 0.64
+  single_layer_depth_d: 0.15
+  number_of_units: 9
+
+  # The paper specifies the inlet/outlet cross-sections but not an unambiguous
+  # lead length. These leads are outside the reported mixing section and are
+  # kept fixed during optimization.
+  # Together with nine units, 0.12 mm leads give 7.50 mm = 25*w, the outlet
+  # station used for the paper's nine-unit mixing comparison.
+  inlet_lead_length: 0.12
+  outlet_lead_length: 0.12
+
+  # Baseline diagonal centrelines terminate one half-width from the outer
+  # transverse bounds. phase=0 reproduces a centred X crossing.
+  diagonal_end_inset_over_w: 0.50
+  crossing_phase_over_b: 0.0
+
+  # Keep the two channel layers face-adjacent. Their intersections at the X
+  # nodes and vertical segments therefore form the inter-layer connections.
+  interlayer_gap: 0.0
+
+output:
+  directory: generated/reference
+  stl_name: two_layer_serpentine_crossing_mixer.stl
+  step_name: two_layer_serpentine_crossing_mixer.step
+  manifest_name: geometry_manifest.json

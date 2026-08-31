@@ -1,0 +1,40 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      controlDict;
+}
+application         scalarTransportFoam;
+startFrom           startTime;
+startTime           0;
+stopAt              endTime;
+endTime             2400;
+deltaT              1;
+writeControl        timeStep;
+writeInterval       25;
+purgeWrite          2;
+writeFormat         ascii;
+writePrecision      8;
+writeCompression    off;
+runTimeModifiable   true;
+
+functions
+{
+    patchMixingQuality
+    {
+        type                    patchMixingQuality;
+        libs                    ("libbayesoptMixerFunctionObjects.so");
+        scalarField             T;
+        patch                   outlet;
+        weighting               phi;
+        meanMode                fromInletRatio;
+        aMean                   0.5;
+        epsilon                 1e-12;
+        reportMixingIndex       true;
+        reportAbsoluteDeviations true;
+        csvFile                 mixing.csv;
+        writeControl            timeStep;
+        writeInterval           1;
+    }
+}

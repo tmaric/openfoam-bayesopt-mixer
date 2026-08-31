@@ -1,0 +1,33 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      fvSolution;
+}
+
+solvers
+{
+    T
+    {
+        solver          PBiCGStab;
+        preconditioner  DILU;
+        tolerance       1e-9;
+        relTol          0.01;
+    }
+}
+
+SIMPLE
+{
+    nNonOrthogonalCorrectors 1;
+    // Do not stop on the linear-equation residual alone. The runner requires
+    // the outlet mixing functional itself to be stable over its final window.
+}
+
+relaxationFactors
+{
+    equations
+    {
+        T           0.7;
+    }
+}
