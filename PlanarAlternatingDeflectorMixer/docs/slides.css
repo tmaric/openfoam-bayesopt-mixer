@@ -95,7 +95,10 @@ html, body { height: 100%; margin: 0; overflow: hidden; }
 
 * { box-sizing: border-box; }
 
-body { background: var(--paper); }
+body {
+  background: var(--paper);
+  font-family: Inter, Aptos, "Segoe UI", Arial, sans-serif;
+}
 
 .reveal {
   color: var(--ink);
