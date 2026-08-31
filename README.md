@@ -157,12 +157,72 @@ python3 PlanarAlternatingDeflectorMixer/docs/exercises/surrogate.py
 
 ### What requires your own machine
 
-Everything below runs CFD, so it needs the container built once — the single
-step that cannot happen inside the container:
+Everything below runs CFD, so it needs **Apptainer** — the one and only
+dependency — and the image built once:
 
 ```bash
 ./apptainer/build.sh            # ~1.3 GB, or --remote to build on a cluster and copy back
 ```
+
+#### Installing Apptainer without root, on Linux or Windows WSL
+
+Apptainer publishes a relocatable build that installs into your home directory.
+No `sudo`, no package manager, nothing system-wide:
+
+```bash
+curl -s https://raw.githubusercontent.com/apptainer/apptainer/main/tools/install-unprivileged.sh \
+    | bash -s - ~/apptainer
+export PATH="$HOME/apptainer/bin:$PATH"      # add to ~/.bashrc to make it stick
+apptainer --version
+```
+
+If you would rather read a script before running it — reasonable for anything
+piped into a shell — fetch it first:
+
+```bash
+curl -O https://raw.githubusercontent.com/apptainer/apptainer/main/tools/install-unprivileged.sh
+less install-unprivileged.sh && bash install-unprivileged.sh ~/apptainer
+```
+
+It needs `curl`, `rpm2cpio` and `cpio` present — all three are already there on
+a stock Ubuntu or Ubuntu-on-WSL. It downloads roughly 100 MB of relocatable RPMs
+from EPEL and unpacks them under the prefix you gave it; **nothing outside that
+directory is touched**, and `rm -rf ~/apptainer` uninstalls it completely.
+
+On WSL this works as-is — WSL2 kernels enable the user namespaces Apptainer
+needs. Check with:
+
+```bash
+[ "$(cat /proc/sys/user/max_user_namespaces)" -gt 0 ] && echo ok
+```
+
+Keep the clone and the `.sif` on the Linux filesystem (`~/...`), not under
+`/mnt/c`.
+
+**Running is enough for everything in this repository; building an image is
+not.** With a non-root install you can `apptainer exec` and `apptainer shell`
+freely, which is all the study needs once the `.sif` exists. Creating a `.sif`
+additionally wants `newuidmap`/`newgidmap`, which only a real package install
+provides:
+
+```text
+FATAL: newuidmap was not found in PATH, required with fakeroot
+       and unprivileged installation when user is in /etc/subuid
+```
+
+If you hit that, you have two ways out:
+
+* `sudo apt install uidmap` once — the only step in this entire study that wants
+  root, and it is not needed afterwards;
+* or don't build locally at all. `./apptainer/build.sh --remote` builds on a
+  cluster and copies the `.sif` back, and a `.sif` is a single file you can
+  equally well be handed on a memory stick. It is architecture-specific but
+  otherwise portable.
+
+*Verified here:* the unprivileged install above, on Ubuntu under WSL2, runs the
+study image and reports OpenFOAM v2512. Building on that same install fails with
+exactly the error quoted, which is why the image for this laptop was built on
+the cluster and copied back.
 
 | what | why |
 |---|---|
