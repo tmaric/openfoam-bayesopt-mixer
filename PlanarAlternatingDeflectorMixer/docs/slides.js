@@ -675,6 +675,130 @@ function renderScalarise(svg) {
   });
 }
 
+/* ---- H. what a launch failure costs when it is recorded as physics -------
+   Same six designs, same kernel.  On the right, the two nearest the optimum
+   did not fail physically -- the tool failed -- but they were written back as
+   the penalty value every failure handler writes.  The GP believes the best
+   region is the worst one, and the acquisition leaves and does not return. */
+const FAIL_X = [0.05, 0.25, 0.45, 0.72, 0.80, 0.95];
+const FAIL_IDX = [3, 4];
+const FAIL_PENALTY = -2.5;
+
+function renderFailureGP(svg, mode) {
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const W = 720, H = 330, m = { left: 26, right: 22, top: 36, bottom: 20 };
+  const { X, Y } = axes1d(svg, W, H, m, -3.6, 3.0);
+  const poisoned = mode === 'poisoned';
+  const ys = FAIL_X.map((x, i) => (poisoned && FAIL_IDX.includes(i) ? FAIL_PENALTY : forrester(x)));
+  const pred = fitGP(FAIL_X, ys, KERNELS.rbf(0.14, 1.1), 1e-6)(GRID);
+  const acq = pred.map((q) => q.mean + 2 * q.sd);
+  const pick = pred[acq.indexOf(Math.max(...acq))];
+
+  svg.appendChild(svgElement('polyline', {
+    points: GRID.map((x) => `${X(x)},${Y(forrester(x))}`).join(' '),
+    fill: 'none', stroke: MUTED, 'stroke-width': 2, 'stroke-dasharray': '7 5' }));
+  drawPosterior(svg, pred, X, Y);
+  svg.appendChild(svgElement('polyline', {
+    points: pred.map((q, i) => `${X(q.x)},${Y(acq[i])}`).join(' '),
+    fill: 'none', stroke: ORANGE, 'stroke-width': 2.5, opacity: 0.9 }));
+  svg.appendChild(svgElement('line', {
+    x1: X(pick.x), x2: X(pick.x), y1: m.top, y2: H - m.bottom,
+    stroke: ORANGE, 'stroke-width': 3, 'stroke-dasharray': '8 5' }));
+
+  /* the true optimum, so the eye has something to compare the pick against */
+  svg.appendChild(svgElement('line', {
+    x1: X(0.759), x2: X(0.759), y1: Y(1.0), y2: Y(-3.4),
+    stroke: GREEN, 'stroke-width': 2, 'stroke-dasharray': '4 4', opacity: 0.8 }));
+  svg.appendChild(svgText(X(0.759), Y(-3.4) + 2, 'true optimum',
+    { 'text-anchor': 'middle', fill: GREEN, 'font-size': 17 }));
+
+  FAIL_X.forEach((xi, i) => {
+    const bad = poisoned && FAIL_IDX.includes(i);
+    svg.appendChild(svgElement('circle', {
+      cx: X(xi), cy: Y(ys[i]), r: bad ? 8 : 7, fill: bad ? RED : INK }));
+    if (bad) {
+      svg.appendChild(svgElement('line', { x1: X(xi) - 12, x2: X(xi) + 12, y1: Y(ys[i]) - 12, y2: Y(ys[i]) + 12, stroke: RED, 'stroke-width': 3 }));
+      svg.appendChild(svgElement('line', { x1: X(xi) - 12, x2: X(xi) + 12, y1: Y(ys[i]) + 12, y2: Y(ys[i]) - 12, stroke: RED, 'stroke-width': 3 }));
+    }
+  });
+  svg.appendChild(svgText(m.left + 4, m.top - 12,
+    poisoned ? 'two recorded as failures' : 'all recorded correctly',
+    { fill: poisoned ? RED : INK, 'font-size': 21, 'font-weight': 700 }));
+  svg.appendChild(svgText(W - m.right - 4, m.top - 12, `next pick  x = ${pick.x.toFixed(2)}`,
+    { 'text-anchor': 'end', fill: ORANGE, 'font-size': 20, 'font-weight': 700 }));
+}
+
+/* ---- I. two fidelities of one simulation ---------------------------------
+   The standard multi-fidelity Forrester pair, in this deck's scaling.  The
+   cheap model is BIASED, not noisy: its own maximum is in the wrong place.
+   Co-kriging is the recursive form -- fit the cheap model densely, regress the
+   expensive points onto it, and give the leftover discrepancy its own GP. */
+const MF_LO = (x) => 0.5 * forrester(x) - (10 * x - 5) / 6 + 5 / 6;
+const MF_XH = [0, 0.35, 0.65, 1];
+const MF_XL = Array.from({ length: 11 }, (_, i) => i / 10);
+
+function mfModels() {
+  const YH = MF_XH.map(forrester);
+  const hfOnly = fitGP(MF_XH, YH, KERNELS.rbf(0.20, 1.4), 1e-8);
+  const lo = fitGP(MF_XL, MF_XL.map(MF_LO), KERNELS.rbf(0.12, 1.4), 1e-8);
+  const ml = lo(MF_XH).map((q) => q.mean);
+  const n = MF_XH.length;
+  const sx = ml.reduce((a, b) => a + b, 0), sy = YH.reduce((a, b) => a + b, 0);
+  const sxx = ml.reduce((a, b) => a + b * b, 0);
+  const sxy = ml.reduce((a, b, i) => a + b * YH[i], 0);
+  const rho = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+  const beta = (sy - rho * sx) / n;
+  const dg = fitGP(MF_XH, MF_XH.map((x, i) => YH[i] - rho * ml[i] - beta),
+                   KERNELS.rbf(0.40, 1.1), 1e-8);
+  const co = (xs) => {
+    const a = lo(xs), b = dg(xs);
+    return xs.map((x, i) => ({ x, mean: rho * a[i].mean + beta + b[i].mean }));
+  };
+  return { hfOnly, lo, co, rho, beta };
+}
+let MF_CACHE = null;
+const mf = () => (MF_CACHE || (MF_CACHE = mfModels()));
+
+function renderMultiFidelity(svg, mode) {
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const W = 720, H = 330, m = { left: 26, right: 22, top: 36, bottom: 20 };
+  const rmse = (v) => Math.sqrt(GRID.reduce((a, x, i) => a + (v[i] - forrester(x)) ** 2, 0) / GRID.length);
+  const line = (v, colour, width, dash) => svg.appendChild(svgElement('polyline', Object.assign({
+    points: GRID.map((x, i) => `${X(x)},${Y(v[i])}`).join(' '),
+    fill: 'none', stroke: colour, 'stroke-width': width }, dash ? { 'stroke-dasharray': dash } : {})));
+  let X, Y;
+
+  if (mode === 'functions') {
+    ({ X, Y } = axes1d(svg, W, H, m, -3.0, 2.2));
+    const hi = GRID.map(forrester), lo = GRID.map(MF_LO);
+    line(hi, BLUE, 4);
+    line(lo, ORANGE, 4);
+    [[hi, BLUE, 'high'], [lo, ORANGE, 'low']].forEach(([v, c]) => {
+      const i = v.indexOf(Math.max(...v));
+      svg.appendChild(svgElement('circle', { cx: X(GRID[i]), cy: Y(v[i]), r: 8, fill: c }));
+      const high = Y(v[i]) < m.top + 46;
+      svg.appendChild(svgText(X(GRID[i]) + (i < 20 ? 16 : 0), Y(v[i]) + (high ? 28 : -16),
+        `x = ${GRID[i].toFixed(2)}`,
+        { 'text-anchor': i < 20 ? 'start' : 'middle', fill: c, 'font-size': 19, 'font-weight': 700 }));
+    });
+    svg.appendChild(svgText(m.left + 4, m.top - 12, 'high fidelity', { fill: BLUE, 'font-size': 21, 'font-weight': 700 }));
+    svg.appendChild(svgText(m.left + 168, m.top - 12, 'low fidelity', { fill: ORANGE, 'font-size': 21, 'font-weight': 700 }));
+    svg.appendChild(svgText(W - m.right - 4, m.top - 12, 'correlation 0.74', { 'text-anchor': 'end', fill: MUTED, 'font-size': 19 }));
+  } else {
+    const { hfOnly, co } = mf();
+    const a = hfOnly(GRID).map((q) => q.mean), b = co(GRID).map((q) => q.mean);
+    ({ X, Y } = axes1d(svg, W, H, m, -3.0, 2.2));
+    line(GRID.map(forrester), MUTED, 2, '7 5');
+    line(a, RED, 4);
+    line(b, BLUE, 4);
+    MF_XH.forEach((xi) => svg.appendChild(svgElement('circle', { cx: X(xi), cy: Y(forrester(xi)), r: 7, fill: INK })));
+    svg.appendChild(svgText(m.left + 4, m.top - 12, `4 expensive runs only — RMSE ${rmse(a).toFixed(2)}`,
+      { fill: RED, 'font-size': 20, 'font-weight': 700 }));
+    svg.appendChild(svgText(W - m.right - 4, m.top - 12, `+ 11 cheap ones — RMSE ${rmse(b).toFixed(2)}`,
+      { 'text-anchor': 'end', fill: BLUE, 'font-size': 20, 'font-weight': 700 }));
+  }
+}
+
 function renderDidacticFigures() {
   document.querySelectorAll('svg[data-cond]').forEach((svg) => {
     if (svg.dataset.rendered) return; svg.dataset.rendered = 'true';
@@ -687,6 +811,14 @@ function renderDidacticFigures() {
   document.querySelectorAll('svg[data-bostep]').forEach((svg) => {
     if (svg.dataset.rendered) return; svg.dataset.rendered = 'true';
     renderBOStep(svg, parseInt(svg.dataset.bostep, 10));
+  });
+  document.querySelectorAll('svg[data-failgp]').forEach((svg) => {
+    if (svg.dataset.rendered) return; svg.dataset.rendered = 'true';
+    renderFailureGP(svg, svg.dataset.failgp);
+  });
+  document.querySelectorAll('svg[data-mf]').forEach((svg) => {
+    if (svg.dataset.rendered) return; svg.dataset.rendered = 'true';
+    renderMultiFidelity(svg, svg.dataset.mf);
   });
   document.querySelectorAll('svg[data-scalarise]').forEach((svg) => {
     if (svg.dataset.rendered) return; svg.dataset.rendered = 'true';

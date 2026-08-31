@@ -798,15 +798,15 @@ body { background: var(--paper); }
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 54px;
-  max-width: 1420px;
+  margin-top: 50px;
+  max-width: 1460px;
 }
 .reveal section.divider .roadmap span {
   border: 1px solid rgba(255, 253, 248, 0.20);
   border-radius: 999px;
   color: rgba(255, 253, 248, 0.40);
-  font-size: 20px;
-  padding: 7px 17px;
+  font-size: 18px;
+  padding: 7px 13px;
   white-space: nowrap;
 }
 .reveal section.divider .roadmap span.done {

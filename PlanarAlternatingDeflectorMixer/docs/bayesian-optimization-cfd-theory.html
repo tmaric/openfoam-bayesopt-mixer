@@ -25,12 +25,13 @@
           <div class="roadmap">
             <span class="now">1. Why BO</span>
             <span>2. CFD loop</span>
-            <span>3. At a glance</span>
+            <span>3. Overview</span>
             <span>4. Building blocks</span>
             <span>5. Bayes</span>
             <span>6. Acquisition</span>
-            <span>7. Many objectives</span>
-            <span>8. Conclusions</span>
+            <span>7. Objectives</span>
+            <span>8. Fidelity</span>
+            <span>9. Conclusions</span>
           </div>
       </section>
 
@@ -119,12 +120,13 @@
           <div class="roadmap">
             <span class="done">1. Why BO</span>
             <span class="now">2. CFD loop</span>
-            <span>3. At a glance</span>
+            <span>3. Overview</span>
             <span>4. Building blocks</span>
             <span>5. Bayes</span>
             <span>6. Acquisition</span>
-            <span>7. Many objectives</span>
-            <span>8. Conclusions</span>
+            <span>7. Objectives</span>
+            <span>8. Fidelity</span>
+            <span>9. Conclusions</span>
           </div>
       </section>
 
@@ -163,6 +165,57 @@
         </div>
       </section>
 
+      <section>
+        <h2>Two kinds of failure, and only one of them is a result</h2>
+        <div class="body">
+          <div class="two-col">
+            <div>
+              <h3>A result</h3>
+              <p>The design was built, meshed and solved &mdash; and it diverged, or failed a quality gate, or produced a flow you would never accept. <strong>Record it.</strong> That region of the design space really is bad, and the model should know.</p>
+            </div>
+            <div>
+              <h3>Not a result</h3>
+              <p>A missing binary, an unbound path, a rejected <code>sbatch</code>, an out-of-memory, a stale library. The <em>design</em> was fine; the machinery failed. Recorded as a failure it teaches the model that a perfectly good region is hopeless &mdash; and nothing in the output ever says otherwise.</p>
+            </div>
+          </div>
+          <div class="verdict">The exit code is the same in both cases. Nothing downstream can tell them apart unless the workflow was built to.</div>
+          <p class="claim" style="margin-top:16px">The discriminator that works: <strong>physics failures scatter; a broken tool fails identically every time.</strong> Have every step record its own name when it fails, probe the environment before the first design is touched, and stop the campaign when several designs in a row die in the <em>same</em> step.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>What that costs, exactly</h2>
+        <div class="body">
+          <div class="panel-pair">
+            <figure><svg data-failgp="clean"></svg>
+              <figcaption><strong>Recorded correctly</strong>the posterior is worth +1.03 at the true optimum and the acquisition sends the next simulation straight there.</figcaption></figure>
+            <figure><svg data-failgp="poisoned"></svg>
+              <figcaption><strong>Two launch failures written back as the penalty value</strong>the same optimum is now believed to be worth &minus;2.55, and the acquisition leaves for x = 0.35 and never comes back.</figcaption></figure>
+          </div>
+          <p class="caution" style="margin-top:14px">Nothing crashed. The campaign runs to completion, reports a Pareto front, and is wrong &mdash; because a failed <em>run</em> was written back as a failed <em>design</em>.</p>
+        </div>
+        <aside class="notes">Same six designs and the same kernel in both panels; only two recorded values differ. The penalty value used here is -2.5, which is the sort of number a failure handler writes so the optimiser "avoids that region". It works — that is the problem.</aside>
+      </section>
+
+      <section>
+        <h2>Everything converged. Everything was wrong.</h2>
+        <div class="body">
+          <p>In the study this course is built on, the CAD classified a boundary face as an inlet by the direction it <strong>pointed</strong> rather than where it <strong>was</strong>. Every obstacle face that happened to face upstream became an inlet, so the solver injected fluid through the middle of the device.</p>
+          <div class="two-col">
+            <div>
+              <h3>What the diagnostics said</h3>
+              <p>Nothing. Every solve converged. <code>checkMesh</code> reported <em>Mesh OK</em>. Residuals fell. The Pareto fronts looked plausible, and were smooth.</p>
+            </div>
+            <div>
+              <h3>What was actually true</h3>
+              <p>The inlet area was 2.85 &times; H instead of 1 &times; H. <strong>28 designs</strong> &mdash; an entire campaign &mdash; had to be discarded and could not be pooled with the corrected ones.</p>
+            </div>
+          </div>
+          <div class="verdict">Only a test that knows where an inlet is <em>supposed to be</em> could have caught this. No exit code, no residual and no mesh check ever could.</div>
+        </div>
+        <aside class="notes">This is the argument for writing the physical, top-level test first: the straight channel against its analytic pressure drop. It is the cheapest test in the study and the only one that would have failed here.</aside>
+      </section>
+
       <!-- ============ PART 3 ============ -->
       <section class="divider">
         <div class="part">Part three</div>
@@ -171,12 +224,13 @@
           <div class="roadmap">
             <span class="done">1. Why BO</span>
             <span class="done">2. CFD loop</span>
-            <span class="now">3. At a glance</span>
+            <span class="now">3. Overview</span>
             <span>4. Building blocks</span>
             <span>5. Bayes</span>
             <span>6. Acquisition</span>
-            <span>7. Many objectives</span>
-            <span>8. Conclusions</span>
+            <span>7. Objectives</span>
+            <span>8. Fidelity</span>
+            <span>9. Conclusions</span>
           </div>
       </section>
 
@@ -232,12 +286,13 @@
           <div class="roadmap">
             <span class="done">1. Why BO</span>
             <span class="done">2. CFD loop</span>
-            <span class="done">3. At a glance</span>
+            <span class="done">3. Overview</span>
             <span class="now">4. Building blocks</span>
             <span>5. Bayes</span>
             <span>6. Acquisition</span>
-            <span>7. Many objectives</span>
-            <span>8. Conclusions</span>
+            <span>7. Objectives</span>
+            <span>8. Fidelity</span>
+            <span>9. Conclusions</span>
           </div>
       </section>
 
@@ -442,12 +497,13 @@
           <div class="roadmap">
             <span class="done">1. Why BO</span>
             <span class="done">2. CFD loop</span>
-            <span class="done">3. At a glance</span>
+            <span class="done">3. Overview</span>
             <span class="done">4. Building blocks</span>
             <span class="now">5. Bayes</span>
             <span>6. Acquisition</span>
-            <span>7. Many objectives</span>
-            <span>8. Conclusions</span>
+            <span>7. Objectives</span>
+            <span>8. Fidelity</span>
+            <span>9. Conclusions</span>
           </div>
       </section>
 
@@ -605,12 +661,13 @@
           <div class="roadmap">
             <span class="done">1. Why BO</span>
             <span class="done">2. CFD loop</span>
-            <span class="done">3. At a glance</span>
+            <span class="done">3. Overview</span>
             <span class="done">4. Building blocks</span>
             <span class="done">5. Bayes</span>
             <span class="now">6. Acquisition</span>
-            <span>7. Many objectives</span>
-            <span>8. Conclusions</span>
+            <span>7. Objectives</span>
+            <span>8. Fidelity</span>
+            <span>9. Conclusions</span>
           </div>
       </section>
 
@@ -709,12 +766,13 @@
           <div class="roadmap">
             <span class="done">1. Why BO</span>
             <span class="done">2. CFD loop</span>
-            <span class="done">3. At a glance</span>
+            <span class="done">3. Overview</span>
             <span class="done">4. Building blocks</span>
             <span class="done">5. Bayes</span>
             <span class="done">6. Acquisition</span>
-            <span class="now">7. Many objectives</span>
-            <span>8. Conclusions</span>
+            <span class="now">7. Objectives</span>
+            <span>8. Fidelity</span>
+            <span>9. Conclusions</span>
           </div>
       </section>
 
@@ -810,19 +868,114 @@
         </div>
       </section>
 
+
       <!-- ============ PART 8 ============ -->
       <section class="divider">
         <div class="part">Part eight</div>
+        <h2>Cheaper evaluations</h2>
+        <p>Not every simulation has to be the expensive one.</p>
+          <div class="roadmap">
+            <span class="done">1. Why BO</span>
+            <span class="done">2. CFD loop</span>
+            <span class="done">3. Overview</span>
+            <span class="done">4. Building blocks</span>
+            <span class="done">5. Bayes</span>
+            <span class="done">6. Acquisition</span>
+            <span class="done">7. Objectives</span>
+            <span class="now">8. Fidelity</span>
+            <span>9. Conclusions</span>
+          </div>
+      </section>
+
+      <section>
+        <h2>Fidelity is a knob you already have</h2>
+        <div class="body">
+          <p>Every CFD study has a cheaper version of itself, and it is usually already sitting in the case directory:</p>
+          <div class="three-col">
+            <div><h3>Coarser mesh</h3><p>Halving the cell count per direction is 8&times; fewer cells in 3-D, and the larger stable time step multiplies that again.</p></div>
+            <div><h3>Shorter or looser</h3><p>Stop at a slacker residual, average over fewer flow-through times, or take a steady solve where you would take a transient one.</p></div>
+            <div><h3>Simpler physics</h3><p>RANS instead of LES, 2-D instead of 3-D, an incompressible solve where the Mach number barely justifies a compressible one.</p></div>
+          </div>
+          <div class="callout blue">
+            <p>The arithmetic that decides it: if the cheap level is <strong>10&times; cheaper</strong>, one expensive run buys ten cheap ones. Multi-fidelity is worth building only when that ratio is large <em>and</em> the cheap level tells you something about the expensive one.</p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Biased, not noisy &mdash; and still worth having</h2>
+        <div class="body">
+          <div class="panel-pair">
+            <figure><svg data-mf="functions"></svg>
+              <figcaption><strong>The two levels</strong>the cheap model is not a noisy copy of the expensive one. It is systematically different, and here its own maximum is at x = 0.09 while the truth is at x = 0.76.</figcaption></figure>
+            <figure><svg data-mf="posteriors"></svg>
+              <figcaption><strong>Same four expensive runs</strong>modelled alone (red) and together with eleven cheap ones (blue). Adding the biased cheap data more than halves the error.</figcaption></figure>
+          </div>
+          <p class="claim" style="margin-top:14px">The cheap model is useful for its <strong>shape</strong>, not its values. Optimise it directly and you get the wrong answer with confidence; model the <em>difference</em> between the levels and you get most of the expensive model for a fraction of the price.</p>
+        </div>
+        <aside class="notes">The standard multi-fidelity Forrester pair, in this deck's scaling. Right panel is recursive co-kriging: fit the cheap model densely, regress the four expensive points onto it (rho = 0.97 here), and give the leftover discrepancy its own GP with a long length scale. RMSE 0.79 -> 0.34, and the predicted argmax moves from 0.57 to 0.71 against a truth of 0.76.</aside>
+      </section>
+
+      <section>
+        <h2>How Bayesian optimization uses a second level</h2>
+        <div class="body">
+          <div class="two-col">
+            <div>
+              <h3>Model the relationship, not each level</h3>
+              <p class="formula" style="font-size:27px">f<sub>high</sub>(x) = &rho; f<sub>low</sub>(x) + &delta;(x)</p>
+              <p>The cheap level carries the shape; a second GP carries the <strong>discrepancy</strong> &delta;. Only &delta; needs expensive data, and &delta; is usually far smoother than f itself &mdash; which is the entire saving.</p>
+              <p>The modern equivalent is one GP over the pair (x, s), with s the fidelity level and a kernel that multiplies a spatial part by a fidelity part, so the correlation between levels is learned rather than assumed.</p>
+            </div>
+            <div>
+              <h3>The acquisition has to know the price</h3>
+              <p>An acquisition that only asks &ldquo;where do I learn the most?&rdquo; will pick the expensive level every time, because it always does. Divide by cost, and it starts choosing <strong>where <em>and</em> at what fidelity</strong>.</p>
+              <p>Knowledge-gradient and entropy-search forms take this naturally, since both already measure information per evaluation. In BoTorch: <code>qMultiFidelityKnowledgeGradient</code>, with the fidelity as one more search dimension and a cost model attached.</p>
+            </div>
+          </div>
+          <div class="verdict">The fidelity stops being your decision and becomes part of the optimiser's.</div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Measure the correlation before you build any of this</h2>
+        <div class="body">
+          <p class="claim">Run a handful of designs at <strong>both</strong> levels and compute the rank correlation. That is a cheap experiment, and it decides whether the rest is worth doing.</p>
+          <div class="two-col">
+            <div>
+              <h3>It pays when</h3>
+              <ul>
+                <li>the cheap level <strong>ranks</strong> designs roughly as the expensive one does &mdash; agreement in value matters far less;</li>
+                <li>the cost ratio is genuinely 5&ndash;10&times; or better;</li>
+                <li>the discrepancy is smooth, so a few expensive runs pin it down.</li>
+              </ul>
+            </div>
+            <div>
+              <h3>It does not pay when</h3>
+              <ul>
+                <li>the coarse mesh is <strong>qualitatively</strong> different &mdash; separation not captured, a recirculation missing, transition in the wrong place;</li>
+                <li>a 2-D proxy for a 3-D device, which is different physics rather than cheaper physics;</li>
+                <li>&delta; turns out to be as hard to learn as f, in which case you have added a model and bought nothing.</li>
+              </ul>
+            </div>
+          </div>
+          <p class="caution" style="margin-top:12px">A cheap level that ranks designs wrongly is worse than no cheap level: it spends your expensive budget confirming the wrong candidates.</p>
+        </div>
+      </section>
+
+      <!-- ============ PART 8 ============ -->
+      <section class="divider">
+        <div class="part">Part nine</div>
         <h2>Conclusions</h2>
           <div class="roadmap">
             <span class="done">1. Why BO</span>
             <span class="done">2. CFD loop</span>
-            <span class="done">3. At a glance</span>
+            <span class="done">3. Overview</span>
             <span class="done">4. Building blocks</span>
             <span class="done">5. Bayes</span>
             <span class="done">6. Acquisition</span>
-            <span class="done">7. Many objectives</span>
-            <span class="now">8. Conclusions</span>
+            <span class="done">7. Objectives</span>
+            <span class="done">8. Fidelity</span>
+            <span class="now">9. Conclusions</span>
           </div>
       </section>
 

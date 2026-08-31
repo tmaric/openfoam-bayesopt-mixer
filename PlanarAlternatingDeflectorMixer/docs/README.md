@@ -4,7 +4,7 @@ Two standalone decks for the **Delft Workshop on Bayesian Optimization for CFD**
 
 | file | what |
 |---|---|
-| [`bayesian-optimization-cfd-theory.html`](bayesian-optimization-cfd-theory.html) | **Theory.** Gaussian distribution → multivariate Gaussian → Gaussian process → Bayes and GP conditioning → acquisition functions → multi-objective and hypervolume → PINN surrogates and concurrent workflows. |
+| [`bayesian-optimization-cfd-theory.html`](bayesian-optimization-cfd-theory.html) | **Theory.** Gaussian distribution → multivariate Gaussian → Gaussian process → Bayes and GP conditioning → acquisition functions → multi-objective BO and the hypervolume → multi-fidelity. |
 | [`bayesian-optimization-cfd-tutorial.html`](bayesian-optimization-cfd-tutorial.html) | **Hands-on.** The planar alternating-deflector micromixer end to end: the problem, the method, building it with agents, the results, a six-exercise assignment with answers, and a reproduction appendix. |
 
 ## No installation, no plugins, no build step
@@ -55,6 +55,20 @@ The URL carries the slide number (`#/23`), so any slide can be linked directly.
   observations, with the mean posterior σ falling 1.10 → 0.93 → 0.57 → 0.16.
 - **The loop running** — UCB with κ = 2 actually iterated: each panel refits the
   GP, maximises the acquisition over a grid, and samples there.
+- **MLE** — the profile log marginal likelihood against the length scale, and
+  the GP carrying the fitted values *before* conditioning, so the mean still
+  runs flat past every observation.
+- **Marginalise vs condition** — one bivariate Gaussian shown twice: projected
+  (spread unchanged) and sliced at y₂ = 1.5 (mean 1.20, sd 0.60).
+- **Weighted sums cannot reach a concave front** — a front is sampled, its lower
+  convex hull taken, and the longest hull edge locates the concave stretch; the
+  critical weight and the two jump endpoints follow from that geometry.
+- **A launch failure recorded as physics** — the same six designs with two
+  written back as the penalty value. The posterior at the true optimum goes from
+  +1.03 to −2.55 and the acquisition abandons the region.
+- **Two fidelities** — the standard multi-fidelity Forrester pair and recursive
+  co-kriging: four expensive runs alone give RMSE 0.78, the same four plus
+  eleven cheap ones give 0.34.
 - **BO vs random vs greedy** — best-so-far against evaluations spent, from three
   strategies on one function and one starting design. κ = 2 reaches the optimum
   on evaluation 8; κ = 0 stalls at 0.16 and never recovers; random search is
