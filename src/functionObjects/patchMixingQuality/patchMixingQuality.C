@@ -199,6 +199,7 @@ bool patchMixingQuality::write()
 
     const vectorField& Sf = mesh_.Sf().boundaryField()[patchi];
 
+    scalar sumArea = 0.0;
     scalar sumA = 0.0;
     scalar sumA2 = 0.0;
     scalar aMin = GREAT;
@@ -225,9 +226,11 @@ bool patchMixingQuality::write()
     forAll(aPatch, facei)
     {
         const scalar ai = aPatch[facei];
+        const scalar area = mag(Sf[facei]);
 
-        sumA += ai;
-        sumA2 += sqr(ai);
+        sumArea += area;
+        sumA += area*ai;
+        sumA2 += area*sqr(ai);
 
         aMin = min(aMin, ai);
         aMax = max(aMax, ai);
@@ -251,6 +254,7 @@ bool patchMixingQuality::write()
         sumWA2 += wi*sqr(ai);
     }
 
+    reduce(sumArea, sumOp<scalar>());
     reduce(sumA, sumOp<scalar>());
     reduce(sumA2, sumOp<scalar>());
     reduce(aMin, minOp<scalar>());
@@ -260,10 +264,15 @@ bool patchMixingQuality::write()
     reduce(sumWA, sumOp<scalar>());
     reduce(sumWA2, sumOp<scalar>());
 
-    const scalar n = scalar(nFacesGlobal);
+    if (sumArea <= VSMALL)
+    {
+        WarningInFunction
+            << "Patch '" << patchName_ << "' has negligible area." << nl;
+        return true;
+    }
 
-    const scalar meanA = sumA/n;
-    const scalar varA = max(sumA2/n - sqr(meanA), scalar(0));
+    const scalar meanA = sumA/sumArea;
+    const scalar varA = max(sumA2/sumArea - sqr(meanA), scalar(0));
     const scalar sigmaA = sqrt(varA);
 
     const scalar covRefMean = (meanMode_ == "fromInletRatio") ? aMean_ : meanA;
@@ -324,7 +333,7 @@ bool patchMixingQuality::write()
     {
         forAll(aPatch, facei)
         {
-            sumAbsDev += mag(aPatch[facei] - covRefMean);
+            sumAbsDev += mag(Sf[facei])*mag(aPatch[facei] - covRefMean);
         }
         reduce(sumAbsDev, sumOp<scalar>());
 
@@ -335,7 +344,7 @@ bool patchMixingQuality::write()
             epsilon_
         );
 
-        delta = safeDiv(sumAbsDev/n, covRefMean, epsilon_);
+        delta = safeDiv(sumAbsDev/sumArea, covRefMean, epsilon_);
     }
 
     const tmp<surfaceScalarField> tDeltaX = Foam::pow(mesh_.deltaCoeffs(), -1.0);
