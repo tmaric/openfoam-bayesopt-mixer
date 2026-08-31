@@ -71,7 +71,15 @@ sync.ffs_db
 .snakemake/
 
 # Reproducible micromixer runtime products
-PlanarAlternatingDeflectorMixer/results/
+# Campaign output is 3.4 GB of fields and meshes and stays out of the repository.
+# The small summaries do ship: the teaching exercises read all_samples.csv, and
+# the README quotes screening_gate.json and baseline_summary.csv.
+PlanarAlternatingDeflectorMixer/results/*
+!PlanarAlternatingDeflectorMixer/results/corrected_boundary_v3*/
+PlanarAlternatingDeflectorMixer/results/corrected_boundary_v3*/*
+!PlanarAlternatingDeflectorMixer/results/corrected_boundary_v3*/all_samples.csv
+!PlanarAlternatingDeflectorMixer/results/corrected_boundary_v3*/screening_gate.json
+!PlanarAlternatingDeflectorMixer/results/corrected_boundary_v3*/baseline_summary.csv
 PlanarAlternatingDeflectorMixer/FlowCase/constant/triSurface/geometry_manifest.json
 
 # M10 generated geometry and multifidelity campaign products
