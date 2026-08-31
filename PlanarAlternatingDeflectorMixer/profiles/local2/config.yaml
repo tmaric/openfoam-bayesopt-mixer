@@ -1,0 +1,18 @@
+# LOCAL profile, ONE case at a time.
+#
+#   --profile profiles/local2
+#
+# Use this when the box is shared with another session, when memory rather than
+# cores is the binding limit, or when WALL TIME IS PART OF THE RESULT: with
+# jobs > 1 two concurrent solves contend for memory bandwidth, and the slower
+# arm's wall time then measures the contention rather than the discretisation.
+#
+# On a heterogeneous CPU (Intel P+E cores) keep np small and EQUAL across the
+# designs of one campaign -- an MPI job runs at the pace of its slowest rank.
+executor: local
+cores: 2
+jobs: 1
+
+printshellcmds: true
+rerun-incomplete: true
+configfile: config/config.yaml

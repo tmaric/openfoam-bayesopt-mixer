@@ -5,13 +5,38 @@ shell.executable("/bin/bash")
 
 CASE_ROOT = Path(workflow.basedir).resolve()
 REPO_ROOT = CASE_ROOT.parent
-PYTHON_BIN = str(Path(config.get("python_bin", sys.executable)).resolve())
 
 # results_dir can be overridden per sample:
-#   snakemake --cores 2 --config results_dir=results/manual_00
+#   snakemake --workflow-profile profiles/local --config results_dir=results/manual_00
 # Default is the single-run layout used by Allrun.
 RESULTS_ROOT = Path(config.get("results_dir", str(CASE_ROOT / "results"))).resolve()
 WORKFLOW = RESULTS_ROOT / ".workflow"
+
+# ---------------------------------------------------------------------------
+# Backend-independent knobs.  Defaults live in config/config.yaml; a workflow
+# profile (profiles/local, profiles/local2, profiles/slurm) overrides them.
+# There is deliberately NO `if cluster:` anywhere below -- the executor, the MPI
+# launcher and the environment are all supplied from outside.
+# ---------------------------------------------------------------------------
+
+# MPI ranks for the two solve rules.  SINGLE SOURCE OF TRUTH: the decompose
+# rules write `numberOfSubdomains {NP}` into both decomposeParDicts, so the
+# committed dictionaries are never read and the launcher can never disagree
+# with the number of processor* directories that decomposePar produced.
+NP = int(config.get("np", 2))
+assert NP >= 1, "np must be >= 1"
+
+# `{np}` placeholder: mpirun needs an explicit rank count, srun does not because
+# a SLURM allocation already carries it.  Keeping this a format string lets one
+# mechanism serve both.  See config/config.yaml for why mpirun is correct here
+# even under SLURM (MPI is container-internal), and for the wall/CPU diagnostic.
+MPI = config.get("mpi_launcher", "mpirun -np {np}")
+MPI_PREFIX = MPI.format(np=NP) + " "
+
+# Shell preamble prepended to every rule, run under `set +eu`.
+PREAMBLE = (config.get("env_preamble") or "").strip()
+
+PYTHON_BIN = config.get("python_bin") or str(Path(sys.executable).resolve())
 
 CAD_CONFIG_NAME = "alternating_deflector_cad.yaml"
 CAD_SCRIPT_NAME = "alternating_deflector_cad.py"
@@ -51,8 +76,6 @@ SAMPLE_CONFIG = RESULTS_ROOT / CAD_CONFIG_NAME
 if SAMPLE_CONFIG.exists():
     STAGE_INPUTS.append(str(SAMPLE_CONFIG))
 
-NPROCS = max(1, int(workflow.cores))
-
 # Optional per-sample T-field PNG rendered without ParaView or OpenGL.
 # RESULTS_ROOT.name == sample ID (e.g. "00000") when invoked by the BO loop.
 SAMPLE_PNG = RESULTS_ROOT / "visualizations" / f"{RESULTS_ROOT.name}_T.png"
@@ -60,19 +83,56 @@ SAMPLE_PNG = RESULTS_ROOT / "visualizations" / f"{RESULTS_ROOT.name}_T.png"
 VISUALIZE_SAMPLE_DONE = WORKFLOW / "visualize_sample.done"
 FIELD_RENDER_SCRIPT = CASE_ROOT / "render_latest_mixing_field.py"
 
-shell.prefix(
-    "set -eo pipefail; "
-    "if ! command -v foamDictionary >/dev/null 2>&1; then "
-    "echo \"ERROR: OpenFOAM is not configured. Source its etc/bashrc first.\" >&2; "
-    "exit 1; "
-    "fi; "
-    "if [ -z \"${{WM_OPTIONS:-}}\" ]; then "
-    "echo \"ERROR: WM_OPTIONS is unset. Source the OpenFOAM environment.\" >&2; "
-    "exit 1; "
-    "fi; "
-    f"export FOAM_USER_LIBBIN=\"{REPO_ROOT}/platforms/$WM_OPTIONS/lib\"; "
-    "export LD_LIBRARY_PATH=\"$FOAM_USER_LIBBIN:$LD_LIBRARY_PATH\"; "
-)
+# Recorded so the BO driver can tell a PHYSICS failure (a design that genuinely
+# will not mesh or will not converge -- data, and correctly excluded from the
+# GP) from a LAUNCH failure (a missing binary, an unbound path, a bad container,
+# a rejected sbatch -- not data, and must never be recorded as a design result).
+FAILED_RULE = WORKFLOW / "failed_rule"
+
+def sh(rule_name, *lines):
+    """Shell body for one rule.
+
+    Order matters.  The environment preamble runs FIRST and under `set +eu`,
+    because OpenFOAM's etc/bashrc reads unset variables (WM_PROJECT_DIR among
+    them) and sourcing it under `set -u` aborts every job before it starts.
+    Only then does the OpenFOAM guard run -- checking for foamDictionary before
+    the preamble that provides it would fail every containerised rule.  The
+    rule's own commands then run strictly, under `set -e`.
+
+    The EXIT trap records which rule failed.  Nothing is swallowed: the exit
+    code still propagates, the log still lands in the case directory, and the
+    marker only adds the one fact the driver cannot otherwise recover from a
+    non-zero snakemake return.
+    """
+    pre = (PREAMBLE + "\n") if PREAMBLE else ""
+    guard = (
+        'if ! command -v foamDictionary >/dev/null 2>&1; then\n'
+        '    echo "ERROR: OpenFOAM is not configured. Source its etc/bashrc first." >&2\n'
+        '    exit 1\n'
+        'fi\n'
+        'if [ -z "${{WM_OPTIONS:-}}" ]; then\n'
+        '    echo "ERROR: WM_OPTIONS is unset. Source the OpenFOAM environment." >&2\n'
+        '    exit 1\n'
+        'fi\n'
+        f'export FOAM_USER_LIBBIN="{REPO_ROOT}/platforms/$WM_OPTIONS/lib"\n'
+        'export LD_LIBRARY_PATH="$FOAM_USER_LIBBIN:$LD_LIBRARY_PATH"\n'
+    )
+    trap = (
+        f'__padm_rule="{rule_name}"\n'
+        f'__padm_marker="{FAILED_RULE}"\n'
+        'trap \'__rc=$?; if [ "$__rc" -ne 0 ]; then '
+        'mkdir -p "$(dirname "$__padm_marker")"; '
+        'printf "%s\\t%s\\n" "$__padm_rule" "$__rc" >> "$__padm_marker"; '
+        'fi\' EXIT\n'
+    )
+    # `pipefail` is NOT decoration: every solver and mesher below is piped
+    # through `tee` to keep its log, and without it the pipeline would report
+    # tee's exit status and a crashed cartesian2DMesh or simpleFoam would be
+    # recorded as a success.
+    return "set +eu\n" + pre + guard + trap + "set -eo pipefail\n" + "\n".join(lines) + "\n"
+
+
+localrules: all, clean, visualize
 
 
 rule all:
@@ -87,16 +147,28 @@ rule all:
         str(FLOW_VALIDATION),
 
 
+# ---------------------------------------------------------------------------
+# GROUP "case_pre" -- every serial step from staging to a decomposed flow case.
+#
+# Grouping matters only on SLURM, where it turns five sbatch round-trips into
+# one.  The two solves are deliberately LEFT OUT of any group: a mixed group is
+# submitted as a single sbatch whose allocation does not reliably carry the
+# solve's rank count, and the launcher then fails with "More processors
+# requested than permitted" / "not enough slots".  Ungrouped, each solve gets
+# its own allocation sized by its own `threads`.
+# ---------------------------------------------------------------------------
+
 rule stage_template_cases:
     threads: 1
+    group: "case_pre"
     input:
         STAGE_INPUTS,
     output:
         done = str(WORKFLOW / "stage_template_cases.done"),
         yaml = str(HYDRO / CAD_CONFIG_NAME),
     shell:
+        sh("stage_template_cases",
         """
-        set -eo pipefail
         mkdir -p "{RESULTS_ROOT}" "{WORKFLOW}"
 
         rm -rf "{HYDRO}" "{MIXING}"
@@ -136,26 +208,28 @@ rule stage_template_cases:
         fi
 
         touch "{output.done}"
-        """
+        """)
 
 
 rule hydro_geometry:
     threads: 1
+    group: "case_pre"
     input:
         str(WORKFLOW / "stage_template_cases.done"),
     output:
         stl = str(HYDRO / "constant/triSurface/alternating_deflector_mixer.stl"),
         manifest = str(GEOMETRY_MANIFEST),
     shell:
+        sh("hydro_geometry",
         """
-        set -eo pipefail
         cd "{HYDRO}"
         "{PYTHON_BIN}" "{CAD_SCRIPT_NAME}" 2>&1 | tee log.alternating_deflector_cad
-        """
+        """)
 
 
 rule hydro_mesh:
     threads: 1
+    group: "case_pre"
     input:
         stl = str(HYDRO / "constant/triSurface/alternating_deflector_mixer.stl"),
         manifest = str(GEOMETRY_MANIFEST),
@@ -167,8 +241,8 @@ rule hydro_mesh:
         points = str(HYDRO / "constant/polyMesh/points"),
         report = str(MESH_VALIDATION),
     shell:
+        sh("hydro_mesh",
         """
-        set -eo pipefail
         cp "{TEMPLATE_HYDRO}/system/meshDict" "{HYDRO}/system/meshDict"
         cd "{HYDRO}"
         cartesian2DMesh 2>&1 | tee log.cartesian2DMesh
@@ -191,43 +265,65 @@ rule hydro_mesh:
             --manifest "{input.manifest}" \
             --research-config "{input.research_config}" \
             --output "{output.report}"
-        """
+        """)
 
 
 rule hydro_cell_volumes:
     threads: 1
+    group: "case_pre"
     input:
         str(HYDRO / "constant/polyMesh/boundary"),
     output:
         str(HYDRO / "0/V"),
     shell:
+        sh("hydro_cell_volumes",
         """
-        set -eo pipefail
         cd "{HYDRO}"
         postProcess -func writeCellVolumes -time 0 2>&1 | tee log.postProcess
-        """
+        """)
 
 
+# decomposePar is SERIAL -- it is the step that CREATES the parallel case, so it
+# cannot be one.  threads: 1 (it was NPROCS, which only ever reserved cores that
+# went unused).  It is also the most memory-hungry rule in the workflow: scotch
+# holds the cell connectivity graph on top of the whole mesh in one process,
+# which is why profiles/slurm gives its group the fat mem_mb_per_cpu.
 rule hydro_decompose:
-    threads: NPROCS
+    threads: 1
+    group: "case_pre"
     input:
         str(HYDRO / "0/V"),
     output:
         str(WORKFLOW / "hydro_decompose.done"),
     shell:
+        sh("hydro_decompose",
         """
-        set -eo pipefail
         mkdir -p "{WORKFLOW}"
         cd "{HYDRO}"
+        # scotch partitions the cell connectivity graph, so there are no
+        # per-direction coeffs whose product must equal np: any NP works for any
+        # 2D or 3D mesh.  numberOfSubdomains comes from NP, never from the
+        # committed dictionary.
         foamDictionary -entry method -set scotch system/decomposeParDict
-        foamDictionary -entry numberOfSubdomains -set {threads} system/decomposeParDict
+        foamDictionary -entry numberOfSubdomains -set {NP} system/decomposeParDict
         decomposePar -force 2>&1 | tee log.decomposePar
         touch "{output}"
-        """
+        """)
 
+
+# ---------------------------------------------------------------------------
+# SOLVE 1 -- the only MPI rule of the hydrodynamic stage.  UNGROUPED on purpose.
+# ---------------------------------------------------------------------------
 
 rule hydro_simpleFoam:
-    threads: NPROCS
+    threads: NP
+    resources:
+        # ONE NODE.  The ranks must share a node for the launcher to be able to
+        # create its job step; SLURM will otherwise happily satisfy the task
+        # count across two nodes and leave the batch step short of CPUs.  This
+        # MUST be the plugin's own `nodes` resource -- the executor rejects
+        # --nodes inside slurm_extra at submission time, so no job is created.
+        nodes=1,
     input:
         decomposed = str(WORKFLOW / "hydro_decompose.done"),
         verifier = str(FLOW_CONVERGENCE_VERIFIER),
@@ -236,8 +332,8 @@ rule hydro_simpleFoam:
         done    = str(WORKFLOW / "hydro_simpleFoam.done"),
         csv     = str(HYDRO / "pressureDrop.csv"),
     shell:
+        sh("hydro_simpleFoam",
         """
-        set -eo pipefail
         mkdir -p "{WORKFLOW}"
         cd "{HYDRO}"
         if grep -Eq '^topology:[[:space:]]*straight([[:space:]]|$)' "{input.geometry}"; then
@@ -246,7 +342,7 @@ rule hydro_simpleFoam:
             # and apply the dedicated pressure/Ux convergence verifier below.
             foamDictionary -entry endTime -set 600 system/controlDict
         fi
-        mpirun -np {threads} simpleFoam -parallel 2>&1 | tee log.simpleFoam
+        {MPI_PREFIX}simpleFoam -parallel 2>&1 | tee log.simpleFoam
         if [ ! -f pressureDrop.csv ] && [ -f processor0/pressureDrop.csv ]; then
             cp processor0/pressureDrop.csv pressureDrop.csv
         fi
@@ -255,27 +351,38 @@ rule hydro_simpleFoam:
             log.simpleFoam pressureDrop.csv "{input.geometry}" \
             --window 100 --min-rows 400 --pressure-span-tol 1e-7 --residual-tol 1e-5
         touch "{output.done}"
-        """
+        """)
 
+
+# ---------------------------------------------------------------------------
+# GROUP "hydro_post" -- reconstruct, validate, hand the flow field to the
+# scalar case, initialise it, decompose it.  All serial.
+#
+# Note the OpenFOAM ordering: field initialisation (setExprFields) runs BEFORE
+# decomposePar, serially, on the whole case.  That is the standard order and it
+# is also free of parallel artefacts -- no processor-boundary exchange at all.
+# ---------------------------------------------------------------------------
 
 rule hydro_reconstruct:
     threads: 1
+    group: "hydro_post"
     input:
         str(WORKFLOW / "hydro_simpleFoam.done"),
     output:
         str(WORKFLOW / "hydro_reconstruct.done"),
     shell:
+        sh("hydro_reconstruct",
         """
-        set -eo pipefail
         mkdir -p "{WORKFLOW}"
         cd "{HYDRO}"
         reconstructPar -latestTime 2>&1 | tee log.reconstructPar
         touch "{output}"
-        """
+        """)
 
 
 rule hydro_validate_flow:
     threads: 1
+    group: "hydro_post"
     input:
         reconstructed = str(WORKFLOW / "hydro_reconstruct.done"),
         manifest = str(GEOMETRY_MANIFEST),
@@ -284,18 +391,19 @@ rule hydro_validate_flow:
     output:
         str(FLOW_VALIDATION),
     shell:
+        sh("hydro_validate_flow",
         """
-        set -eo pipefail
         "{PYTHON_BIN}" "{input.validator}" \
             --case "{HYDRO}" \
             --manifest "{input.manifest}" \
             --research-config "{input.research_config}" \
             --output "{output}"
-        """
+        """)
 
 
 rule copy_hydro_to_mixing:
     threads: 1
+    group: "hydro_post"
     input:
         str(HYDRO / "pressureDrop.csv"),
         str(HYDRO / "constant/polyMesh/boundary"),
@@ -307,8 +415,8 @@ rule copy_hydro_to_mixing:
         str(MIXING / "0/phi"),
         str(WORKFLOW / "copy_hydro_to_mixing.done"),
     shell:
+        sh("copy_hydro_to_mixing",
         """
-        set -eo pipefail
         mkdir -p "{WORKFLOW}"
 
         latest_time=$(cd "{HYDRO}" && foamListTimes -latestTime)
@@ -320,45 +428,53 @@ rule copy_hydro_to_mixing:
         cp "{HYDRO}/${{latest_time}}/phi" "{MIXING}/0/phi"
 
         touch "{output[3]}"
-        """
+        """)
 
 
 rule mixing_set_expr_fields:
     threads: 1
+    group: "hydro_post"
     input:
         str(WORKFLOW / "copy_hydro_to_mixing.done"),
     output:
         str(WORKFLOW / "mixing_set_expr_fields.done"),
     shell:
+        sh("mixing_set_expr_fields",
         """
-        set -eo pipefail
         mkdir -p "{WORKFLOW}"
         cd "{MIXING}"
         setExprFields -dict system/setExprFieldsDict -time 0 2>&1 | tee log.setExprFields
         touch "{output}"
-        """
+        """)
 
 
 rule mixing_decompose:
-    threads: NPROCS
+    threads: 1
+    group: "hydro_post"
     input:
         str(WORKFLOW / "mixing_set_expr_fields.done"),
     output:
         str(WORKFLOW / "mixing_decompose.done"),
     shell:
+        sh("mixing_decompose",
         """
-        set -eo pipefail
         mkdir -p "{WORKFLOW}"
         cd "{MIXING}"
         foamDictionary -entry method -set scotch system/decomposeParDict
-        foamDictionary -entry numberOfSubdomains -set {threads} system/decomposeParDict
+        foamDictionary -entry numberOfSubdomains -set {NP} system/decomposeParDict
         decomposePar -force 2>&1 | tee log.decomposePar
         touch "{output}"
-        """
+        """)
 
+
+# ---------------------------------------------------------------------------
+# SOLVE 2 -- the only MPI rule of the scalar stage.  UNGROUPED on purpose.
+# ---------------------------------------------------------------------------
 
 rule mixing_scalar_transport:
-    threads: NPROCS
+    threads: NP
+    resources:
+        nodes=1,
     input:
         decomposed = str(WORKFLOW / "mixing_decompose.done"),
         verifier = str(CASE_ROOT / "verify_scalar_convergence.py"),
@@ -367,8 +483,8 @@ rule mixing_scalar_transport:
         done    = str(WORKFLOW / "mixing_scalar_transport.done"),
         csv     = str(MIXING / "mixing.csv"),
     shell:
+        sh("mixing_scalar_transport",
         """
-        set -eo pipefail
         mkdir -p "{WORKFLOW}"
         cd "{MIXING}"
         # Advance in bounded chunks and stop only when the objective itself is
@@ -380,7 +496,7 @@ rule mixing_scalar_transport:
         converged=0
         for target_end in 600 1200 1800 2400; do
             foamDictionary -entry endTime -set "$target_end" system/controlDict
-            mpirun -np {threads} scalarTransportFoam -parallel 2>&1 | tee -a log.scalarTransportFoam
+            {MPI_PREFIX}scalarTransportFoam -parallel 2>&1 | tee -a log.scalarTransportFoam
             if [ ! -f mixing.csv ] && [ -f processor0/mixing.csv ]; then
                 cp processor0/mixing.csv mixing.csv
             fi
@@ -397,23 +513,28 @@ rule mixing_scalar_transport:
             exit 1
         fi
         touch "{output.done}"
-        """
+        """)
 
+
+# ---------------------------------------------------------------------------
+# GROUP "case_post" -- reconstruct, render, agglomerate the objectives.
+# ---------------------------------------------------------------------------
 
 rule mixing_reconstruct:
     threads: 1
+    group: "case_post"
     input:
         str(WORKFLOW / "mixing_scalar_transport.done"),
     output:
         str(WORKFLOW / "mixing_reconstruct.done"),
     shell:
+        sh("mixing_reconstruct",
         """
-        set -eo pipefail
         mkdir -p "{WORKFLOW}"
         cd "{MIXING}"
         reconstructPar -latestTime 2>&1 | tee log.reconstructPar
         touch "{output}"
-        """
+        """)
 
 
 rule mixing_post_process:
@@ -423,20 +544,21 @@ rule mixing_post_process:
     foamlib/VTK render from the reconstructed mixing case.
     """
     threads: 1
+    group: "case_post"
     input:
         str(WORKFLOW / "mixing_reconstruct.done"),
     output:
         str(WORKFLOW / "mixing_post_process.done"),
     shell:
+        sh("mixing_post_process",
         """
-        set -eo pipefail
         mkdir -p "{WORKFLOW}"
         cd "{MIXING}"
         # Legacy path kept for reference only:
         # postProcess -func samplingPlane -latestTime 2>&1 | tee log.postProcess_samplingPlane
         echo "WARNING: legacy samplingPlane post-processing is disabled; using Python foamlib/VTK rendering instead." | tee log.postProcess_samplingPlane
         touch "{output}"
-        """
+        """)
 
 
 rule visualize_sample:
@@ -445,14 +567,15 @@ rule visualize_sample:
     Rendering is deliberately non-fatal because the PNG is not a BO objective.
     """
     threads: 1
+    group: "case_post"
     input:
         str(WORKFLOW / "mixing_post_process.done"),
         foam = MIXING_FOAM,
     output:
         str(VISUALIZE_SAMPLE_DONE),
     shell:
+        sh("visualize_sample",
         """
-        set -eo pipefail
         mkdir -p "{WORKFLOW}" "{RESULTS_ROOT}/visualizations"
         rm -f "{RESULTS_ROOT}/visualizations/visualization.warning.log"
         if ! "{PYTHON_BIN}" "{FIELD_RENDER_SCRIPT}" \
@@ -463,8 +586,54 @@ rule visualize_sample:
             rm -f "{SAMPLE_PNG}"
         fi
         touch "{output}"
-        """
+        """)
 
+
+rule create_foam_files:
+    threads: 1
+    group: "case_post"
+    input:
+        str(HYDRO / "pressureDrop.csv"),
+        str(MIXING / "mixing.csv"),
+    output:
+        HYDRO_FOAM,
+        MIXING_FOAM,
+    shell:
+        sh("create_foam_files",
+        """
+        touch "{HYDRO_FOAM}"
+        touch "{MIXING_FOAM}"
+        """)
+
+
+rule agglomerate:
+    threads: 1
+    group: "case_post"
+    input:
+        yaml    = str(HYDRO / CAD_CONFIG_NAME),
+        pdrop   = str(HYDRO / "pressureDrop.csv"),
+        mixing  = str(MIXING / "mixing.csv"),
+        flow_validation = str(FLOW_VALIDATION),
+        research_config = str(RESEARCH_CONFIG),
+    output:
+        str(RESULTS_ROOT / "objectives.csv"),
+    shell:
+        sh("agglomerate",
+        """
+        "{PYTHON_BIN}" "{CASE_ROOT}/postprocessing_agglomeration.py" \
+            --yaml        "{input.yaml}"   \
+            --pdrop       "{input.pdrop}"  \
+            --mixing      "{input.mixing}" \
+            --flow-validation "{input.flow_validation}" \
+            --research-config "{input.research_config}" \
+            --output      "{output}"       \
+            --results-dir "{RESULTS_ROOT}"
+        """)
+
+
+# ---------------------------------------------------------------------------
+# Campaign-level targets (never part of a single design's DAG).
+# ---------------------------------------------------------------------------
 
 rule visualize:
     """Build the animated Pareto-front movie from all completed samples.
@@ -475,7 +644,7 @@ rule visualize:
       pareto_animation.mp4   — produced when ffmpeg is available
 
     Run after all BO samples are complete:
-        snakemake --cores 1 visualize
+        snakemake --workflow-profile profiles/local visualize
     """
     threads: 1
     input:
@@ -483,51 +652,14 @@ rule visualize:
     output:
         str(RESULTS_ROOT / "visualizations" / "pareto_animation.gif"),
     shell:
+        # Not sh(): this is matplotlib and Pillow only, so gating it on a sourced
+        # OpenFOAM would make plotting a finished campaign impossible from a
+        # plain shell.
         """
         set -eo pipefail
         "{PYTHON_BIN}" "{CASE_ROOT}/visualize_results.py" \
             --results-dir "{RESULTS_ROOT}" \
             --output-dir  "{RESULTS_ROOT}/visualizations"
-        """
-
-
-rule create_foam_files:
-    threads: 1
-    input:
-        str(HYDRO / "pressureDrop.csv"),
-        str(MIXING / "mixing.csv"),
-    output:
-        HYDRO_FOAM,
-        MIXING_FOAM,
-    shell:
-        """
-        set -eo pipefail
-        touch "{HYDRO_FOAM}"
-        touch "{MIXING_FOAM}"
-        """
-
-
-rule agglomerate:
-    threads: 1
-    input:
-        yaml    = str(HYDRO / CAD_CONFIG_NAME),
-        pdrop   = str(HYDRO / "pressureDrop.csv"),
-        mixing  = str(MIXING / "mixing.csv"),
-        flow_validation = str(FLOW_VALIDATION),
-        research_config = str(RESEARCH_CONFIG),
-    output:
-        str(RESULTS_ROOT / "objectives.csv"),
-    shell:
-        """
-        set -eo pipefail
-        "{PYTHON_BIN}" "{CASE_ROOT}/postprocessing_agglomeration.py" \
-            --yaml        "{input.yaml}"   \
-            --pdrop       "{input.pdrop}"  \
-            --mixing      "{input.mixing}" \
-            --flow-validation "{input.flow_validation}" \
-            --research-config "{input.research_config}" \
-            --output      "{output}"       \
-            --results-dir "{RESULTS_ROOT}"
         """
 
 

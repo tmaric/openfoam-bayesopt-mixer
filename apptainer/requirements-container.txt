@@ -1,0 +1,37 @@
+# Pinned Python environment for the Apptainer image.
+#
+# WHY PINS AND NOT THE RANGES IN PlanarAlternatingDeflectorMixer/requirements.txt:
+# the image is the reproducibility boundary of this study.  cadquery in
+# particular is not an incidental dependency -- it GENERATES THE GEOMETRY, so a
+# different minor version can produce a different STL, a different mesh and
+# therefore different objectives, with nothing in the output to say why.  These
+# are the versions the corrected campaign was produced with locally.
+#
+# To refresh: bump here, rebuild, and re-run Verification step 3 (compare one
+# design against an archived sample) before trusting any new number.
+
+PyYAML==6.0.3
+cadquery==2.7.0
+foamlib==1.5.5
+vtk==9.3.1
+numpy==2.4.2
+scipy==1.17.1
+matplotlib==3.10.8
+Pillow==12.1.1
+
+# CPU-only torch: the campaign is torch_threads=1 on CPU by design, and the
+# CUDA wheels would add several GB to the image for nothing.
+torch==2.10.0
+botorch==0.17.2
+gpytorch==1.15.2
+
+# The workflow engine runs inside the image on both backends.
+snakemake==9.23.1
+
+# Not used by the current design -- the driver submits one sbatch per design
+# itself rather than going through snakemake's SLURM executor (see
+# PlanarAlternatingDeflectorMixer/CLUSTER.md for why that executor cannot be
+# driven from inside a container).  Kept because it is small and because it is
+# the one thing a per-rule backend would need if the driver ever moves out of
+# the image.
+snakemake-executor-plugin-slurm

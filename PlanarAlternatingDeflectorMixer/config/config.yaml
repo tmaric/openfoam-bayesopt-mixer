@@ -1,0 +1,55 @@
+# Base configuration shared by every Snakemake profile.
+#
+# A profile (profiles/local, profiles/local2, profiles/slurm) selects the
+# EXECUTOR and may OVERRIDE any key below through its own `config:` block.  The
+# Snakefile itself contains no backend conditionals: switching between the
+# laptop, a cluster login node and SLURM compute nodes is a change of
+# --workflow-profile and nothing else.
+#
+#   snakemake --workflow-profile profiles/local  ...
+#   snakemake --workflow-profile profiles/slurm  ...
+
+# MPI ranks used by the two solve rules (hydro_simpleFoam,
+# mixing_scalar_transport).  SINGLE SOURCE OF TRUTH: the Snakefile writes
+# `numberOfSubdomains {np}` into both decomposeParDicts at run time, so the
+# committed dictionaries are never read and the launcher and the decomposition
+# can never disagree.
+np: 2
+
+# MPI launcher.  The `{np}` placeholder is substituted by the Snakefile.
+#
+# This stays `mpirun` in BOTH profiles because MPI is CONTAINER-INTERNAL:
+#
+#     sbatch job (host) -> apptainer exec padm.sif -> mpirun -np {np} solver -parallel
+#
+# so the ranks are never launched by SLURM inside a nested one-task jobstep.
+# That nesting is what forces `srun --ntasks={np} --overlap --cpu-bind=none`
+# elsewhere, and what silently costs a factor of ~11000 when --cpu-bind=none is
+# forgotten.  The hybrid form is still reachable as a one-line profile override
+# if a site's mpirun cannot see the jobstep's cpuset:
+#
+#   mpi_launcher: "srun --ntasks={np} --overlap --cpu-bind=none"
+#
+# THE DIAGNOSTIC APPLIES EITHER WAY.  OpenFOAM prints ExecutionTime (CPU) and
+# ClockTime (wall) every step: wall/CPU ~= 1 means the ranks have their own
+# cores, wall/CPU ~= np means they are all sharing one and there will be NO
+# error message.  Check it on the first parallel job in any new environment.
+mpi_launcher: "mpirun -np {np}"
+
+# Shell preamble prepended to every rule body, run under `set +eu` because
+# OpenFOAM's etc/bashrc reads unset variables and would abort under `set -u`.
+# Empty by default: inside the Apptainer image OpenFOAM is already configured by
+# the image's %environment, and in a native shell the user has sourced it.
+env_preamble: ""
+
+# Python interpreter used by the rules that call the study's own scripts.
+# Resolved inside the EXECUTION environment, not the caller's -- which is why it
+# is a bare name and not a path: inside the image `python3` is /opt/venv/bin/python3.
+#
+# NOTE ON CONTAINERS.  There is deliberately no `container:` key here and no
+# `container:` directive in the Snakefile.  Snakemake never enters the image:
+# with profiles/local you are already inside it, and with profiles/slurm the
+# per-design job script runs `apptainer exec` before snakemake starts.  See
+# CLUSTER.md for why snakemake's own apptainer + SLURM deployment cannot be used
+# when the driver itself runs inside the image.
+python_bin: "python3"

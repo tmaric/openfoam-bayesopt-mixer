@@ -85,9 +85,23 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("status", "next", "optimization"))
     parser.add_argument("--max-new-evaluations", type=int, default=1)
-    parser.add_argument("--cores", type=int, choices=(1, 2), default=2)
+    parser.add_argument(
+        "--np", type=int, default=2, help="MPI ranks per CFD solve (default 2)"
+    )
+    parser.add_argument(
+        "--cores", type=int, default=None,
+        help="deprecated alias for --np, kept so archived commands still run",
+    )
+    parser.add_argument(
+        "--profile", default=None,
+        help="Snakemake workflow profile directory selecting the execution "
+             "backend: profiles/local (laptop or a cluster login node, inside "
+             "the Apptainer image) or profiles/slurm (compute nodes). "
+             "Default $PADM_SNAKEMAKE_PROFILE, else profiles/local.",
+    )
     parser.add_argument("--override-screening-gate", action="store_true")
     args = parser.parse_args()
+    np_ = args.cores if args.cores is not None else args.np
     if args.max_new_evaluations < 1:
         raise ValueError("--max-new-evaluations must be positive")
 
@@ -104,9 +118,11 @@ def main() -> None:
             str(CASE_ROOT / "run_baselines.py"),
             "--max-new-evaluations",
             str(args.max_new_evaluations),
-            "--cores",
-            str(args.cores),
+            "--np",
+            str(np_),
         ]
+        if args.profile:
+            command += ["--profile", args.profile]
     else:
         stage = "optimization" if args.command == "optimization" else "screening"
         command = [
@@ -119,6 +135,8 @@ def main() -> None:
         ]
         if args.override_screening_gate:
             command.append("--override-screening-gate")
+        if args.profile:
+            command += ["--profile", args.profile]
     print("[sequence] launching one strictly sequential bounded action")
     subprocess.run(command, check=True)
 

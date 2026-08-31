@@ -106,14 +106,45 @@ as a substitute for objective stability.
 
 ## Run from any clone location
 
+Everything the study needs -- OpenFOAM v2512, cfMesh (`cartesian2DMesh`, which
+is **not** part of a stock OpenFOAM install), CadQuery, BoTorch, Snakemake -- is
+in one Apptainer image, so a clone plus the image is a complete environment.
+
 ```bash
-source /path/to/OpenFOAM-v2506/etc/bashrc
 cd /path/to/openfoam-bayesopt-mixer
-./Allwmake
+./apptainer/build.sh                 # or --remote to build on the cluster
+
+# the study's OpenFOAM function objects must be built IN this environment:
+# they are dlopen'ed by the container's OpenFOAM and produce both objectives
+apptainer exec --bind "$PWD" apptainer/padm.sif bash -c "./Allwclean && ./Allwmake"
+
 cd PlanarAlternatingDeflectorMixer
-export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
-python research_sequence.py next --max-new-evaluations 1
+apptainer exec --bind "$PWD/.." ../apptainer/padm.sif \
+    python3 research_sequence.py next --max-new-evaluations 1 \
+        --profile profiles/local
 ```
+
+Without the container, source an OpenFOAM `etc/bashrc` that has cfMesh built
+into its `FOAM_USER_APPBIN`, run `./Allwmake`, then invoke
+`research_sequence.py` directly; the thread-pinning the image sets for you is
+`export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1`.
+
+### Choosing where the work runs
+
+The backend is a profile, and nothing else changes:
+
+| `--profile` | where |
+|---|---|
+| `profiles/local` | laptop, workstation, or a cluster **login node** |
+| `profiles/local2` | as above but one design at a time (shared box; or when wall time is part of the result) |
+| `profiles/slurm` | cluster **compute nodes**, one sbatch per design |
+
+`--np` sets the MPI ranks per CFD solve (default 2). Keep it EQUAL across the
+designs of one campaign: an MPI job runs at the pace of its slowest rank, so a
+varying `np` makes designs incomparable.
+
+See `CLUSTER.md` for the SLURM path, the bind list, and the one diagnostic that
+outranks the rest (`ClockTime/ExecutionTime` must be ~1, never ~np).
 
 All stored paths are clone-relative. Corrected results are written below
 `results/corrected_boundary_v3_baselines/` and

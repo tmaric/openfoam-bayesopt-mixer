@@ -1,0 +1,30 @@
+# LOCAL profile -- laptop, workstation, or a cluster LOGIN NODE.
+#
+#   apptainer exec --bind "$PWD/.." ../apptainer/padm.sif \
+#       python3 research_sequence.py next --max-new-evaluations 1 \
+#           --profile profiles/local
+#
+# Snakemake never enters the image itself.  With this profile you are ALREADY
+# inside it (or in a natively sourced OpenFOAM shell); with profiles/slurm the
+# per-design job script runs `apptainer exec` before snakemake starts.  Hence no
+# `container:` directive and no software-deployment settings anywhere.
+executor: local
+
+# `cores` is the whole budget, and it is what bounds concurrency.  The two solve
+# rules declare `threads: np`, so concurrent solves are capped at floor(cores/np)
+# for ANY np -- np=2 -> 4 solves, np=8 -> 1.  The box is never oversubscribed
+# regardless of what a campaign config sets, which is why plain Snakemake
+# suffices with no launcher script.
+#
+# `threads` and not `resources: tasks=` is deliberate: the SLURM executor maps
+# threads to --cpus-per-task, which is exactly what container-internal MPI needs
+# (one task, np CPUs, mpirun inside).  One declaration serves both backends.
+#
+# For a memory-bound run, override without editing anything:
+#   snakemake --workflow-profile profiles/local --cores 2
+cores: 8
+jobs: 4
+
+printshellcmds: true
+rerun-incomplete: true
+configfile: config/config.yaml

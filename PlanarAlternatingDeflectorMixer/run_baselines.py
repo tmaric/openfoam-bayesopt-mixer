@@ -7,11 +7,11 @@ import argparse
 import csv
 import math
 import shutil
-import subprocess
-import sys
 from pathlib import Path
 
 import yaml
+
+import padm_runner
 
 
 CASE_ROOT = Path(__file__).resolve().parent
@@ -29,25 +29,24 @@ def _read_single_row(path: Path) -> dict:
     return rows[0]
 
 
-def _run_case(name: str, cores: int) -> None:
+def _run_case(name: str, np_: int, profile_dir: Path) -> None:
     source = BASELINE_CONFIG_DIR / f"{name}.yaml"
     sample_dir = RESULTS_ROOT / name
     sample_dir.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(source, sample_dir / CAD_CONFIG_NAME)
-    command = [
-        "snakemake",
-        "--snakefile",
-        str(CASE_ROOT / "Snakefile"),
-        "--directory",
-        str(sample_dir),
-        "--cores",
-        str(cores),
-        "--config",
-        f"results_dir={sample_dir}",
-        f"python_bin={Path(sys.executable).resolve()}",
-    ]
-    print(f"[baseline] running {name} (strictly sequential, {cores} CFD ranks)")
-    subprocess.run(command, check=True)
+    print(
+        f"[baseline] running {name} (strictly sequential, {np_} CFD ranks, "
+        f"profile {profile_dir.name})"
+    )
+    result = padm_runner.run_design(sample_dir, np_, profile_dir)
+    if result.returncode != 0:
+        kind, why = padm_runner.classify_failure(sample_dir)
+        # A baseline is a reference measurement, so unlike a BO design neither
+        # kind of failure may be absorbed -- but they are still reported apart,
+        # because they call for completely different fixes.
+        raise (padm_runner.LaunchFailure if kind == "launch" else RuntimeError)(
+            f"baseline {name} failed ({kind}): {why}"
+        )
 
 
 def _write_summary() -> list[dict]:
@@ -130,20 +129,34 @@ def _write_summary() -> list[dict]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--max-new-evaluations", type=int, default=1)
-    parser.add_argument("--cores", type=int, choices=(1, 2), default=2)
+    parser.add_argument(
+        "--np", type=int, default=2, help="MPI ranks per CFD solve (default 2)"
+    )
+    parser.add_argument(
+        "--cores", type=int, default=None,
+        help="deprecated alias for --np, kept so archived commands still run",
+    )
+    parser.add_argument(
+        "--profile", default=None,
+        help="Snakemake workflow profile directory "
+             "(default $PADM_SNAKEMAKE_PROFILE, else profiles/local)",
+    )
     parser.add_argument("--summary-only", action="store_true")
     args = parser.parse_args()
     if args.max_new_evaluations < 1:
         raise ValueError("--max-new-evaluations must be positive")
+    np_ = args.cores if args.cores is not None else args.np
 
     if not args.summary_only:
+        profile_dir = padm_runner.resolve_profile(args.profile)
+        padm_runner.preflight(profile_dir)
         launched = 0
         for name in ORDER:
             if (RESULTS_ROOT / name / "objectives.csv").exists():
                 continue
             if launched >= args.max_new_evaluations:
                 break
-            _run_case(name, args.cores)
+            _run_case(name, np_, profile_dir)
             launched += 1
     rows = _write_summary()
     completed = {row["baseline"] for row in rows}

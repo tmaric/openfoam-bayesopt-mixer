@@ -14,12 +14,12 @@ model_file: gp_checkpoint.pt
 screening_n_init: 12
 n_init: 32
 n_bo:   80
-cores:  2
+np:     2      # MPI ranks per CFD solve; `cores` is accepted as a deprecated alias
 torch_threads: 1
 sobol_seed: 20260725
 
 # Sequential BO is intentional. Parallel CFD ranks are controlled separately
-# by cores above; the acquisition must continue to propose one design at a time.
+# by np above; the acquisition must continue to propose one design at a time.
 q: 1
 
 acquisition:

@@ -1,0 +1,43 @@
+# SLURM profile -- Lichtenberg (TU Darmstadt).  See CLUSTER.md.
+#
+#   --profile profiles/slurm
+#
+# READ THIS BEFORE BEING SURPRISED BY `executor: local` BELOW.
+#
+# With this profile the driver submits ONE sbatch job per design, and that job
+# runs the design's whole DAG inside the container on a compute node.  The
+# allocation is described by the sibling file `sbatch.yaml`, whose mere presence
+# is what switches padm_runner from running snakemake inline to submitting it.
+# THIS file is the snakemake profile used INSIDE that job -- by which point we
+# are already on the compute node and already in the container, so the executor
+# is local and no software deployment is needed.
+#
+# WHY NOT snakemake's own SLURM executor, one job per rule group?  Because it is
+# incompatible with running the driver inside the image, which is what
+# "Apptainer everywhere" means here.  MEASURED: the executor writes its own
+# `sys.executable` into every generated job script, and inside the container
+# that is /opt/venv/bin/python3.  The job script is then executed by slurmd on
+# the compute node OUTSIDE any container, and dies immediately with
+#
+#     /var/spool/slurmd/job54434597/slurm_script: line 4:
+#         /opt/venv/bin/python3: No such file or directory
+#
+# The path simply does not exist out there, and the plugin offers no hook to
+# override the interpreter.  Using it would require snakemake, its SLURM plugin,
+# torch and botorch installed natively on the cluster -- the native install this
+# design exists to avoid.  Grouping and per-rule resources were verified working
+# before this was hit (the generated job was named
+# `group_case_pre_hydro_cell_volumes_hydro_decompose_hydro_geometry_hydro_mesh_stage_template_cases`),
+# so the groups in the Snakefile are still exactly right; they now share one
+# allocation per design instead of getting one each.
+executor: local
+
+# Bounds concurrency INSIDE one design's allocation.  The two solve rules
+# declare `threads: np`, everything else `threads: 1`, and the DAG for a single
+# design is a chain -- so this only needs to be >= np.
+cores: 8
+jobs: 4
+
+printshellcmds: true
+rerun-incomplete: true
+configfile: config/config.yaml

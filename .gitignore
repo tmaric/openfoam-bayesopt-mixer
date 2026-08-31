@@ -32,6 +32,15 @@ PlanarAlternatingDeflectorMixer/FlowCase/0/*
 PlanarAlternatingDeflectorMixer/ScalarTransportCase/0/*
 !PlanarAlternatingDeflectorMixer/ScalarTransportCase/0/T
 
+# Keep the canonical M10 initial conditions; ignore generated later times.
+!TwoLayerSerpentineCrossingMixer/FlowCase/0/
+TwoLayerSerpentineCrossingMixer/FlowCase/0/*
+!TwoLayerSerpentineCrossingMixer/FlowCase/0/U
+!TwoLayerSerpentineCrossingMixer/FlowCase/0/p
+!TwoLayerSerpentineCrossingMixer/ScalarTransportCase/0/
+TwoLayerSerpentineCrossingMixer/ScalarTransportCase/0/*
+!TwoLayerSerpentineCrossingMixer/ScalarTransportCase/0/T
+
 # Mesh and geometry
 *.stl
 *.msh
@@ -65,5 +74,22 @@ sync.ffs_db
 PlanarAlternatingDeflectorMixer/results/
 PlanarAlternatingDeflectorMixer/FlowCase/constant/triSurface/geometry_manifest.json
 
+# M10 generated geometry and multifidelity campaign products
+TwoLayerSerpentineCrossingMixer/generated/
+TwoLayerSerpentineCrossingMixer/results/
+
 # Model files
 *.pt
+
+# Apptainer images are build products, not source.
+apptainer/*.sif
+*.sif
+
+# Orchestrator job ids recorded by run-bo.sbatch (see CLUSTER.md).
+.padm_jobs
+
+# wmake build artifacts. $WM_OPTIONS is linux64GccDPInt32Opt for EVERY
+# OpenFOAM version, so a stale tree from another version looks current and is
+# not -- see Allwclean in apptainer/README.md.
+src/functionObjects/Make/linux*/
+src/**/lnInclude/

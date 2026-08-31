@@ -1,0 +1,33 @@
+# Allocation for ONE design.  The presence of this file next to config.yaml is
+# what makes padm_runner submit rather than run inline -- profiles/local has no
+# sbatch.yaml and therefore runs the DAG in the calling process.
+#
+# Lichtenberg's job_submit plugin REQUIRES --mem-per-cpu on every job and
+# auto-routes the partition from the runtime, so mem_mb_per_cpu is mandatory and
+# runtime must NOT be padded: an oversized limit can route the job to a slower
+# partition and holds the allocation long after a diverged solve has stopped
+# producing steps.
+account: special00004
+
+# ONE node, one task, np CPUs.  One task with np CPUs (rather than np tasks) is
+# what lets `mpirun -np {np}` inside the container see np slots in the job's
+# cpuset without any srun nesting -- see CLUSTER.md on the wall/CPU diagnostic.
+# cpus_per_task is filled in from `np` at submission time.
+nodes: 1
+
+# Sized by the FATTEST rule in the design, because they all share this one
+# allocation: a scotch decomposePar holds the cell connectivity graph on top of
+# the whole mesh in a single process, and reconstructPar merges np processor
+# meshes plus every written time.  At ~150k cells this is generous.
+mem_mb_per_cpu: 8000
+
+# Whole design: mesh + up to 600 flow iterations + up to 2400 scalar iterations.
+# MEASURED on a Lichtenberg login node, np=2, straight baseline: ~11 min total.
+runtime_minutes: 480
+
+job_name: padm-design
+image: apptainer/padm.sif          # relative paths resolve against the repo root
+binds:
+  - /work/scratch/tm83tomy
+# Extra raw sbatch directives, one per line, without the leading "#SBATCH ".
+extra_directives: []

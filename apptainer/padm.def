@@ -1,0 +1,188 @@
+Bootstrap: docker
+From: ubuntu:24.04
+
+# =============================================================================
+# Apptainer image for the PlanarAlternatingDeflectorMixer Bayesian-optimisation
+# study.  It carries EVERYTHING the campaign needs:
+#
+#   OpenFOAM v2512      simpleFoam, scalarTransportFoam, setExprFields, ...
+#   cfMesh              cartesian2DMesh -- NOT part of a stock OpenFOAM install,
+#                       built from source below
+#   CadQuery            the geometry generator (see requirements-container.txt
+#                       for why its version is pinned)
+#   BoTorch/GPyTorch    the optimiser
+#   Snakemake           the workflow engine, so the whole driver -- BO loop and
+#                       DAG -- runs INSIDE the image on every backend
+#
+# The image deliberately contains NO study data.  Bind the repository in:
+#
+#   apptainer exec --bind "$PWD" apptainer/padm.sif \
+#       python3 research_sequence.py next --max-new-evaluations 1 \
+#           --profile profiles/local
+#
+# BUILD: see apptainer/build.sh.  An unprivileged build needs newuidmap/newgidmap
+# (Ubuntu package `uidmap`) or a setuid apptainer installation; build.sh checks
+# and tells you which path you have.
+#
+# MPI IS CONTAINER-INTERNAL.  mpirun lives here, ranks are launched here, and
+# nothing outside has to be ABI-compatible with it.  On SLURM the solve rule
+# asks for `threads: np` -> --cpus-per-task=np on one node, and mpirun runs
+# inside that one task.  Verify once per new machine with the wall/CPU ratio
+# from any solver log: ClockTime/ExecutionTime ~= 1 is right, ~= np means all
+# the ranks are sharing a single core and there will be NO error message.
+# =============================================================================
+
+%files
+    apptainer/requirements-container.txt /opt/requirements-container.txt
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+
+    OF_VERSION=2512
+    OF_DIR="/usr/lib/openfoam/openfoam${OF_VERSION}"
+
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates curl gnupg git \
+        build-essential cmake \
+        python3 python3-pip python3-venv \
+        libgl1 libglu1-mesa libxrender1 libxcursor1 libxft2 libxinerama1 \
+        libsm6 libice6 libxext6 libxi6 libfontconfig1 libfreetype6 \
+        procps rsync less vim-tiny
+
+    # ---------------------------------------------------------------- OpenFOAM
+    # The -dev metapackage pulls flex, scotch, ptscotch, boost, cgal, fftw and
+    # mpi-default-dev, which is exactly the toolchain cfMesh needs below.
+    # NOT `curl ... | bash`: /bin/sh here is dash, which has no pipefail, so a
+    # failed download would feed an empty script to a shell that exits 0 and the
+    # build would carry on without the repository.
+    curl -fsSL -o /tmp/add-openfoam-repo.sh https://dl.openfoam.com/add-debian-repo.sh
+    sh /tmp/add-openfoam-repo.sh
+    rm -f /tmp/add-openfoam-repo.sh
+    apt-get install -y --no-install-recommends "openfoam${OF_VERSION}-default"
+    test -f "${OF_DIR}/etc/bashrc"
+
+    # ------------------------------------------------------------------ cfMesh
+    # cartesian2DMesh is NOT shipped by any OpenFOAM release or package: the
+    # `modules/` tree of v2512 contains only adios, external-solver,
+    # visualization and doc.  Build the maintained ESI integration fork.
+    #
+    # CRITICAL: it must NOT land in FOAM_USER_APPBIN
+    # ($HOME/OpenFOAM/$USER-v2512/...), because $HOME is bind-mounted from the
+    # HOST at run time and anything installed there during the build simply
+    # disappears.  Everything goes into the image's own platform directory.
+    set +eux
+    . "${OF_DIR}/etc/bashrc"
+    set -eux
+    test -n "${WM_OPTIONS:-}"
+
+    export FOAM_MODULE_PREFIX="${OF_DIR}/platforms/${WM_OPTIONS}"
+    git clone --depth 1 --branch develop \
+        https://develop.openfoam.com/Community/integration-cfmesh.git /tmp/cfmesh
+    cd /tmp/cfmesh
+    if ! ./Allwmake -j "$(nproc)" > /tmp/cfmesh-build.log 2>&1; then
+        echo "--- cfMesh Allwmake FAILED, last 80 lines:"
+        tail -80 /tmp/cfmesh-build.log
+        exit 1
+    fi
+    tail -15 /tmp/cfmesh-build.log
+
+    # Allwmake's install target has moved between releases, so do not trust it:
+    # find what was built and put it where the OpenFOAM environment looks.
+    for exe in cartesian2DMesh cartesianMesh tetMesh pMesh; do
+        if [ ! -x "${FOAM_APPBIN}/${exe}" ]; then
+            found=$(find /tmp/cfmesh /root -type f -name "${exe}" -perm -u+x 2>/dev/null | head -1 || true)
+            if [ -n "${found}" ]; then install -m 0755 "${found}" "${FOAM_APPBIN}/${exe}"; fi
+        fi
+    done
+    find /tmp/cfmesh /root -type f -name 'libmeshLibrary*.so' 2>/dev/null \
+        -exec install -m 0755 {} "${FOAM_LIBBIN}/" \; || true
+
+    # Fail the BUILD, not a campaign three hours in.
+    command -v cartesian2DMesh >/dev/null 2>&1 \
+        || { echo "FATAL: cfMesh build did not produce cartesian2DMesh"; exit 1; }
+    cd /
+    rm -rf /tmp/cfmesh
+
+    # ------------------------------------------------------------------ Python
+    python3 -m venv /opt/venv
+    /opt/venv/bin/pip install --no-cache-dir --upgrade pip wheel
+    # torch FIRST and from the CPU index only.  --extra-index-url would leave pip
+    # free to prefer PyPI's default build, which is the multi-GB CUDA one, for a
+    # campaign that is torch_threads=1 on CPU by design.
+    torch_pin=$(grep -E '^torch==' /opt/requirements-container.txt)
+    /opt/venv/bin/pip install --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu "${torch_pin}"
+    /opt/venv/bin/pip install --no-cache-dir -r /opt/requirements-container.txt
+    /opt/venv/bin/python -c "import torch; assert not torch.version.cuda, torch.__version__"
+
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+
+%environment
+    # OpenFOAM's etc/bashrc reads unset variables (WM_PROJECT_DIR among them),
+    # so it must be sourced with `set -u` OFF or every container start aborts.
+    set +eu
+    . /usr/lib/openfoam/openfoam2512/etc/bashrc
+
+    export PATH="/opt/venv/bin:$PATH"
+
+    # The campaign is strictly sequential and single-threaded in torch by
+    # design; letting BLAS spin up threads underneath it only fights the MPI
+    # ranks for cores.
+    export OMP_NUM_THREADS=1
+    export MKL_NUM_THREADS=1
+    export OPENBLAS_NUM_THREADS=1
+
+    # OpenMPI as root-in-container and in a cpuset it does not own.
+    export OMPI_MCA_rmaps_base_oversubscribe=1
+    export OMPI_ALLOW_RUN_AS_ROOT=1
+    export OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
+
+%runscript
+    exec "$@"
+
+%test
+    set +eu
+    . /usr/lib/openfoam/openfoam2512/etc/bashrc
+    set -e
+    export PATH="/opt/venv/bin:$PATH"
+
+    echo "--- OpenFOAM ${WM_PROJECT_VERSION} (${WM_OPTIONS})"
+    for exe in cartesian2DMesh simpleFoam scalarTransportFoam setExprFields \
+               foamDictionary decomposePar reconstructPar checkMesh \
+               postProcess foamListTimes mpirun; do
+        command -v "$exe" >/dev/null 2>&1 || { echo "MISSING: $exe"; exit 1; }
+        echo "  ok  $exe"
+    done
+
+    echo "--- Python"
+    python3 - <<'PY'
+import importlib.metadata as md
+for pkg in ("cadquery", "torch", "botorch", "gpytorch",
+            "vtk", "foamlib", "PyYAML", "numpy", "snakemake"):
+    print(f"  ok  {pkg}=={md.version(pkg)}")
+import cadquery, torch, botorch, vtk, foamlib, yaml  # noqa: F401
+import snakemake_executor_plugin_slurm  # noqa: F401
+print("  ok  snakemake slurm executor plugin")
+PY
+    echo "IMAGE OK"
+
+%labels
+    Study PlanarAlternatingDeflectorMixer
+    OpenFOAM v2512
+    Mesher cfMesh (cartesian2DMesh)
+
+%help
+    Self-contained environment for the PADM Bayesian-optimisation study.
+
+      # one design, locally, in this image
+      apptainer exec --bind "$PWD" padm.sif \
+          python3 research_sequence.py next --max-new-evaluations 1 \
+              --profile profiles/local
+
+      # build the study's OpenFOAM function-object library IN this environment
+      apptainer exec --bind "$PWD" padm.sif ./Allwmake
+
+    See PlanarAlternatingDeflectorMixer/CLUSTER.md for the SLURM path.

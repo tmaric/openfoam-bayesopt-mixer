@@ -31,6 +31,8 @@ from pathlib import Path
 import torch
 import yaml
 
+import padm_runner
+
 torch.set_default_dtype(torch.float64)
 
 # ---------------------------------------------------------------------------
@@ -46,7 +48,9 @@ with open(CFG_PATH) as _f:
 SCREENING_N_INIT = int(CFG["screening_n_init"])
 N_INIT = int(CFG["n_init"])
 N_BO = int(CFG["n_bo"])
-CORES = int(CFG["cores"])
+# MPI ranks per CFD solve.  `cores` is the deprecated spelling, kept so the
+# archived campaign configs still load unchanged.
+NP = int(CFG.get("np", CFG.get("cores", 2)))
 Q_BATCH = int(CFG.get("q", 1))
 SOBOL_SEED = int(CFG.get("sobol_seed", 0))
 TORCH_THREADS = int(CFG.get("torch_threads", 1))
@@ -55,6 +59,18 @@ torch.set_num_threads(TORCH_THREADS)
 _results_path = Path(CFG.get("results_dir", "results"))
 RESULTS_DIR = (_results_path if _results_path.is_absolute() else CASE_ROOT / _results_path).resolve()
 SNAKEFILE = CASE_ROOT / "Snakefile"
+# Upper bound on ranks.  At ~150k cells the useful ceiling is far below this;
+# the limit exists to catch a typo, not to express a physical optimum.  Keep np
+# EQUAL across the designs of one campaign: an MPI job runs at the pace of its
+# slowest rank, so an np that varies between designs makes them incomparable.
+MAX_NP = 16
+# Resolved once by main() from --profile / $PADM_SNAKEMAKE_PROFILE.  Module level
+# because evaluate() is reached from both the Sobol and the acquisition loop.
+PROFILE_DIR: Path | None = None
+# Catches the failure mode the per-design classifier structurally cannot: a
+# broken mesher or solver fails a legitimate PHYSICS rule identically on every
+# design, and would otherwise be recorded as "the whole space is infeasible".
+FAILURE_STREAK = padm_runner.FailureStreak()
 CAD_CONFIG_NAME = "alternating_deflector_cad.yaml"
 TEMPLATE_YAML = CASE_ROOT / "FlowCase" / CAD_CONFIG_NAME
 MODEL_PATH = RESULTS_DIR / str(CFG.get("model_file", "gp_checkpoint.pt"))
@@ -152,8 +168,8 @@ def _validate_config() -> None:
         raise ValueError("screening_n_init must be between 2 and n_init")
     if Q_BATCH != 1:
         raise ValueError("This research campaign requires strictly sequential BO (q = 1).")
-    if CORES < 1 or CORES > 2:
-        raise ValueError("cores must be 1 or 2 for the resource-limited campaign.")
+    if NP < 1 or NP > MAX_NP:
+        raise ValueError(f"np must be between 1 and {MAX_NP}.")
     if TORCH_THREADS != 1:
         raise ValueError("torch_threads must be 1 for the resource-limited campaign.")
     if N_CELLS < 1:
@@ -712,21 +728,27 @@ def evaluate(bo_params: dict) -> tuple[float, float] | tuple[None, None]:
     print(f"[bo] sample {sid}: geo={geo_params}")
     print(f"[bo] sample {sid}: realized={_format_realized_geometry_metrics(realized_metrics)}")
 
-    ret = subprocess.run(
-        [
-            "snakemake",
-            "--snakefile", str(SNAKEFILE),
-            "--directory", str(sample_dir),
-            "--cores", str(CORES),
-            "--config",
-            f"results_dir={sample_dir}",
-            f"python_bin={Path(sys.executable).resolve()}",
-        ]
-    )
+    ret = padm_runner.run_design(sample_dir, NP, PROFILE_DIR)
     if ret.returncode != 0:
-        print(f"[bo] WARNING: sample {sid} failed - excluded from GP", file=sys.stderr)
+        kind, why = padm_runner.classify_failure(sample_dir)
+        if kind == "launch":
+            # NOT a design result.  Recording it as one would teach the GP that a
+            # perfectly good region of the design space is infeasible, and nothing
+            # in the campaign output would ever say otherwise.  Stop instead.
+            raise padm_runner.LaunchFailure(
+                f"sample {sid} could not be executed: {why}.  "
+                "This is an environment failure, not a design failure, so it has "
+                "NOT been recorded as one. Fix the environment and re-run; the "
+                "sample directory is left in place and will be retried."
+            )
+        print(f"[bo] WARNING: sample {sid} failed ({why}) - excluded from GP",
+              file=sys.stderr)
+        # Raises if this is the Nth identical failure in a row.
+        FAILURE_STREAK.record_failure(sample_dir)
         _write_failure_objectives(sample_dir, bo_params, geo_params)
         return None, None
+
+    FAILURE_STREAK.record_success()
 
     obj_csv = sample_dir / "objectives.csv"
     if not obj_csv.exists():
@@ -1052,13 +1074,27 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="continue despite a recorded no-go decision (the override is printed and remains explicit)",
     )
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help="Snakemake workflow profile directory selecting the execution backend "
+             "(default $PADM_SNAKEMAKE_PROFILE, else profiles/local)",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
+    global PROFILE_DIR
     args = _parse_args()
     if args.max_new_evaluations is not None and args.max_new_evaluations < 1:
         raise ValueError("--max-new-evaluations must be positive")
+
+    # Resolve and probe the backend BEFORE the first design is consumed: a
+    # missing cfMesh or an unbuilt function-object library would otherwise
+    # surface as a run of designs that all "failed".
+    PROFILE_DIR = padm_runner.resolve_profile(args.profile)
+    padm_runner.preflight(PROFILE_DIR)
+    print(f"[bo] backend: profile {PROFILE_DIR.name}, np={NP}")
 
     # A corrected BO result is meaningful only relative to a validated
     # straight-channel baseline at the same operating point.
