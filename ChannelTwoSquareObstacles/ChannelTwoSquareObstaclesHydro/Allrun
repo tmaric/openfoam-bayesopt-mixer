@@ -1,0 +1,31 @@
+#!/bin/bash
+set -euo pipefail
+
+CASE_DIR="$(cd "${0%/*}" && pwd)"
+cd "$CASE_DIR" || exit 1
+
+set +u
+. "${WM_PROJECT_DIR}/bin/tools/RunFunctions"
+
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+else
+    echo "ERROR: python3/python not found in PATH" >&2
+    exit 1
+fi
+
+runApplication "$PYTHON_BIN" channel_two_square_obstacles_constrained.py
+runApplication cartesian2DMesh
+runApplication postProcess -func writeCellVolumes -time 0
+runApplication decomposePar -force
+runParallel simpleFoam
+runApplication reconstructPar -latestTime
+
+if [ ! -f pressureDrop.csv ] && [ -f processor0/pressureDrop.csv ]; then
+    cp processor0/pressureDrop.csv pressureDrop.csv
+fi
+
+[ -f pressureDrop.csv ] || { echo "ERROR: pressureDrop.csv not produced by pressureDrop FO"; exit 1; }
+touch "${CASE_DIR}/ChannelTwoSquareObstaclesHydro.foam"

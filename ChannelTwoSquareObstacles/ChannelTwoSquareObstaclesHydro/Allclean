@@ -1,0 +1,17 @@
+#!/bin/bash
+set -euo pipefail
+
+CASE_DIR="$(cd "${0%/*}" && pwd)"
+cd "$CASE_DIR" || exit 1
+
+rm -rf constant/polyMesh/{boundary,cells,faces,neighbour,owner,points,sets,meshMetaDict}
+rm -f constant/triSurface/channel_two_square_obstacles.stl
+rm -rf processor*
+find . -maxdepth 1 -mindepth 1 -type d -regex './[1-9][0-9]*' -exec rm -rf {} +
+rm -f badSurfaceWithSubsets.fms
+rm -f pressureDrop.csv
+rm -f channel_two_square_obstacles_geometry_manifest.yaml
+rm -rf postProcessing
+rm -f log.*
+rm -f ./*.foam
+find . -type d -name __pycache__ -prune -exec rm -rf {} +

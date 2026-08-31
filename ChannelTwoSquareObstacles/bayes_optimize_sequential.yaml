@@ -1,0 +1,21 @@
+cad_mode: constrained
+
+n_init: 8
+n_bo: 20
+cores: 4
+
+bo_parameters:
+  constrained:
+    a:
+      lower: 0.05
+      upper: 0.45
+    d_ratio:
+      lower: 0.0
+      upper: 1.0
+  unconstrained:
+    a:
+      lower: 0.05
+      upper: 0.45
+    d:
+      lower: 0.10
+      upper: 0.90

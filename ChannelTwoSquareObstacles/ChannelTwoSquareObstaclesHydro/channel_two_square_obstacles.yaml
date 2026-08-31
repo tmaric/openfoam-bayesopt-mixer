@@ -1,0 +1,15 @@
+cad_mode: constrained
+
+scale: 1.0e-3
+H: 1.0
+
+inlet_buffer: 2.0
+outlet_buffer: 2.0
+a_max_design: 0.45
+d_max_design: 0.90
+depth_ratio: 0.01
+spacing_margin_H: 0.025
+
+a: 0.20
+d: 0.35
+d_ratio: 0.50

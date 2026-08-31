@@ -1,0 +1,317 @@
+from pathlib import Path
+import shutil
+import sys
+
+import yaml
+
+shell.executable("/bin/bash")
+
+CASE_ROOT = Path(workflow.basedir).resolve()
+REPO_ROOT = CASE_ROOT.parent
+PYTHON_BIN = sys.executable
+
+RESULTS_ROOT = Path(config.get("results_dir", str(CASE_ROOT / "results"))).resolve()
+WORKFLOW = RESULTS_ROOT / ".workflow"
+
+TEMPLATE_HYDRO = CASE_ROOT / "ChannelTwoSquareObstaclesHydro"
+HYDRO = RESULTS_ROOT / "ChannelTwoSquareObstaclesHydro"
+HYDRO_FOAM = str(HYDRO / f"{HYDRO.name}.foam")
+
+HYDRO_CFG_NAME = "channel_two_square_obstacles.yaml"
+HYDRO_GEOMETRY_MANIFEST_NAME = "channel_two_square_obstacles_geometry_manifest.yaml"
+ACTIVE_CFG_PATH = (
+    RESULTS_ROOT / HYDRO_CFG_NAME
+    if (RESULTS_ROOT / HYDRO_CFG_NAME).exists()
+    else TEMPLATE_HYDRO / HYDRO_CFG_NAME
+)
+with open(ACTIVE_CFG_PATH, encoding="utf-8") as _handle:
+    ACTIVE_CFG = yaml.safe_load(_handle)
+
+CAD_MODE = str(ACTIVE_CFG.get("cad_mode", "constrained")).strip().lower()
+if CAD_MODE not in {"constrained", "unconstrained"}:
+    raise ValueError(
+        f"Unsupported cad_mode '{CAD_MODE}' in {ACTIVE_CFG_PATH}. "
+        "Expected 'constrained' or 'unconstrained'."
+    )
+
+CAD_SCRIPT_NAME = (
+    "channel_two_square_obstacles_constrained.py"
+    if CAD_MODE == "constrained"
+    else "channel_two_square_obstacles.py"
+)
+
+NPROCS = max(1, int(workflow.cores))
+
+VISUALIZE_SAMPLE_DONE = WORKFLOW / "visualize_sample.done"
+PARAVIEW_RENDER_SCRIPT = CASE_ROOT / "render_latest_pressure_field.py"
+PARAVIEW_BATCH = shutil.which("pvbatch") or shutil.which("pvpython")
+SAMPLE_PNG = RESULTS_ROOT / "visualizations" / f"{RESULTS_ROOT.name}_p.png"
+if PARAVIEW_BATCH is None:
+    print(
+        "WARNING: ParaView batch executable (pvpython/pvbatch) not found; "
+        "sample pressure-field visualization will be skipped.",
+        file=sys.stderr,
+    )
+
+shell.prefix(
+    "set -eo pipefail; "
+    "if ! command -v foamDictionary >/dev/null 2>&1; then "
+    ". \"$HOME/OpenFOAM/OpenFOAM-v2506/etc/bashrc\" "
+    "|| (echo \"ERROR: cannot source OpenFOAM environment\"; exit 1); "
+    "fi; "
+    f"export FOAM_USER_LIBBIN=\"{REPO_ROOT}/platforms/$WM_OPTIONS/lib\"; "
+    "export LD_LIBRARY_PATH=\"$FOAM_USER_LIBBIN:$LD_LIBRARY_PATH\"; "
+)
+
+
+rule all:
+    threads: 1
+    input:
+        str(RESULTS_ROOT / "objectives.csv"),
+        HYDRO_FOAM,
+        str(VISUALIZE_SAMPLE_DONE),
+
+
+rule stage_template_case:
+    threads: 1
+    input:
+        str(TEMPLATE_HYDRO),
+    output:
+        done=str(WORKFLOW / "stage_template_case.done"),
+        yaml=str(HYDRO / HYDRO_CFG_NAME),
+    shell:
+        """
+        set -eo pipefail
+        mkdir -p "{RESULTS_ROOT}" "{WORKFLOW}"
+
+        rm -rf "{HYDRO}"
+        cp -a "{TEMPLATE_HYDRO}" "{HYDRO}"
+
+        cd "{HYDRO}"
+        rm -rf constant/polyMesh
+        rm -f constant/triSurface/channel_two_square_obstacles.stl
+        rm -f {HYDRO_GEOMETRY_MANIFEST_NAME}
+        rm -f 0/V
+        rm -rf processor*
+        find . -maxdepth 1 -mindepth 1 -type d -regex './[1-9][0-9]*' -exec rm -rf {{}} +
+        rm -f badSurfaceWithSubsets.fms
+        rm -f pressureDrop.csv
+        rm -rf postProcessing
+        rm -rf __pycache__
+        rm -f log.*
+        rm -f ./*.foam
+
+        if [ -f "{RESULTS_ROOT}/{HYDRO_CFG_NAME}" ]; then
+            cp "{RESULTS_ROOT}/{HYDRO_CFG_NAME}" "{HYDRO}/{HYDRO_CFG_NAME}"
+        fi
+
+        touch "{output.done}"
+        """
+
+
+rule hydro_geometry:
+    threads: 1
+    input:
+        str(WORKFLOW / "hydro_geometry_manifest.done"),
+    output:
+        stl=str(HYDRO / "constant/triSurface/channel_two_square_obstacles.stl"),
+    params:
+        cad_script=CAD_SCRIPT_NAME,
+        cad_mode=CAD_MODE,
+    shell:
+        """
+        set -eo pipefail
+        cd "{HYDRO}"
+        echo "[workflow] CAD mode: {params.cad_mode}"
+        "{PYTHON_BIN}" "{params.cad_script}" 2>&1 | tee log.channel_two_square_obstacles_cad
+        """
+
+
+rule hydro_geometry_manifest:
+    threads: 1
+    input:
+        str(WORKFLOW / "stage_template_case.done"),
+    output:
+        done=str(WORKFLOW / "hydro_geometry_manifest.done"),
+        geometry_manifest=str(HYDRO / HYDRO_GEOMETRY_MANIFEST_NAME),
+    shell:
+        """
+        set -eo pipefail
+        mkdir -p "{WORKFLOW}"
+        cd "{HYDRO}"
+        "{PYTHON_BIN}" "channel_two_square_obstacles_geometry_manifest.py" 2>&1 | tee log.channel_two_square_obstacles_geometry_manifest
+        touch "{output.done}"
+        """
+
+
+rule hydro_mesh:
+    threads: 1
+    input:
+        str(HYDRO / "constant/triSurface/channel_two_square_obstacles.stl"),
+        str(TEMPLATE_HYDRO / "system/meshDict"),
+    output:
+        str(HYDRO / "constant/polyMesh/boundary"),
+        str(HYDRO / "constant/polyMesh/points"),
+    shell:
+        """
+        set -eo pipefail
+        cp "{TEMPLATE_HYDRO}/system/meshDict" "{HYDRO}/system/meshDict"
+        cd "{HYDRO}"
+        cartesian2DMesh 2>&1 | tee log.cartesian2DMesh
+        last_bad=$(grep "Number of bad faces" log.cartesian2DMesh | tail -1 | awk '{{print $NF}}')
+        if [ -n "$last_bad" ] && [ "$last_bad" -gt 0 ]; then
+            echo "ERROR: cfMesh left $last_bad zero-area face(s) in the mesh - aborting" >&2
+            exit 1
+        fi
+        """
+
+
+rule hydro_cell_volumes:
+    threads: 1
+    input:
+        str(HYDRO / "constant/polyMesh/boundary"),
+    output:
+        str(HYDRO / "0/V"),
+    shell:
+        """
+        set -eo pipefail
+        cd "{HYDRO}"
+        postProcess -func writeCellVolumes -time 0 2>&1 | tee log.postProcess
+        """
+
+
+rule hydro_decompose:
+    threads: NPROCS
+    input:
+        str(HYDRO / "0/V"),
+    output:
+        str(WORKFLOW / "hydro_decompose.done"),
+    shell:
+        """
+        set -eo pipefail
+        mkdir -p "{WORKFLOW}"
+        cd "{HYDRO}"
+        foamDictionary -entry method -set scotch system/decomposeParDict
+        foamDictionary -entry numberOfSubdomains -set {threads} system/decomposeParDict
+        decomposePar -force 2>&1 | tee log.decomposePar
+        touch "{output}"
+        """
+
+
+rule hydro_simpleFoam:
+    threads: NPROCS
+    input:
+        str(WORKFLOW / "hydro_decompose.done"),
+    output:
+        done=str(WORKFLOW / "hydro_simpleFoam.done"),
+        csv=str(HYDRO / "pressureDrop.csv"),
+    shell:
+        """
+        set -eo pipefail
+        mkdir -p "{WORKFLOW}"
+        cd "{HYDRO}"
+        mpirun -np {threads} simpleFoam -parallel 2>&1 | tee log.simpleFoam
+        if [ ! -f pressureDrop.csv ] && [ -f processor0/pressureDrop.csv ]; then
+            cp processor0/pressureDrop.csv pressureDrop.csv
+        fi
+        [ -f pressureDrop.csv ] || {{ echo "ERROR: pressureDrop.csv not produced by pressureDrop FO"; exit 1; }}
+        touch "{output.done}"
+        """
+
+
+rule hydro_reconstruct:
+    threads: 1
+    input:
+        str(WORKFLOW / "hydro_simpleFoam.done"),
+    output:
+        str(WORKFLOW / "hydro_reconstruct.done"),
+    shell:
+        """
+        set -eo pipefail
+        mkdir -p "{WORKFLOW}"
+        cd "{HYDRO}"
+        reconstructPar -latestTime 2>&1 | tee log.reconstructPar
+        touch "{output}"
+        """
+
+
+rule create_foam_file:
+    threads: 1
+    input:
+        str(WORKFLOW / "hydro_reconstruct.done"),
+        str(HYDRO / "pressureDrop.csv"),
+    output:
+        HYDRO_FOAM,
+    shell:
+        """
+        set -eo pipefail
+        touch "{output}"
+        """
+
+
+rule agglomerate:
+    threads: 1
+    input:
+        geometry_manifest=str(HYDRO / HYDRO_GEOMETRY_MANIFEST_NAME),
+        pdrop=str(HYDRO / "pressureDrop.csv"),
+    output:
+        str(RESULTS_ROOT / "objectives.csv"),
+    shell:
+        """
+        set -eo pipefail
+        "{PYTHON_BIN}" "{CASE_ROOT}/postprocessing_agglomeration.py" \
+            --geometry-manifest "{input.geometry_manifest}" \
+            --pdrop      "{input.pdrop}" \
+            --output     "{output}" \
+            --results-dir "{RESULTS_ROOT}"
+        """
+
+
+rule visualize_sample:
+    threads: 1
+    input:
+        str(WORKFLOW / "hydro_reconstruct.done"),
+        foam=HYDRO_FOAM,
+    output:
+        str(VISUALIZE_SAMPLE_DONE),
+    params:
+        paraview_batch=PARAVIEW_BATCH or "",
+    shell:
+        """
+        set -eo pipefail
+        mkdir -p "{WORKFLOW}" "{RESULTS_ROOT}/visualizations"
+        if [ -n "{params.paraview_batch}" ]; then
+            env VTK_DEFAULT_RENDER_WINDOW_OFFSCREEN=1 "{params.paraview_batch}" "{PARAVIEW_RENDER_SCRIPT}" \
+                --case-foam "{input.foam}" \
+                --output "{SAMPLE_PNG}" \
+                --field p
+        else
+            echo "WARNING: ParaView batch executable (pvpython/pvbatch) not found; skipping pressure visualization for sample {RESULTS_ROOT.name}." | tee "{RESULTS_ROOT}/visualizations/visualization.warning.log" >&2
+        fi
+        touch "{output}"
+        """
+
+
+rule visualize:
+    threads: 1
+    input:
+        str(RESULTS_ROOT / "all_samples.csv"),
+    output:
+        str(RESULTS_ROOT / "visualizations" / "pressure_drop_animation.gif"),
+    shell:
+        """
+        set -eo pipefail
+        "{PYTHON_BIN}" "{CASE_ROOT}/visualize_results.py" \
+            --results-dir "{RESULTS_ROOT}" \
+            --output-dir "{RESULTS_ROOT}/visualizations"
+        """
+
+
+rule clean:
+    threads: 1
+    shell:
+        """
+        set -eo pipefail
+        find "{CASE_ROOT}" -type d -name __pycache__ -prune -exec rm -rf {{}} +
+        rm -rf "{RESULTS_ROOT}"
+        """
