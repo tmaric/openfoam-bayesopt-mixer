@@ -7,6 +7,14 @@ cd "$CASE_DIR" || exit 1
 set +u
 . "${WM_PROJECT_DIR}/bin/tools/RunFunctions"
 
+# The pressureDrop function object is the study's own, built by ./Allwmake into
+# the repository's platforms/$WM_OPTIONS/lib -- not into $FOAM_USER_LIBBIN, which
+# is under $HOME and disappears inside the container.  Tell the loader where it
+# is, exactly as the PADM Snakefile does; without this simpleFoam runs to the end
+# and then reports "Unknown function type pressureDrop" and no CSV.
+REPO_ROOT="$(cd "${CASE_DIR}/../.." && pwd)"
+export LD_LIBRARY_PATH="${REPO_ROOT}/platforms/${WM_OPTIONS}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+
 if command -v python3 >/dev/null 2>&1; then
     PYTHON_BIN="python3"
 elif command -v python >/dev/null 2>&1; then
@@ -29,3 +37,4 @@ fi
 
 [ -f pressureDrop.csv ] || { echo "ERROR: pressureDrop.csv not produced by pressureDrop FO"; exit 1; }
 touch "${CASE_DIR}/ChannelTwoSquareObstaclesHydro.foam"
+echo "Open the fields with:  paraview ChannelTwoSquareObstaclesHydro.foam"
