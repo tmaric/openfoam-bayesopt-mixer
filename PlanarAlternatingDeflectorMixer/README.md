@@ -88,6 +88,11 @@ for both the launcher and `numberOfSubdomains`. Keep it **equal across the
 designs of one campaign**: an MPI job runs at the pace of its slowest rank, so a
 varying `np` makes designs incomparable.
 
+Nothing site-specific needs editing in a tracked file: the SLURM account, the
+scratch bind, the image location and the remote build host are read from
+`PADM_SLURM_ACCOUNT`, `PADM_BIND`, `PADM_SIF` and `PADM_REMOTE_HOST`/`_DIR`.
+See [CLUSTER.md](CLUSTER.md).
+
 On the cluster, submit the orchestrator rather than running the driver on a
 login node — login nodes reap long-lived processes:
 

@@ -99,8 +99,8 @@ before trusting a single timing or scaling anything up.
 
 ```bash
 git clone git@github.com:tmaric/openfoam-bayesopt-mixer.git \
-    /work/scratch/tm83tomy/openfoam-bayesopt-mixer
-cd /work/scratch/tm83tomy/openfoam-bayesopt-mixer
+    /work/scratch/$USER/openfoam-bayesopt-mixer
+cd /work/scratch/$USER/openfoam-bayesopt-mixer
 ```
 
 Build the image (or `rsync` one built elsewhere to `apptainer/padm.sif`, or point
@@ -117,7 +117,7 @@ produce both BO objectives, so without it every design yields an empty
 
 ```bash
 export PADM_SIF="${PADM_SIF:-$PWD/apptainer/padm.sif}"   # default; or /opt/apptainer_images/padm.sif, or wherever yours is
-apptainer exec --bind /work/scratch/tm83tomy "$PADM_SIF" \
+apptainer exec --bind /work/scratch/$USER "$PADM_SIF" \
     bash -c "./Allwclean && ./Allwmake"
 ```
 
@@ -134,9 +134,23 @@ self-sufficient there, and it needs no scheduler at all:
 
 ```bash
 cd PlanarAlternatingDeflectorMixer
-apptainer exec --bind /work/scratch/tm83tomy "$PADM_SIF" \
+apptainer exec --bind /work/scratch/$USER "$PADM_SIF" \
     python3 research_sequence.py next --max-new-evaluations 1 --profile profiles/local
 ```
+
+### Another account, another cluster
+
+Nothing site-specific has to be edited in a tracked file. Set what differs:
+
+| variable | overrides | default |
+|---|---|---|
+| `PADM_SLURM_ACCOUNT` | the SLURM account of every submitted job | `special00004` (`sbatch.yaml`; and `-A` on the `run-bo.sbatch` command line) |
+| `PADM_BIND` | the data bind list, colon-separated, **replacing** `binds:` | `/work/scratch/$USER` |
+| `PADM_SIF` | where the image is | `apptainer/padm.sif` in the clone |
+| `PADM_REMOTE_HOST`, `PADM_REMOTE_DIR` | where `build.sh --remote` builds | this cluster, `/work/scratch/$USER/padm-image` |
+
+The orchestrator's own `#SBATCH -A` header cannot read the environment, so pass
+the account on its command line: `sbatch -A "$PADM_SLURM_ACCOUNT" … run-bo.sbatch`.
 
 ## Submitting the campaign
 
@@ -174,7 +188,7 @@ work in there:
 | a synthesized `/etc/passwd`, `/etc/group` | see below |
 
 **The design jobs** run on a compute node and never submit anything, so they
-need only the data bind — `--bind /work/scratch/tm83tomy`, from
+need only the data bind — `--bind /work/scratch/$USER`, from
 `binds:` in `sbatch.yaml`. OpenFOAM, cfMesh, Python and `mpirun` are all inside
 the image, and MPI never leaves it. Do **not** copy the orchestrator's bind list
 here: a design job has no use for the SLURM client, and binding the host

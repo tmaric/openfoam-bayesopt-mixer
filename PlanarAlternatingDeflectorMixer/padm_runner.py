@@ -254,7 +254,16 @@ def sbatch_spec(profile_dir: Path) -> dict | None:
     path = Path(profile_dir) / "sbatch.yaml"
     if not path.is_file():
         return None
-    return yaml.safe_load(path.read_text()) or {}
+    spec = yaml.safe_load(path.read_text()) or {}
+    # Site-specific values can be overridden without editing a tracked file:
+    #   PADM_SLURM_ACCOUNT -> account
+    #   PADM_BIND          -> binds   (colon-separated; REPLACES the file's list)
+    #   PADM_SIF           -> image   (handled in _resolve_image)
+    if os.environ.get("PADM_SLURM_ACCOUNT"):
+        spec["account"] = os.environ["PADM_SLURM_ACCOUNT"]
+    if os.environ.get("PADM_BIND"):
+        spec["binds"] = [b for b in os.environ["PADM_BIND"].split(":") if b]
+    return spec
 
 
 def _resolve_image(spec: dict) -> Path:

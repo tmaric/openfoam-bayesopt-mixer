@@ -7,7 +7,7 @@
 # runtime must NOT be padded: an oversized limit can route the job to a slower
 # partition and holds the allocation long after a diverged solve has stopped
 # producing steps.
-account: special00004
+account: special00004              # override without editing: PADM_SLURM_ACCOUNT
 
 # ONE node, one task, np CPUs.  One task with np CPUs (rather than np tasks) is
 # what lets `mpirun -np {np}` inside the container see np slots in the job's
@@ -26,8 +26,8 @@ mem_mb_per_cpu: 8000
 runtime_minutes: 480
 
 job_name: padm-design
-image: apptainer/padm.sif          # relative paths resolve against the repo root
-binds:
+image: apptainer/padm.sif          # relative to the repo root; override: PADM_SIF
+binds:                             # override: PADM_BIND, colon-separated, replaces this list
   - /work/scratch/tm83tomy
 # Extra raw sbatch directives, one per line, without the leading "#SBATCH ".
 extra_directives: []

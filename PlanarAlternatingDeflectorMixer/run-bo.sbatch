@@ -10,8 +10,15 @@
 #
 # ORCHESTRATOR for the PADM Bayesian-optimisation campaign on Lichtenberg.
 #
-#   cd /work/scratch/tm83tomy/openfoam-bayesopt-mixer/PlanarAlternatingDeflectorMixer
+#   cd /work/scratch/$USER/openfoam-bayesopt-mixer/PlanarAlternatingDeflectorMixer
 #   sbatch --parsable --export=ALL,N=1 run-bo.sbatch >> .padm_jobs
+#
+# ANOTHER ACCOUNT OR SITE.  The #SBATCH lines above are Lichtenberg defaults for
+# the special00004 allocation.  A header cannot read the environment, but the
+# command line overrides it:
+#   sbatch -A "$PADM_SLURM_ACCOUNT" --parsable --export=ALL,N=1 run-bo.sbatch
+# The per-design jobs that padm_runner submits read PADM_SLURM_ACCOUNT, PADM_BIND
+# and PADM_SIF themselves -- see profiles/slurm/sbatch.yaml.
 #
 # WHY A BATCH JOB AND NOT `python research_sequence.py &` ON A LOGIN NODE:
 # login nodes reap long-lived user processes.  A multi-hour driver started there
