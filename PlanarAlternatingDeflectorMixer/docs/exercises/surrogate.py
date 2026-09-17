@@ -9,7 +9,7 @@ NO CFD IS RUN.  This is the whole point: the surrogate half of Bayesian
 optimization costs about a second on one core, which is why it can live on a
 login node while the simulations go to the queue.
 
-    apptainer exec --bind "$PWD/.." ../apptainer/padm.sif \
+    apptainer exec --bind "$PWD/.." "$PADM_SIF" \
         python3 docs/exercises/surrogate.py
 """
 

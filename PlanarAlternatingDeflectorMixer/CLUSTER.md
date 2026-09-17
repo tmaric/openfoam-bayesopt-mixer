@@ -103,7 +103,8 @@ git clone git@github.com:tmaric/openfoam-bayesopt-mixer.git \
 cd /work/scratch/tm83tomy/openfoam-bayesopt-mixer
 ```
 
-Build the image (or `rsync` one built elsewhere to `apptainer/padm.sif`):
+Build the image (or `rsync` one built elsewhere to `apptainer/padm.sif`, or point
+`PADM_SIF` at wherever it already is):
 
 ```bash
 ./apptainer/build.sh
@@ -115,7 +116,8 @@ produce both BO objectives, so without it every design yields an empty
 `objectives.csv`:
 
 ```bash
-apptainer exec --bind /work/scratch/tm83tomy apptainer/padm.sif \
+export PADM_SIF="${PADM_SIF:-$PWD/apptainer/padm.sif}"   # default; or /opt/apptainer_images/padm.sif, or wherever yours is
+apptainer exec --bind /work/scratch/tm83tomy "$PADM_SIF" \
     bash -c "./Allwclean && ./Allwmake"
 ```
 
@@ -132,7 +134,7 @@ self-sufficient there, and it needs no scheduler at all:
 
 ```bash
 cd PlanarAlternatingDeflectorMixer
-apptainer exec --bind /work/scratch/tm83tomy ../apptainer/padm.sif \
+apptainer exec --bind /work/scratch/tm83tomy "$PADM_SIF" \
     python3 research_sequence.py next --max-new-evaluations 1 --profile profiles/local
 ```
 

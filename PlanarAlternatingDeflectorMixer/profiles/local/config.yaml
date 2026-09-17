@@ -1,6 +1,6 @@
 # LOCAL profile -- laptop, workstation, or a cluster LOGIN NODE.
 #
-#   apptainer exec --bind "$PWD/.." ../apptainer/padm.sif \
+#   apptainer exec --bind "$PWD/.." "$PADM_SIF" \
 #       python3 research_sequence.py next --max-new-evaluations 1 \
 #           --profile profiles/local
 #

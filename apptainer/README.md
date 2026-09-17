@@ -28,7 +28,8 @@ objectives — without them every design yields an empty `objectives.csv`. Build
 them inside the image:
 
 ```bash
-apptainer exec --bind "$PWD" apptainer/padm.sif bash -c "./Allwclean && ./Allwmake"
+export PADM_SIF="${PADM_SIF:-$PWD/apptainer/padm.sif}"   # default; or /opt/apptainer_images/padm.sif, or wherever yours is
+apptainer exec --bind "$PWD" "$PADM_SIF" bash -c "./Allwclean && ./Allwmake"
 ```
 
 > **Run `./Allwclean` first when switching environments.** `wmake` leaves its
@@ -49,7 +50,7 @@ For anything interactive — and for the whole teaching assignment — enter it 
 and stay there:
 
 ```bash
-apptainer shell --bind "$PWD" apptainer/padm.sif
+apptainer shell --bind "$PWD" "$PADM_SIF"
 ```
 
 The image carries `sed`, `grep`, `awk`, `git`, `less` and `ffmpeg` alongside

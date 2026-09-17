@@ -42,7 +42,8 @@ Then build the study's OpenFOAM function objects **inside the image**. They are
 yields an empty `objectives.csv`:
 
 ```bash
-apptainer exec --bind "$PWD" apptainer/padm.sif bash -c "./Allwclean && ./Allwmake"
+export PADM_SIF="${PADM_SIF:-$PWD/apptainer/padm.sif}"   # default; or /opt/apptainer_images/padm.sif, or wherever yours is
+apptainer exec --bind "$PWD" "$PADM_SIF" bash -c "./Allwclean && ./Allwmake"
 ```
 
 > `Allwclean` first is not optional when switching environments. `wmake` keys its
@@ -58,10 +59,10 @@ Everything below runs inside the image. The `--profile` flag — and nothing els
 ```bash
 cd PlanarAlternatingDeflectorMixer
 
-apptainer exec --bind "$PWD/.." ../apptainer/padm.sif \
+apptainer exec --bind "$PWD/.." "$PADM_SIF" \
     python3 research_sequence.py status
 
-apptainer exec --bind "$PWD/.." ../apptainer/padm.sif \
+apptainer exec --bind "$PWD/.." "$PADM_SIF" \
     python3 research_sequence.py next --max-new-evaluations 1 --profile profiles/local
 ```
 
@@ -100,14 +101,14 @@ diagnostic that outranks the rest.
 ### One explicit design, without the BO driver
 
 ```bash
-apptainer exec --bind "$PWD/.." ../apptainer/padm.sif \
+apptainer exec --bind "$PWD/.." "$PADM_SIF" \
     snakemake --workflow-profile profiles/local --config results_dir=results/manual_00
 ```
 
 ### Rebuild the figures and the animation
 
 ```bash
-apptainer exec --bind "$PWD/.." ../apptainer/padm.sif \
+apptainer exec --bind "$PWD/.." "$PADM_SIF" \
     snakemake visualize --workflow-profile profiles/local \
         --config results_dir=results/corrected_boundary_v3
 ```
@@ -207,7 +208,8 @@ Snakemake and the BO scripts, is in the image:
 
 ```bash
 ./apptainer/build.sh                              # on the host, once
-apptainer shell --bind "$PWD" apptainer/padm.sif  # everything else happens in here
+export PADM_SIF="${PADM_SIF:-$PWD/apptainer/padm.sif}"   # default; or /opt/apptainer_images/padm.sif, or wherever yours is
+apptainer shell --bind "$PWD" "$PADM_SIF"  # everything else happens in here
 ```
 
 The repository is bind-mounted, so edits and results land on the real disk.

@@ -165,8 +165,9 @@ def preflight(profile_dir: Path) -> None:
         image = _resolve_image(spec)
         if not image.is_file():
             raise LaunchFailure(
-                f"the container image named by {profile_dir / 'sbatch.yaml'} does "
-                f"not exist: {image}.  Build it with apptainer/build.sh."
+                f"the container image does not exist: {image}  (from "
+                f"{'the PADM_SIF environment variable' if os.environ.get('PADM_SIF') else profile_dir / 'sbatch.yaml'}).  "
+                "Build it with apptainer/build.sh, or point PADM_SIF at an existing image."
             )
         for bind in spec.get("binds") or []:
             if not Path(bind).exists():
@@ -189,7 +190,7 @@ def preflight(profile_dir: Path) -> None:
                 "OpenFOAM tooling missing from PATH: "
                 + ", ".join(absent)
                 + ".  Source an OpenFOAM etc/bashrc, or run inside the Apptainer "
-                "image (apptainer exec apptainer/padm.sif ...).  "
+                'image (apptainer exec "$PADM_SIF" ..., default apptainer/padm.sif).  '
                 "cartesian2DMesh comes from cfMesh, which is NOT part of a stock "
                 "OpenFOAM install."
             )
@@ -257,7 +258,10 @@ def sbatch_spec(profile_dir: Path) -> dict | None:
 
 
 def _resolve_image(spec: dict) -> Path:
-    image = Path(spec.get("image", "apptainer/padm.sif"))
+    """PADM_SIF in the environment wins, then sbatch.yaml's `image:`, then the
+    default.  Relative paths resolve against the repository root, so an image
+    handed out at, say, /opt/apptainer_images/padm.sif needs only the variable."""
+    image = Path(os.environ.get("PADM_SIF") or spec.get("image") or "apptainer/padm.sif")
     return image if image.is_absolute() else (REPO_ROOT / image).resolve()
 
 

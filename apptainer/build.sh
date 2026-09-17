@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build apptainer/padm.sif.
+# Build the image: apptainer/padm.sif by default, or wherever PADM_SIF points.
 #
 #   ./apptainer/build.sh              # build here
 #   ./apptainer/build.sh --remote     # build on Lichtenberg, fetch the .sif back
@@ -17,7 +17,10 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEF="${REPO_ROOT}/apptainer/padm.def"
-SIF="${REPO_ROOT}/apptainer/padm.sif"
+# PADM_SIF names the image to write and, everywhere else in the study, to run.
+# A relative value is taken from the repository root.
+SIF="${PADM_SIF:-apptainer/padm.sif}"
+case "${SIF}" in /*) ;; *) SIF="${REPO_ROOT}/${SIF}" ;; esac
 
 REMOTE_HOST="${PADM_REMOTE_HOST:-tm83tomy@lcluster1.hrz.tu-darmstadt.de}"
 REMOTE_DIR="${PADM_REMOTE_DIR:-/work/scratch/tm83tomy/padm-image}"

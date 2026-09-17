@@ -116,10 +116,11 @@ cd /path/to/openfoam-bayesopt-mixer
 
 # the study's OpenFOAM function objects must be built IN this environment:
 # they are dlopen'ed by the container's OpenFOAM and produce both objectives
-apptainer exec --bind "$PWD" apptainer/padm.sif bash -c "./Allwclean && ./Allwmake"
+export PADM_SIF="${PADM_SIF:-$PWD/apptainer/padm.sif}"   # default; or /opt/apptainer_images/padm.sif, or wherever yours is
+apptainer exec --bind "$PWD" "$PADM_SIF" bash -c "./Allwclean && ./Allwmake"
 
 cd PlanarAlternatingDeflectorMixer
-apptainer exec --bind "$PWD/.." ../apptainer/padm.sif \
+apptainer exec --bind "$PWD/.." "$PADM_SIF" \
     python3 research_sequence.py next --max-new-evaluations 1 \
         --profile profiles/local
 ```

@@ -980,7 +980,8 @@
           <p class="cmd"><code>cd openfoam-bayesopt-mixer
 ./apptainer/build.sh                              # the only step that cannot run inside
 
-apptainer shell --bind "$PWD" apptainer/padm.sif  # now you are in the container
+export PADM_SIF="${PADM_SIF:-$PWD/apptainer/padm.sif}"   # or your own path
+apptainer shell --bind "$PWD" "$PADM_SIF"  # now you are in the container
 Apptainer&gt; cd PlanarAlternatingDeflectorMixer</code></p>
           <div class="callout green">
             <p>Inside you have OpenFOAM, cfMesh, CadQuery, BoTorch, Snakemake, <code>git</code>, <code>sed</code>, <code>grep</code> &mdash; everything the six exercises need. The repository is bind-mounted, so <strong>files you edit and results you produce are on your real disk</strong>, not lost when you exit.</p>
@@ -1256,12 +1257,13 @@ rm results/ex3/objectives.csv                     &amp;&amp; $DRY   # step 2</co
           <p class="cmd"><code>git clone https://github.com/tmaric/openfoam-bayesopt-mixer.git
 cd openfoam-bayesopt-mixer
 
-./apptainer/build.sh              # builds apptainer/padm.sif   (~20 min)
+./apptainer/build.sh              # builds apptainer/padm.sif, or $PADM_SIF   (~20 min)
 ./apptainer/build.sh --remote     # or: build on a cluster and copy the .sif back</code></p>
           <div class="callout">
             <p>Then build the study&rsquo;s OpenFOAM function objects <strong>inside</strong> the image. They are <code>dlopen</code>ed by the container&rsquo;s OpenFOAM and produce <em>both</em> objectives &mdash; without them every design yields an empty <code>objectives.csv</code>.</p>
           </div>
-          <p class="cmd"><code>apptainer shell --bind "$PWD" apptainer/padm.sif
+          <p class="cmd"><code>export PADM_SIF="${PADM_SIF:-$PWD/apptainer/padm.sif}"   # or your own path
+apptainer shell --bind "$PWD" "$PADM_SIF"
 Apptainer&gt; ./Allwclean &amp;&amp; ./Allwmake</code></p>
           <p class="caution"><code>Allwclean</code> first is not optional when switching environments: <code>wmake</code> keys its object files on <code>$WM_OPTIONS</code>, which is <code>linux64GccDPInt32Opt</code> for <em>every</em> OpenFOAM version, so a stale tree looks current and is not.</p>
         </div>

@@ -90,7 +90,8 @@ reusing the twelve designs the campaign already paid for. The whole assignment
 runs **inside the container** — building the image is the only step that cannot:
 
 ```bash
-apptainer shell --bind "$PWD" apptainer/padm.sif
+export PADM_SIF="${PADM_SIF:-$PWD/apptainer/padm.sif}"   # default; or /opt/apptainer_images/padm.sif, or wherever yours is
+apptainer shell --bind "$PWD" "$PADM_SIF"
 ```
 
 Reference solution for tasks 5 and 6: [`exercises/surrogate.py`](exercises/surrogate.py).

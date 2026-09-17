@@ -175,6 +175,16 @@ dependency — and the image built once:
 ./apptainer/build.sh            # ~1.3 GB, or --remote to build on a cluster and copy back
 ```
 
+The image does not have to live in the repository. If yours was handed to you or
+installed centrally — `/opt/apptainer_images/padm.sif`, say — set one variable
+once, from the repository root, and every command in these documents uses it:
+
+```bash
+export PADM_SIF="${PADM_SIF:-$PWD/apptainer/padm.sif}"   # default; or /opt/apptainer_images/padm.sif, or wherever yours is
+```
+
+`build.sh` writes to the same variable, so building and running always agree.
+
 #### Installing Apptainer without root, on Linux or Windows WSL
 
 Apptainer publishes a relocatable build that installs into your home directory.
@@ -296,7 +306,8 @@ will run the solvers -- they are `dlopen`ed by that OpenFOAM, and
 `pressureDrop` / `patchMixingQuality` produce both BO objectives:
 
 ```bash
-apptainer exec --bind "$PWD" apptainer/padm.sif bash -c "./Allwclean && ./Allwmake"
+export PADM_SIF="${PADM_SIF:-$PWD/apptainer/padm.sif}"   # default; or /opt/apptainer_images/padm.sif, or wherever yours is
+apptainer exec --bind "$PWD" "$PADM_SIF" bash -c "./Allwclean && ./Allwmake"
 cd PlanarAlternatingDeflectorMixer
 ```
 
@@ -312,9 +323,9 @@ snakemake --workflow-profile profiles/local --config results_dir=results/manual_
 Advance the sequential multi-objective campaign by one evaluation:
 
 ```bash
-apptainer exec --bind "$PWD/.." ../apptainer/padm.sif \
+apptainer exec --bind "$PWD/.." "$PADM_SIF" \
     python3 research_sequence.py status
-apptainer exec --bind "$PWD/.." ../apptainer/padm.sif \
+apptainer exec --bind "$PWD/.." "$PADM_SIF" \
     python3 research_sequence.py next --max-new-evaluations 1 --profile profiles/local
 ```
 

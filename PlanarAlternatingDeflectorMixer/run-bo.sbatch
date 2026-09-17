@@ -29,14 +29,17 @@ set -o pipefail
 
 STUDY_DIR="${STUDY_DIR:-$SLURM_SUBMIT_DIR}"
 REPO_ROOT="$(cd "${STUDY_DIR}/.." && pwd)"
-SIF="${SIF:-${REPO_ROOT}/apptainer/padm.sif}"
+# PADM_SIF is the study-wide name for the image location; SIF is kept as an
+# alias for older submit lines.  Relative paths resolve against the repo root.
+SIF="${PADM_SIF:-${SIF:-apptainer/padm.sif}}"
+case "${SIF}" in /*) ;; *) SIF="${REPO_ROOT}/${SIF}" ;; esac
 N="${N:-1}"
 PROFILE="${PROFILE:-profiles/slurm}"
 COMMAND="${COMMAND:-next}"
 SCRATCH_ROOT="${SCRATCH_ROOT:-/work/scratch/$USER}"
 
 cd "${STUDY_DIR}" || exit 1
-[ -f "${SIF}" ] || { echo "ERROR: no image at ${SIF} -- build it first (apptainer/build.sh)"; exit 1; }
+[ -f "${SIF}" ] || { echo "ERROR: no image at ${SIF} -- build it (apptainer/build.sh) or point PADM_SIF at an existing one"; exit 1; }
 
 # ---------------------------------------------------------------------------
 # NSS for the SLURM client inside the image.
