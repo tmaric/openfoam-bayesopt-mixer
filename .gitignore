@@ -24,6 +24,13 @@ VTK/
 lnInclude/
 
 # Keep the canonical initial conditions; ignore other generated fields at time 0.
+# ChannelTwoSquareObstacles was never given the negation the other cases have,
+# so its initial fields never reached the repository and a fresh clone failed in
+# simpleFoam with "cannot find file processor*/0/p".  V is generated; U and p are not.
+!ChannelTwoSquareObstacles/ChannelTwoSquareObstaclesHydro/0/
+ChannelTwoSquareObstacles/ChannelTwoSquareObstaclesHydro/0/*
+!ChannelTwoSquareObstacles/ChannelTwoSquareObstaclesHydro/0/U
+!ChannelTwoSquareObstacles/ChannelTwoSquareObstaclesHydro/0/p
 !PlanarAlternatingDeflectorMixer/FlowCase/0/
 PlanarAlternatingDeflectorMixer/FlowCase/0/*
 !PlanarAlternatingDeflectorMixer/FlowCase/0/U
