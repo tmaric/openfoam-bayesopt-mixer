@@ -61,6 +61,17 @@ openfoam-bayesopt-mixer/
 `ChannelTwoSquareObstacles/` is a separate experimental benchmark and is not
 part of the PADM study.
 
+**Every script here is committed executable, and CI enforces it.** A file
+created on an NTFS mount under WSL, or in a clone with `core.fileMode=false`,
+silently loses its `+x` bit — and a `chmod` on such a machine never reaches git,
+so `./Allrun` fails with *Permission denied* for everyone who clones afterwards.
+The `executable bits` workflow fails any push in which a file that starts with
+`#!` is not mode `100755`. The fix, which works regardless of `core.fileMode`:
+
+```bash
+git update-index --chmod=+x path/to/script
+```
+
 ## Geometry and physics
 
 The default channel is `H = 1 mm`, `L = 24 mm`, with five repeated cells. Each

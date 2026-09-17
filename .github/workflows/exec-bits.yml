@@ -1,0 +1,28 @@
+# Any tracked file that starts with a shebang must be committed executable.
+#
+# Why this exists: files created on an NTFS mount under WSL, or in a clone with
+# core.fileMode=false, silently lose the +x bit, and a `chmod` on such a machine
+# never reaches git. Workshop participants then hit "Permission denied" on every
+# Allrun. Fix locally with:  git update-index --chmod=+x <file>
+name: executable bits
+
+on: [push, pull_request]
+
+jobs:
+  shebang-files-are-executable:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: every '#!' file must be mode 100755
+        run: |
+          bad=0
+          while IFS=$'\t' read -r meta f; do
+            mode=${meta%% *}
+            [ -f "$f" ] || continue
+            [ "$(head -c2 "$f" 2>/dev/null)" = "#!" ] || continue
+            if [ "$mode" != 100755 ]; then
+              echo "::error file=$f::starts with #! but is committed as $mode; run: git update-index --chmod=+x '$f'"
+              bad=1
+            fi
+          done < <(git ls-files -s)
+          exit $bad
