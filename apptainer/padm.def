@@ -15,6 +15,14 @@ From: ubuntu:24.04
 #                       DAG -- runs INSIDE the image on every backend
 #   ffmpeg              only for the `visualize` rule's MP4 export; the GIF is
 #                       Pillow and needs nothing
+#   ParaView 5.11       the Ubuntu packages paraview + python3-paraview.  ESI's
+#                       openfoam*-default .deb does NOT bundle ParaView: its
+#                       `paraFoam` is a wrapper that expects a system one and
+#                       simply fails without it.  python3-paraview is what gives
+#                       pvbatch, pvpython, --script and the GUI's Python shell
+#                       their `paraview.simple`; without it they all fail with
+#                       "No module named 'paraview'".
+#                       Open a finished case with:  paraview <CaseFolder>.foam
 #
 # The image deliberately contains NO study data.  Bind the repository in:
 #
@@ -53,7 +61,8 @@ From: ubuntu:24.04
         libgl1 libglu1-mesa libxrender1 libxcursor1 libxft2 libxinerama1 \
         libsm6 libice6 libxext6 libxi6 libfontconfig1 libfreetype6 \
         procps rsync less vim-tiny \
-        ffmpeg
+        ffmpeg \
+        paraview python3-paraview
 
     # ---------------------------------------------------------------- OpenFOAM
     # The -dev metapackage pulls flex, scotch, ptscotch, boost, cgal, fftw and
@@ -82,8 +91,16 @@ From: ubuntu:24.04
     test -n "${WM_OPTIONS:-}"
 
     export FOAM_MODULE_PREFIX="${OF_DIR}/platforms/${WM_OPTIONS}"
-    git clone --depth 1 --branch develop \
-        https://develop.openfoam.com/Community/integration-cfmesh.git /tmp/cfmesh
+    # ESI's GitLab sits behind Cloudflare and has answered a clone with a 524
+    # origin timeout mid-build; one transient failure must not cost a 10-minute
+    # build.  Retry a few times before giving up.
+    attempt=1
+    until git clone --depth 1 --branch develop \
+            https://develop.openfoam.com/Community/integration-cfmesh.git /tmp/cfmesh; do
+        [ "${attempt}" -ge 5 ] && { echo "FATAL: cfMesh clone failed ${attempt} times"; exit 1; }
+        echo "cfMesh clone attempt ${attempt} failed; retrying in 30 s"
+        attempt=$((attempt + 1)); rm -rf /tmp/cfmesh; sleep 30
+    done
     cd /tmp/cfmesh
     if ! ./Allwmake -j "$(nproc)" > /tmp/cfmesh-build.log 2>&1; then
         echo "--- cfMesh Allwmake FAILED, last 80 lines:"
@@ -161,6 +178,13 @@ FREEZE
 
     export PATH="/opt/venv/bin:$PATH"
 
+    # NOT handled here: the host's XDG_RUNTIME_DIR (/run/user/<uid>) is inherited
+    # but its directory is not bound, so ParaView prints one harmless
+    # "QStandardPaths: error creating runtime directory" line at start-up.  A
+    # conditional export in this section does not run -- Apptainer evaluates
+    # %environment with a restricted interpreter, and the attempt was inert --
+    # so the fix is on the command line:  apptainer exec --bind "$XDG_RUNTIME_DIR" ...
+
     # The campaign is strictly sequential and single-threaded in torch by
     # design; letting BLAS spin up threads underneath it only fights the MPI
     # ranks for cores.
@@ -188,6 +212,31 @@ FREEZE
         command -v "$exe" >/dev/null 2>&1 || { echo "MISSING: $exe"; exit 1; }
         echo "  ok  $exe"
     done
+
+    echo "--- ParaView"
+    # The binary must exist -- that is what the testers were missing.  The
+    # offscreen render is reported, not enforced: `apptainer test` runs without a
+    # display, and Ubuntu's ParaView is an X11 build, so a failure here says
+    # nothing about the GUI, which is verified interactively instead.
+    command -v paraview >/dev/null 2>&1 || { echo "MISSING: paraview"; exit 1; }
+    command -v pvbatch  >/dev/null 2>&1 || { echo "MISSING: pvbatch"; exit 1; }
+    pvpython -c "import paraview.simple" >/dev/null 2>&1 \
+        || { echo "MISSING: paraview.simple (python3-paraview)"; exit 1; }
+    echo "  ok  paraview.simple imports"
+    echo "  ok  paraview ($(paraview --version 2>/dev/null | head -1 || echo 'version query needs a display'))"
+    if command -v pvbatch >/dev/null 2>&1; then
+        cat > /tmp/pv-smoke.py <<'PVB'
+from paraview.simple import *
+Show(Sphere()); Render()
+SaveScreenshot('/tmp/pv-smoke.png', ImageResolution=[64, 64])
+PVB
+        if pvbatch --force-offscreen-rendering /tmp/pv-smoke.py >/dev/null 2>&1 && [ -s /tmp/pv-smoke.png ]; then
+            echo "  ok  pvbatch offscreen render"
+        else
+            echo "  --  pvbatch offscreen render unavailable here (no display); GUI checked separately"
+        fi
+        rm -f /tmp/pv-smoke.py /tmp/pv-smoke.png
+    fi
 
     echo "--- Python"
     python3 - <<'PY'

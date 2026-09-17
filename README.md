@@ -172,7 +172,7 @@ Everything below runs CFD, so it needs **Apptainer** — the one and only
 dependency — and the image built once:
 
 ```bash
-./apptainer/build.sh            # ~1.3 GB, or --remote to build on a cluster and copy back
+./apptainer/build.sh            # ~1.6 GB, or --remote to build on a cluster and copy back
 ```
 
 The image does not have to live in the repository. If yours was handed to you or
@@ -247,7 +247,7 @@ the cluster and copied back.
 
 | what | why |
 |---|---|
-| **Building the image** | It carries OpenFOAM v2512, cfMesh, CadQuery, BoTorch and Snakemake. The `.sif` is 1.3 GB and is deliberately **not** tracked. |
+| **Building the image** | It carries OpenFOAM v2512, cfMesh, CadQuery, BoTorch, Snakemake and ParaView 5.11. The `.sif` is 1.6 GB (measured: 1 607 462 912 bytes) and is deliberately **not** tracked. |
 | **Building the function objects** | `pressureDrop` and `patchMixingQuality` are `dlopen`ed by the container's OpenFOAM and produce *both* objectives, so they must be compiled in the same environment that runs the solvers. |
 | **Assignment tasks 1–4** | They run real CFD — a few minutes each. Task 1 checks the straight baseline against the analytic 12νUL/H²; tasks 2–4 edit the CAD parameters and re-run. |
 | **Re-running the campaign** | `research_sequence.py next` advances it one bounded evaluation at a time. |
@@ -270,7 +270,8 @@ the tutorial deck's appendix gives the same steps as slides.
 The environment is packaged as an Apptainer image (`apptainer/padm.def`) so a
 clone plus the image is everything a run needs, on a laptop or on a cluster. It
 carries OpenFOAM v2512, cfMesh, CadQuery, Snakemake, foamlib, Python VTK,
-PyYAML, PyTorch, BoTorch, GPyTorch, NumPy, SciPy, Matplotlib and Pillow.
+PyYAML, PyTorch, BoTorch, GPyTorch, NumPy, SciPy, Matplotlib, Pillow — and
+ParaView 5.11, so `paraview <CaseFolder>.foam` works from inside the image.
 
 Two things worth knowing before reaching for a native install:
 

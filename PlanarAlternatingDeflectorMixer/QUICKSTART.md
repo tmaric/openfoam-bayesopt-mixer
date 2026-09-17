@@ -125,6 +125,28 @@ apptainer exec --bind "$PWD/.." "$PADM_SIF" \
         --profile profiles/local
 ```
 
+#### Looking at the fields
+
+Every finished case leaves a `<CaseFolder>.foam` file next to its time
+directories — `FlowCase.foam`, `ScalarTransportCase.foam`. That file is what
+ParaView opens, and ParaView is in the image:
+
+```bash
+paraview FlowCase.foam
+```
+
+On WSL2 the WSLg display is already visible inside the container, and on a Linux
+desktop the X display is; no extra flags. On a cluster there is no display: open
+the `.foam` with a ParaView on your own machine, or use the Python-rendered
+`visualizations/*.png` the workflow writes. Use `paraview` directly — `paraFoam`
+is only a wrapper script that needs a system ParaView, which the OpenFOAM
+packages do not include.
+
+`pvpython` and `pvbatch` are in the image as well, for scripted rendering — on a
+machine with a display; ParaView's Ubuntu build needs an X server even offscreen.
+The one line ParaView prints at start-up about `/run/user/<uid>` is harmless;
+add `--bind "$XDG_RUNTIME_DIR"` to the `apptainer` command to silence it.
+
 Without the container, source an OpenFOAM `etc/bashrc` that has cfMesh built
 into its `FOAM_USER_APPBIN`, run `./Allwmake`, then invoke
 `research_sequence.py` directly; the thread-pinning the image sets for you is

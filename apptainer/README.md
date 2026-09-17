@@ -57,9 +57,29 @@ The image carries `sed`, `grep`, `awk`, `git`, `less` and `ffmpeg` alongside
 OpenFOAM, cfMesh and the Python stack, so the only step that cannot happen
 inside is building the image itself.
 
+### Looking at the fields
+
+Every finished case leaves a `<CaseFolder>.foam` file next to its time directories
+— `FlowCase.foam`, `ScalarTransportCase.foam`, `ChannelTwoSquareObstaclesHydro.foam`.
+That file is what ParaView opens, and ParaView is in the image:
+
+```bash
+paraview FlowCase.foam
+```
+
+On WSL2 the WSLg display is already visible inside the container, and on a Linux
+desktop the X display is; no extra flags. On a cluster there is no display: open
+the `.foam` with a ParaView on your own machine, or use the Python-rendered
+`visualizations/*.png` the workflow writes. Use `paraview` directly — `paraFoam`
+is only a wrapper script, and it needs a system ParaView that the OpenFOAM
+packages do not include.
+
+`pvpython` and `pvbatch` are in the image as well, for scripted rendering — on a
+machine with a display; ParaView's Ubuntu build needs an X server even offscreen.
+
 ## Notes for anyone editing `padm.def`
 
-Four things bit during the builds and are now guarded:
+These bit during the builds and are now guarded:
 
 * **`%post` runs under `/bin/sh` (dash on Ubuntu), not bash.** `set -o pipefail`
   is a bashism and aborts the build outright. The code therefore avoids
@@ -76,6 +96,23 @@ Four things bit during the builds and are now guarded:
   It goes into the image's own `platforms/$WM_OPTIONS` instead, and the `%post`
   asserts `cartesian2DMesh` is reachable so a bad build fails at build time
   rather than three hours into a campaign.
+* **`paraFoam` is not ParaView.** ESI's `openfoam*-default` package installs the
+  `paraFoam` wrapper script but no `paraview` binary, so inside the image it
+  failed with nothing to launch — testers read that as "the container has no
+  ParaView", and they were right. The Ubuntu `paraview` package is now installed
+  and `%test` asserts the binary exists; the documented command is
+  `paraview <CaseFolder>.foam`, not `paraFoam`. `python3-paraview` is installed
+  too, so `pvpython`, `pvbatch`, `--script` and the GUI's Python shell have
+  `paraview.simple`. **One limit, measured:** Ubuntu's ParaView is an X11 build,
+  so even `pvbatch --force-offscreen-rendering` aborts with *bad X server
+  connection* when there is no display at all — it renders fine on WSL2 and on
+  a Linux desktop, not on a compute node. Truly headless rendering would need
+  `xvfb` in the image; the workflow's own field images are rendered by Python
+  VTK and need nothing.
+  Expect one harmless line at every ParaView start, `QStandardPaths: error
+  creating runtime directory '/run/user/<uid>'` — the host's runtime directory
+  is inherited by name but not bound. `--bind "$XDG_RUNTIME_DIR"` on the
+  `apptainer` command line silences it; nothing else is affected.
 
 ## If you build cfMesh natively instead
 

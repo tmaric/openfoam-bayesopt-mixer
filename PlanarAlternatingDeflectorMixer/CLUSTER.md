@@ -138,6 +138,13 @@ apptainer exec --bind /work/scratch/$USER "$PADM_SIF" \
     python3 research_sequence.py next --max-new-evaluations 1 --profile profiles/local
 ```
 
+### Looking at fields from a cluster
+
+Compute nodes have no display, so `paraview` inside the image is for laptops and
+workstations. From a cluster, copy a finished case's `<CaseFolder>.foam` and its
+time directories to your machine and open them with a local ParaView, or rely on
+the `visualizations/*.png` the workflow renders in Python without any display.
+
 ### Another account, another cluster
 
 Nothing site-specific has to be edited in a tracked file. Set what differs:

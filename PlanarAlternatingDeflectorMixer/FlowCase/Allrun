@@ -25,3 +25,8 @@ if [ ! -f pressureDrop.csv ] && [ -f processor0/pressureDrop.csv ]; then
 fi
 
 [ -f pressureDrop.csv ] || { echo "ERROR: pressureDrop.csv not produced by pressureDrop FO"; exit 1; }
+
+# A <CaseFolder>.foam file is what ParaView opens.  Created, never launched:
+# this script also runs in batch and on cluster nodes with no display.
+touch "$(basename "$PWD").foam"
+echo "Open the fields with:  paraview $(basename "$PWD").foam"

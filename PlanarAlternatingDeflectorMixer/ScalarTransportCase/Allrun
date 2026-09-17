@@ -42,3 +42,8 @@ if [ ! -f mixing.csv ] && [ -f processor0/mixing.csv ]; then
 fi
 
 [ -f mixing.csv ] || { echo "ERROR: mixing.csv not produced by patchMixingQuality FO"; exit 1; }
+
+# A <CaseFolder>.foam file is what ParaView opens.  Created, never launched:
+# this script also runs in batch and on cluster nodes with no display.
+touch "$(basename "$PWD").foam"
+echo "Open the fields with:  paraview $(basename "$PWD").foam"

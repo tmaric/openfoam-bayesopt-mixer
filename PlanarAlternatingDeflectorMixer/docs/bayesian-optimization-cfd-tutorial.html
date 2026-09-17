@@ -984,7 +984,7 @@ export PADM_SIF="${PADM_SIF:-$PWD/apptainer/padm.sif}"   # or your own path
 apptainer shell --bind "$PWD" "$PADM_SIF"  # now you are in the container
 Apptainer&gt; cd PlanarAlternatingDeflectorMixer</code></p>
           <div class="callout green">
-            <p>Inside you have OpenFOAM, cfMesh, CadQuery, BoTorch, Snakemake, <code>git</code>, <code>sed</code>, <code>grep</code> &mdash; everything the six exercises need. The repository is bind-mounted, so <strong>files you edit and results you produce are on your real disk</strong>, not lost when you exit.</p>
+            <p>Inside you have OpenFOAM, cfMesh, CadQuery, BoTorch, Snakemake, ParaView, <code>git</code>, <code>sed</code>, <code>grep</code> &mdash; everything the six exercises need. The repository is bind-mounted, so <strong>files you edit and results you produce are on your real disk</strong>, not lost when you exit.</p>
           </div>
           <p class="caution">Exercises 1&ndash;4 run CFD, a few minutes each. Exercises 5&ndash;6 run none at all &mdash; they reuse the twelve designs the campaign already paid for, and finish in about a second.</p>
         </div>
@@ -1010,7 +1010,8 @@ Apptainer&gt; cd PlanarAlternatingDeflectorMixer</code></p>
           <p class="cmd"><code>./Allwclean &amp;&amp; ./Allwmake            # from the repository root, inside the image
 cd PlanarAlternatingDeflectorMixer
 python3 research_sequence.py next --max-new-evaluations 1 --profile profiles/local
-cat results/corrected_boundary_v3_baselines/straight/objectives.csv</code></p>
+cat results/corrected_boundary_v3_baselines/straight/objectives.csv
+paraview results/corrected_boundary_v3_baselines/straight/FlowCase/FlowCase.foam   # and look at it</code></p>
           <div class="expect">
             <div class="lbl">analytic</div><div class="val">2.8748 Pa</div><div class="note">12 &middot; 10&#8315;&#8310; &middot; 0.01 &middot; 0.024 / (10&#8315;&sup3;)&sup2; &times; 998.2</div>
             <div class="lbl">measured</div><div class="val">2.8737 Pa</div><div class="note">0.039 % low &mdash; discretisation, and well inside the 15 % gate</div>
@@ -1298,7 +1299,7 @@ python3 research_sequence.py next --max-new-evaluations 1 --profile profiles/loc
       <section>
         <h2>Step 4 &mdash; check you got what we got</h2>
         <div class="body">
-          <p>The straight baseline is the first thing the driver runs, and it is checkable against theory:</p>
+          <p>The straight baseline is the first thing the driver runs, and it is checkable against theory. To see the field itself, from the case directory inside the image: <code>paraview FlowCase.foam</code>.</p>
           <div class="expect">
             <div class="lbl">Δp analytic</div><div class="val">2.8748 Pa</div><div class="note">12νUL/H² × ρ</div>
             <div class="lbl">Δp measured</div><div class="val">2.8737 Pa</div><div class="note">0.039 % low &mdash; discretisation</div>
