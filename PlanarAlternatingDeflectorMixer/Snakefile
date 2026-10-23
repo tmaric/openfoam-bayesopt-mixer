@@ -9,7 +9,14 @@ REPO_ROOT = CASE_ROOT.parent
 # results_dir can be overridden per sample:
 #   snakemake --workflow-profile profiles/local --config results_dir=results/manual_00
 # Default is the single-run layout used by Allrun.
-RESULTS_ROOT = Path(config.get("results_dir", str(CASE_ROOT / "results"))).resolve()
+#
+# A RELATIVE results_dir is taken from the study directory, never from the
+# current working directory: `snakemake --directory results/ex3` changes into
+# that directory before this file is read, so resolving against the CWD turned
+# results_dir=results/ex3 into results/ex3/results/ex3 -- where no CAD yaml
+# exists, and the template design then ran silently in place of the edited one.
+_results_dir = Path(config.get("results_dir", str(CASE_ROOT / "results")))
+RESULTS_ROOT = (_results_dir if _results_dir.is_absolute() else CASE_ROOT / _results_dir).resolve()
 WORKFLOW = RESULTS_ROOT / ".workflow"
 
 # ---------------------------------------------------------------------------
@@ -203,9 +210,15 @@ rule stage_template_cases:
 
         # If a sample YAML was placed in results_dir by the BO loop, use it
         # verbatim so the full CAD parameter set (including k) carries through.
+        # Otherwise the template design runs -- say which, loudly, and record
+        # it: a mistyped results_dir must not pass for the intended design.
         if [ -f "{SAMPLE_CONFIG}" ]; then
             cp "{SAMPLE_CONFIG}" "{HYDRO}/{CAD_CONFIG_NAME}"
+            echo "{SAMPLE_CONFIG}" > "{WORKFLOW}/cad_source"
+        else
+            echo "template {TEMPLATE_HYDRO}/{CAD_CONFIG_NAME}" > "{WORKFLOW}/cad_source"
         fi
+        echo "[stage] CAD parameters from: $(cat "{WORKFLOW}/cad_source")"
 
         touch "{output.done}"
         """)
