@@ -7,6 +7,9 @@
 campaign: corrected_boundary_v3
 results_dir: results/corrected_boundary_v3
 model_file: gp_checkpoint.pt
+# Mesh and tolerance preset (config/config.yaml).  The archived campaign in
+# reference/ was computed at research fidelity; select with --campaign research.
+fidelity: research
 
 # The default driver stage stops after this corrected feasibility screen.  The
 # full campaign must be requested explicitly and is blocked unless the screen

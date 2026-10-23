@@ -1,0 +1,112 @@
+# Workshop campaign: the same study at WORKSHOP fidelity -- two unit cells
+# instead of five, looser tolerances, same mesh resolution (config/config.yaml)
+# -- so an older laptop runs a design in a minute or two.  Its own results
+# directories: workshop results are never pooled with the research campaign
+# (bayes_optimize_sequential.yaml, --campaign research).
+#
+# The design box, reference point and screening gate are the research
+# campaign's, unchanged, so both campaigns run exactly the same code path.  The
+# shorter device mixes less and costs less pressure, so the numbers themselves
+# are not comparable with reference/.
+#
+# n_init and n_bo are total campaign targets. Re-running the driver resumes
+# toward these targets; it does not add n_bo evaluations on every invocation.
+# Use --max-new-evaluations for a bounded pilot or maintenance run.
+
+campaign: workshop
+results_dir: results/workshop
+model_file: gp_checkpoint.pt
+fidelity: workshop
+
+# The default driver stage stops after this corrected feasibility screen.  The
+# full campaign must be requested explicitly and is blocked unless the screen
+# passes (or the researcher records an explicit override).
+screening_n_init: 12
+n_init: 16
+n_bo:   24
+np:     2      # MPI ranks per CFD solve; `cores` is accepted as a deprecated alias
+torch_threads: 1
+sobol_seed: 20260725
+
+# Sequential BO is intentional. Parallel CFD ranks are controlled separately
+# by np above; the acquisition must continue to propose one design at a time.
+q: 1
+
+acquisition:
+  num_restarts: 32
+  raw_samples: 1024
+
+# Fixed minimisation-space reference point. The acquisition receives its
+# negation because the BoTorch model is trained to maximise -Y.
+reference_point:
+  pressure_drop_Pa: 20.0
+  flux_intensity_of_segregation: 1.0
+
+baseline_summary: results/workshop_baselines/baseline_summary.csv
+
+screening_gate:
+  minimum_mixing_index: 0.60
+  maximum_failed_fraction: 0.25
+
+# Leave the corrected screening objectives in physical/linear space.  Log
+# transforms may be enabled only after the screen demonstrates positive,
+# sufficiently broad target distributions.
+objective_transforms:
+  pressure_ratio: linear
+  segregation: linear
+
+bo_parameters:
+  # Actual cosine amplitude on the weak wall, excluding the 0.01 H CAD floor.
+  a_weak:
+    lower: 0.00
+    upper: 0.12
+  # Maps to a_strong in [max(a_strong_min, a_weak + contrast_min),
+  # a_strong_max]. This directly represents the alternating asymmetry that the
+  # first campaign could reach only by driving both w_s and delta to bounds.
+  a_strong_ratio:
+    lower: 0.0
+    upper: 1.0
+  t_s:
+    lower: 0.04
+    upper: 0.15
+  t_m_ratio:
+    lower: 0.0
+    upper: 1.0
+  L_c:
+    lower: 0.40
+    upper: 2.40
+  L_s_ratio:
+    lower: 0.0
+    upper: 1.0
+
+cad_parameter_bounds:
+  a_strong:
+    lower: 0.12
+    upper: 0.35
+  strong_weak_contrast_min: 0.04
+  t_m:
+    lower: 0.025
+    upper: 0.15
+  L_s:
+    lower: 0.80
+    upper: 1.80
+  L_m:
+    lower: 0.80
+    upper: 1.80
+
+mesh_safety:
+  # From FlowCase/system/meshDict:
+  #   fine cell size = 1.25e-5 m
+  # With H = 1.0e-3 m this is 0.0125 H.
+  fine_cell_size_H: 0.0125
+
+  # Dependent-interval margins expressed in fine-cell counts.
+  # These are the BO-side "interval arithmetic" guards that keep the sampled
+  # CAD away from cfMesh-unresolvable sliver features.
+  t_m_min_cells: 2.0
+  split_gap_min_cells: 4.0
+  splitter_step_min_cells: 1.0
+
+# Failed CFD evaluations are recorded as failures and excluded from GP
+# fitting. Fictitious large objective penalties are deliberately not used.
+exclude_failed_evaluations: true

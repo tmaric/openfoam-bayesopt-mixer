@@ -31,6 +31,48 @@ CASE_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = CASE_ROOT.parent
 SNAKEFILE = CASE_ROOT / "Snakefile"
 
+# Campaigns.  Each file names its own results directory, baseline summary and
+# fidelity, so the two can never write into each other.  Selected by --campaign
+# or by $PADM_CAMPAIGN, in that order; the default is the cheap workshop one.
+CAMPAIGNS = {
+    "workshop": CASE_ROOT / "bayes_optimize_workshop.yaml",
+    "research": CASE_ROOT / "bayes_optimize_sequential.yaml",
+}
+DEFAULT_CAMPAIGN = "workshop"
+
+
+def campaign_name(name: str | None = None) -> str:
+    name = name or os.environ.get("PADM_CAMPAIGN") or DEFAULT_CAMPAIGN
+    if name not in CAMPAIGNS:
+        raise ValueError(f"unknown campaign {name!r}; choose one of {sorted(CAMPAIGNS)}")
+    return name
+
+
+def load_campaign(name: str | None = None) -> tuple[str, Path, dict]:
+    """(name, yaml path, parsed config) of the selected campaign."""
+    name = campaign_name(name)
+    path = CAMPAIGNS[name]
+    cfg = yaml.safe_load(path.read_text()) or {}
+    if "fidelity" not in cfg:
+        raise ValueError(f"{path.name} must declare a fidelity (research or workshop)")
+    return name, path, cfg
+
+
+def campaign_path(cfg: dict, key: str) -> Path:
+    """A path from a campaign file, relative ones taken from the study directory."""
+    value = Path(cfg[key])
+    return value if value.is_absolute() else (CASE_ROOT / value).resolve()
+
+
+def preparse_campaign(argv: list[str] | None = None) -> str | None:
+    """--campaign from the command line, read before the full parser exists:
+    bayes_optimize_sequential loads its campaign at import time."""
+    import argparse
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--campaign", default=None)
+    known, _ = pre.parse_known_args(argv)
+    return known.campaign
+
 # Overridable by --profile or by $PADM_SNAKEMAKE_PROFILE, in that order.
 DEFAULT_PROFILE = "profiles/local"
 

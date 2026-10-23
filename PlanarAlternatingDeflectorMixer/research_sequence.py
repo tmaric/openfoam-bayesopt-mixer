@@ -10,12 +10,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+import padm_runner
+
 
 CASE_ROOT = Path(__file__).resolve().parent
-BASELINE_SUMMARY = (
-    CASE_ROOT / "results" / "corrected_boundary_v3_baselines" / "baseline_summary.csv"
-)
-CAMPAIGN_ROOT = CASE_ROOT / "results" / "corrected_boundary_v3"
+# Set from the selected campaign in main().
+BASELINE_SUMMARY = CASE_ROOT / "results" / "workshop_baselines" / "baseline_summary.csv"
+CAMPAIGN_ROOT = CASE_ROOT / "results" / "workshop"
 REQUIRED_BASELINES = {"straight", "symmetric_deflector", "strong_alternating"}
 
 
@@ -67,8 +68,8 @@ def _status() -> dict:
     }
 
 
-def _print_status(status: dict) -> None:
-    print("Corrected PADM research sequence")
+def _print_status(status: dict, campaign: str, fidelity: str) -> None:
+    print(f"PADM sequence -- campaign {campaign} (fidelity {fidelity})")
     print(f"  baselines complete: {status['baselines_complete']}")
     print(f"  baselines missing:  {status['baselines_missing']}")
     print(
@@ -100,13 +101,23 @@ def main() -> None:
              "Default $PADM_SNAKEMAKE_PROFILE, else profiles/local.",
     )
     parser.add_argument("--override-screening-gate", action="store_true")
+    parser.add_argument(
+        "--campaign", choices=sorted(padm_runner.CAMPAIGNS), default=None,
+        help="workshop (two unit cells, about a minute per design; default) or "
+             "research (the archived campaign's settings, a few minutes per "
+             "design). Default $PADM_CAMPAIGN, else workshop.",
+    )
     args = parser.parse_args()
+    global BASELINE_SUMMARY, CAMPAIGN_ROOT
+    campaign, _, cfg = padm_runner.load_campaign(args.campaign)
+    BASELINE_SUMMARY = padm_runner.campaign_path(cfg, "baseline_summary")
+    CAMPAIGN_ROOT = padm_runner.campaign_path(cfg, "results_dir")
     np_ = args.cores if args.cores is not None else args.np
     if args.max_new_evaluations < 1:
         raise ValueError("--max-new-evaluations must be positive")
 
     status = _status()
-    _print_status(status)
+    _print_status(status, campaign, str(cfg["fidelity"]))
     if args.command == "status":
         return
 
@@ -120,6 +131,8 @@ def main() -> None:
             str(args.max_new_evaluations),
             "--np",
             str(np_),
+            "--campaign",
+            campaign,
         ]
         if args.profile:
             command += ["--profile", args.profile]
@@ -132,6 +145,8 @@ def main() -> None:
             stage,
             "--max-new-evaluations",
             str(args.max_new_evaluations),
+            "--campaign",
+            campaign,
         ]
         if args.override_screening_gate:
             command.append("--override-screening-gate")

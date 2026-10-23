@@ -16,7 +16,10 @@ import padm_runner
 
 CASE_ROOT = Path(__file__).resolve().parent
 BASELINE_CONFIG_DIR = CASE_ROOT / "research" / "baselines"
-RESULTS_ROOT = CASE_ROOT / "results" / "corrected_boundary_v3_baselines"
+# Set from the selected campaign in main(): workshop and research baselines
+# live in different directories and are computed at different fidelities.
+RESULTS_ROOT = CASE_ROOT / "results" / "workshop_baselines"
+FIDELITY = "workshop"
 CAD_CONFIG_NAME = "alternating_deflector_cad.yaml"
 ORDER = ("straight", "symmetric_deflector", "strong_alternating")
 
@@ -38,7 +41,8 @@ def _run_case(name: str, np_: int, profile_dir: Path) -> None:
         f"[baseline] running {name} (strictly sequential, {np_} CFD ranks, "
         f"profile {profile_dir.name})"
     )
-    result = padm_runner.run_design(sample_dir, np_, profile_dir)
+    result = padm_runner.run_design(sample_dir, np_, profile_dir,
+                                    extra_config=(f"fidelity={FIDELITY}",))
     if result.returncode != 0:
         kind, why = padm_runner.classify_failure(sample_dir)
         # A baseline is a reference measurement, so unlike a BO design neither
@@ -83,9 +87,11 @@ def _write_summary() -> list[dict]:
 
     straight = next((row for row in rows if row["baseline"] == "straight"), None)
     if straight is not None:
-        geometry = yaml.safe_load(
-            (BASELINE_CONFIG_DIR / "straight.yaml").read_text()
-        )
+        # The geometry actually meshed: a fidelity may override CAD keys such
+        # as N at staging, so the staged copy, not the baseline yaml, sets L.
+        staged = RESULTS_ROOT / "straight" / "FlowCase" / CAD_CONFIG_NAME
+        source = staged if staged.exists() else BASELINE_CONFIG_DIR / "straight.yaml"
+        geometry = yaml.safe_load(source.read_text())
         height = float(geometry["H"]) * float(geometry["scale"])
         length = (
             2.0 * float(geometry["L0"])
@@ -142,7 +148,16 @@ def main() -> None:
              "(default $PADM_SNAKEMAKE_PROFILE, else profiles/local)",
     )
     parser.add_argument("--summary-only", action="store_true")
+    parser.add_argument(
+        "--campaign", choices=sorted(padm_runner.CAMPAIGNS), default=None,
+        help="workshop (cheap, default) or research; default $PADM_CAMPAIGN, else workshop",
+    )
     args = parser.parse_args()
+    global RESULTS_ROOT, FIDELITY
+    campaign, _, cfg = padm_runner.load_campaign(args.campaign)
+    RESULTS_ROOT = padm_runner.campaign_path(cfg, "baseline_summary").parent
+    FIDELITY = str(cfg["fidelity"])
+    print(f"[baseline] campaign {campaign} (fidelity {FIDELITY}) -> {RESULTS_ROOT}")
     if args.max_new_evaluations < 1:
         raise ValueError("--max-new-evaluations must be positive")
     np_ = args.cores if args.cores is not None else args.np

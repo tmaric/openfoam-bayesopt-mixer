@@ -6,6 +6,10 @@ shell.executable("/bin/bash")
 CASE_ROOT = Path(workflow.basedir).resolve()
 REPO_ROOT = CASE_ROOT.parent
 
+# Defaults, including the fidelity presets.  Profiles load the same file and
+# --config on the command line overrides any key in it.
+configfile: str(CASE_ROOT / "config" / "config.yaml")
+
 # results_dir can be overridden per sample:
 #   snakemake --workflow-profile profiles/local --config results_dir=results/manual_00
 # Default is the single-run layout used by Allrun.
@@ -44,6 +48,32 @@ MPI_PREFIX = MPI.format(np=NP) + " "
 PREAMBLE = (config.get("env_preamble") or "").strip()
 
 PYTHON_BIN = config.get("python_bin") or str(Path(sys.executable).resolve())
+
+# FIDELITY -- research (the archived campaign's settings) or workshop (two unit
+# cells and looser tolerances, for older machines).  See config/config.yaml.
+FIDELITY = str(config.get("fidelity", "workshop"))
+_PRESETS = config.get("fidelities") or {}
+if FIDELITY not in _PRESETS:
+    raise ValueError(f"fidelity={FIDELITY!r} is not one of {sorted(_PRESETS)} (config/config.yaml)")
+FID_MESH = _PRESETS[FIDELITY]["mesh"]
+FID_FLOW = _PRESETS[FIDELITY]["flow"]
+FID_SCALAR = _PRESETS[FIDELITY]["scalar"]
+_fv, _sv = FID_FLOW["verify"], FID_SCALAR["verify"]
+FLOW_VERIFY_ARGS = (f"--window {_fv['window']} --min-rows {_fv['min_rows']} "
+                    f"--pressure-span-tol {_fv['pressure_span_tol']} --residual-tol {_fv['residual_tol']}")
+SCALAR_VERIFY_ARGS = (f"--window {_sv['window']} --min-rows {_sv['min_rows']} "
+                      f"--intensity-tol {_sv['intensity_tol']} --mean-tol {_sv['mean_tol']}")
+SCALAR_CHUNKS = " ".join(str(int(c)) for c in FID_SCALAR["chunks"])
+SCALAR_LAST = int(FID_SCALAR["chunks"][-1])
+# CAD keys a fidelity may override in the staged design, e.g. a device with
+# fewer unit cells: same resolution, so the cheap level stays faithful where a
+# coarser mesh would not (see config/config.yaml).  Applied to the staged copy
+# only; the sample's own yaml and the template stay untouched.
+FID_CAD = _PRESETS[FIDELITY].get("cad") or {}
+for _k, _v in FID_CAD.items():
+    if not str(_k).isidentifier() or not isinstance(_v, (int, float)):
+        raise ValueError(f"fidelity {FIDELITY}: cad override {_k}: {_v!r} must be a key and a number")
+CAD_OVERRIDES = " ".join(f"{k}={v}" for k, v in FID_CAD.items())
 
 CAD_CONFIG_NAME = "alternating_deflector_cad.yaml"
 CAD_SCRIPT_NAME = "alternating_deflector_cad.py"
@@ -218,7 +248,15 @@ rule stage_template_cases:
         else
             echo "template {TEMPLATE_HYDRO}/{CAD_CONFIG_NAME}" > "{WORKFLOW}/cad_source"
         fi
+        for kv in {CAD_OVERRIDES}; do
+            key="${{kv%%=*}}"; value="${{kv#*=}}"
+            grep -qE "^${{key}}:" "{HYDRO}/{CAD_CONFIG_NAME}" || {{ echo "[stage] cad override: no key ${{key}}" >&2; exit 1; }}
+            sed -E -i "s/^(${{key}}:[[:space:]]*)[^[:space:]#]+/\\1${{value}}/" "{HYDRO}/{CAD_CONFIG_NAME}"
+            echo "  overridden by fidelity {FIDELITY}: ${{key}}=${{value}}" >> "{WORKFLOW}/cad_source"
+        done
         echo "[stage] CAD parameters from: $(cat "{WORKFLOW}/cad_source")"
+        echo "{FIDELITY}" > "{WORKFLOW}/fidelity"
+        echo "[stage] fidelity: {FIDELITY}"
 
         touch "{output.done}"
         """)
@@ -258,6 +296,11 @@ rule hydro_mesh:
         """
         cp "{TEMPLATE_HYDRO}/system/meshDict" "{HYDRO}/system/meshDict"
         cd "{HYDRO}"
+        # fidelity {FIDELITY}: the fine cells stay at the walls and baffles,
+        # which is what keeps the thin features of the design space meshable
+        foamDictionary -entry maxCellSize -set {FID_MESH[max_cell_size]} system/meshDict
+        foamDictionary -entry localRefinement/walls/cellSize -set {FID_MESH[wall_cell_size]} system/meshDict
+        foamDictionary -entry localRefinement/walls/refinementThickness -set {FID_MESH[wall_refinement_thickness]} system/meshDict
         cartesian2DMesh 2>&1 | tee log.cartesian2DMesh
         # Fail early if cfMesh could not eliminate zero-area faces.
         # "Number of bad faces N" lines appear in the smoothing loop; the last
@@ -349,11 +392,17 @@ rule hydro_simpleFoam:
         """
         mkdir -p "{WORKFLOW}"
         cd "{HYDRO}"
+        # fidelity {FIDELITY}
+        foamDictionary -entry endTime -set {FID_FLOW[end_time]} system/controlDict
+        foamDictionary -entry SIMPLE/residualControl/p -set {FID_FLOW[residual]} system/fvSolution
+        foamDictionary -entry SIMPLE/residualControl/U -set {FID_FLOW[residual]} system/fvSolution
+        foamDictionary -entry solvers/p/tolerance -set {FID_FLOW[solver_tolerance]} system/fvSolution
+        foamDictionary -entry solvers/U/tolerance -set {FID_FLOW[solver_tolerance]} system/fvSolution
         if grep -Eq '^topology:[[:space:]]*straight([[:space:]]|$)' "{input.geometry}"; then
             # The straight case uses a zero transverse velocity. Its relative
-            # Uy residual is ill-conditioned, so run a bounded 600 iterations
-            # and apply the dedicated pressure/Ux convergence verifier below.
-            foamDictionary -entry endTime -set 600 system/controlDict
+            # Uy residual is ill-conditioned, so run a bounded number of
+            # iterations and apply the dedicated pressure/Ux verifier below.
+            foamDictionary -entry endTime -set {FID_FLOW[straight_end_time]} system/controlDict
         fi
         {MPI_PREFIX}simpleFoam -parallel 2>&1 | tee log.simpleFoam
         if [ ! -f pressureDrop.csv ] && [ -f processor0/pressureDrop.csv ]; then
@@ -362,7 +411,7 @@ rule hydro_simpleFoam:
         [ -f pressureDrop.csv ] || {{ echo "ERROR: pressureDrop.csv not produced by pressureDrop FO"; exit 1; }}
         "{PYTHON_BIN}" "{input.verifier}" \
             log.simpleFoam pressureDrop.csv "{input.geometry}" \
-            --window 100 --min-rows 400 --pressure-span-tol 1e-7 --residual-tol 1e-5
+            {FLOW_VERIFY_ARGS}
         touch "{output.done}"
         """)
 
@@ -505,9 +554,11 @@ rule mixing_scalar_transport:
         # stationary outlet metric in the corrected high-Peclet cases.
         foamDictionary -entry startFrom -set latestTime system/controlDict
         foamDictionary -entry SIMPLE/residualControl/T -set 1e-12 system/fvSolution
+        # fidelity {FIDELITY}
+        foamDictionary -entry solvers/T/tolerance -set {FID_SCALAR[solver_tolerance]} system/fvSolution
         : > log.scalarTransportFoam
         converged=0
-        for target_end in 600 1200 1800 2400; do
+        for target_end in {SCALAR_CHUNKS}; do
             foamDictionary -entry endTime -set "$target_end" system/controlDict
             {MPI_PREFIX}scalarTransportFoam -parallel 2>&1 | tee -a log.scalarTransportFoam
             if [ ! -f mixing.csv ] && [ -f processor0/mixing.csv ]; then
@@ -515,14 +566,14 @@ rule mixing_scalar_transport:
             fi
             if [ -f mixing.csv ] && \
                "{PYTHON_BIN}" "{input.verifier}" mixing.csv \
-                   --window 50 --min-rows 200 --intensity-tol 1e-4 --mean-tol 1e-4; then
+                   {SCALAR_VERIFY_ARGS}; then
                 converged=1
                 break
             fi
             echo "[scalar-convergence] objective not stable by $target_end; continuing sequentially"
         done
         if [ "$converged" -ne 1 ]; then
-            echo "ERROR: scalar objective did not stabilize by 2400 iterations" >&2
+            echo "ERROR: scalar objective did not stabilize by {SCALAR_LAST} iterations" >&2
             exit 1
         fi
         touch "{output.done}"
@@ -640,7 +691,8 @@ rule agglomerate:
             --flow-validation "{input.flow_validation}" \
             --research-config "{input.research_config}" \
             --output      "{output}"       \
-            --results-dir "{RESULTS_ROOT}"
+            --results-dir "{RESULTS_ROOT}" \
+            --fidelity    "{FIDELITY}"
         """)
 
 

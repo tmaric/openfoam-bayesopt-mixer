@@ -109,13 +109,18 @@ export APPTAINERENV_PREPEND_PATH="/opt/slurm/current/bin"
 echo "[orchestrator] job ${SLURM_JOB_ID} on $(hostname)"
 echo "[orchestrator] study     ${STUDY_DIR}"
 echo "[orchestrator] image     ${SIF}"
+# The cluster runs the research campaign unless told otherwise: the workshop
+# campaign exists so laptops can run the study, not compute nodes.
+CAMPAIGN="${PADM_CAMPAIGN:-research}"
 echo "[orchestrator] profile   ${PROFILE}, ${N} new evaluation(s), command '${COMMAND}'"
+echo "[orchestrator] campaign  ${CAMPAIGN}"
 echo "[orchestrator] SlurmUser ${SLURM_USER}"
 
 apptainer exec "${BINDS[@]}" "${SIF}" \
     python3 research_sequence.py "${COMMAND}" \
         --max-new-evaluations "${N}" \
-        --profile "${PROFILE}"
+        --profile "${PROFILE}" \
+        --campaign "${CAMPAIGN}"
 rc=$?
 
 echo "[orchestrator] research_sequence.py exit=${rc}"

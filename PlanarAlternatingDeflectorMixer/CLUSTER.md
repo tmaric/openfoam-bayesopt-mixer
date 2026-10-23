@@ -138,6 +138,10 @@ apptainer exec --bind /work/scratch/$USER "$PADM_SIF" \
     python3 research_sequence.py next --max-new-evaluations 1 --profile profiles/local
 ```
 
+Without `--campaign` this runs the cheap **workshop** campaign (one baseline, a
+few minutes) into `results/workshop_baselines/` — the right size for a smoke
+test. Add `--campaign research` to run at the fidelity of the archived study.
+
 ### Looking at fields from a cluster
 
 Compute nodes have no display, so `paraview` inside the image is for laptops and
@@ -175,7 +179,10 @@ re-submit, and both the BO driver and Snakemake skip what already exists.
 Every design job id it submits is appended to `<results>/.padm_jobs`.
 
 Variables it honours: `N` (new evaluations), `PROFILE` (default
-`profiles/slurm`), `COMMAND` (`next` / `status` / `optimization`), `SIF`.
+`profiles/slurm`), `COMMAND` (`next` / `status` / `optimization`), `SIF`, and
+`PADM_CAMPAIGN` — **`research` by default here**, unlike the drivers' own default
+`workshop`: compute nodes are for the full-fidelity study. Pass
+`--export=ALL,N=1,PADM_CAMPAIGN=workshop` to run the cheap one on the cluster.
 
 ### The binds, and why each is there
 

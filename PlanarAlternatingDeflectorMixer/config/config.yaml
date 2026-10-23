@@ -53,3 +53,70 @@ env_preamble: ""
 # CLUSTER.md for why snakemake's own apptainer + SLURM deployment cannot be used
 # when the driver itself runs inside the image.
 python_bin: "python3"
+
+# -----------------------------------------------------------------------------
+# FIDELITY.  Two presets of the same study:
+#
+#   research  -- the settings the archived campaign (reference/) was computed
+#                with: five unit cells, tight tolerances.  Reproduces those
+#                numbers.  Measured at np 2 on a laptop: 197-278 s per design.
+#   workshop  -- the same mesh resolution, looser tolerances, and a device of
+#                two unit cells instead of five.  Measured: 59-82 s per design.
+#
+# Why these and not a coarser mesh (measured, three baselines):
+#   * Loosening the tolerances alone moves the strong design's objectives by
+#     +0.02 % (pressure drop) and +0.1 % (mixing index), but saves only ~20 %.
+#   * A coarse channel core inflates the mixing index by numerical diffusion
+#     at Sc = 1000 (+30 % to +122 %) and reorders the baselines.  Rejected.
+#   * A scalar stationarity tolerance of 1e-3 declares convergence long before
+#     the outlet field has settled.  Rejected: both presets require 1e-4.
+#   * Two cells halve the cell count and keep the ranking of the baselines in
+#     both objectives.  Two is the fewest that still alternate.
+#
+# The two fidelities give different numbers -- the workshop device is shorter --
+# and their results must never be pooled: the fidelity is written into every
+# design's .workflow/fidelity and as a column of objectives.csv, and the BO
+# driver refuses to mix them.  Override per run with  --config fidelity=research
+#
+#   mesh    cfMesh sizes written into FlowCase/system/meshDict
+#   cad     keys overridden in the staged CAD yaml (never in the sample's own)
+#   flow    simpleFoam end time, residualControl, solver tolerance, and the
+#           arguments of verify_flow_convergence.py
+#   scalar  scalarTransportFoam solver tolerance, the chunk end times it may
+#           run to, and the stationarity test applied after each chunk
+# -----------------------------------------------------------------------------
+fidelity: workshop
+
+fidelities:
+  research:
+    mesh:
+      max_cell_size: 4.9999e-5
+      wall_cell_size: 1.25e-5
+      wall_refinement_thickness: 6.0e-4
+    cad: {}
+    flow:
+      end_time: 2000
+      straight_end_time: 600
+      residual: 1.0e-5
+      solver_tolerance: 1.0e-7
+      verify: {window: 100, min_rows: 400, pressure_span_tol: 1.0e-7, residual_tol: 1.0e-5}
+    scalar:
+      solver_tolerance: 1.0e-8
+      chunks: [600, 1200, 1800, 2400]
+      verify: {window: 50, min_rows: 200, intensity_tol: 1.0e-4, mean_tol: 1.0e-4}
+  workshop:
+    mesh:
+      max_cell_size: 4.9999e-5
+      wall_cell_size: 1.25e-5
+      wall_refinement_thickness: 6.0e-4
+    cad: {N: 2}
+    flow:
+      end_time: 1000
+      straight_end_time: 600
+      residual: 1.0e-4
+      solver_tolerance: 1.0e-6
+      verify: {window: 50, min_rows: 100, pressure_span_tol: 1.0e-6, residual_tol: 1.0e-4}
+    scalar:
+      solver_tolerance: 1.0e-6
+      chunks: [200, 400, 600, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400]
+      verify: {window: 50, min_rows: 200, intensity_tol: 1.0e-4, mean_tol: 1.0e-4}

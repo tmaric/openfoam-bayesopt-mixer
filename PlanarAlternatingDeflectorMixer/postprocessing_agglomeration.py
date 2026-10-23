@@ -57,6 +57,10 @@ def main() -> None:
                         help="Fixed operating point and validation policy.")
     parser.add_argument("--results-dir", required=True, type=Path,
                         help="Root results directory for this sample.")
+    parser.add_argument("--fidelity", default="research",
+                        help="Mesh/tolerance preset the design was computed with "
+                             "(config/config.yaml).  Recorded so that designs of "
+                             "different fidelity are never pooled.")
     args = parser.parse_args()
 
     results_dir = args.results_dir.resolve()
@@ -106,6 +110,7 @@ def main() -> None:
         # The sample directory name is portable; callers already know the
         # results root and should not persist a machine-specific absolute path.
         "results_dir": sample_id,
+        "fidelity":    args.fidelity,
         **geo_params,
         **pdrop_cols,
         **mixing_cols,

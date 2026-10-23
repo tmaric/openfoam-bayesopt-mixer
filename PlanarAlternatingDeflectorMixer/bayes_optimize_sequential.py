@@ -41,9 +41,10 @@ torch.set_default_dtype(torch.float64)
 
 CASE_ROOT = Path(__file__).resolve().parent
 
-CFG_PATH = CASE_ROOT / "bayes_optimize_sequential.yaml"
-with open(CFG_PATH) as _f:
-    CFG = yaml.safe_load(_f)
+# --campaign (or $PADM_CAMPAIGN) picks the campaign file; read before argparse
+# because every module-level constant below derives from it.
+CAMPAIGN, CFG_PATH, CFG = padm_runner.load_campaign(padm_runner.preparse_campaign())
+FIDELITY = str(CFG["fidelity"])
 
 SCREENING_N_INIT = int(CFG["screening_n_init"])
 N_INIT = int(CFG["n_init"])
@@ -728,7 +729,8 @@ def evaluate(bo_params: dict) -> tuple[float, float] | tuple[None, None]:
     print(f"[bo] sample {sid}: geo={geo_params}")
     print(f"[bo] sample {sid}: realized={_format_realized_geometry_metrics(realized_metrics)}")
 
-    ret = padm_runner.run_design(sample_dir, NP, PROFILE_DIR)
+    ret = padm_runner.run_design(sample_dir, NP, PROFILE_DIR,
+                                 extra_config=(f"fidelity={FIDELITY}",))
     if ret.returncode != 0:
         kind, why = padm_runner.classify_failure(sample_dir)
         if kind == "launch":
@@ -923,6 +925,15 @@ def collect_existing() -> tuple:
 
         with open(obj_csv, newline="") as fh:
             for row in csv.DictReader(fh):
+                # Never pool fidelities.  Rows written before the column
+                # existed were all computed at research fidelity.
+                row_fidelity = row.get("fidelity") or "research"
+                if row_fidelity != FIDELITY:
+                    raise RuntimeError(
+                        f"sample {d.name} was computed at fidelity {row_fidelity!r} but "
+                        f"campaign {CAMPAIGN!r} is {FIDELITY!r}; results of different "
+                        "fidelity must never be pooled into one GP"
+                    )
                 row = _normalize_objectives_row(row)
                 try:
                     bo = _bo_from_row(row)
@@ -1080,6 +1091,13 @@ def _parse_args() -> argparse.Namespace:
         help="Snakemake workflow profile directory selecting the execution backend "
              "(default $PADM_SNAKEMAKE_PROFILE, else profiles/local)",
     )
+    parser.add_argument(
+        "--campaign",
+        choices=sorted(padm_runner.CAMPAIGNS),
+        default=None,
+        help="workshop (cheap, default) or research (the archived campaign's "
+             "settings); default $PADM_CAMPAIGN, else workshop",
+    )
     return parser.parse_args()
 
 
@@ -1095,6 +1113,7 @@ def main() -> None:
     PROFILE_DIR = padm_runner.resolve_profile(args.profile)
     padm_runner.preflight(PROFILE_DIR)
     print(f"[bo] backend: profile {PROFILE_DIR.name}, np={NP}")
+    print(f"[bo] campaign {CAMPAIGN} (fidelity {FIDELITY}) -> {RESULTS_DIR}")
 
     # A corrected BO result is meaningful only relative to a validated
     # straight-channel baseline at the same operating point.
