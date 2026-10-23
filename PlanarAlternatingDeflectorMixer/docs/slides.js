@@ -956,7 +956,7 @@ function svgSym(x, y, base, sub, attrs = {}) {
 
 /* ===================================================================
    1. Corrected campaign: the twelve screening designs.
-   Straight from results/corrected_boundary_v3/all_samples.csv.
+   Straight from reference/corrected_boundary_v3/all_samples.csv.
    pa    = metric_pressure_drop_Pa
    mi    = metric_flux_weighted_mixing_index  (higher is better)
    =================================================================== */

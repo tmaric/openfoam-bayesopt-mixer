@@ -56,7 +56,8 @@ The predeclared go/no-go gate requires:
 - best flux-weighted mixing index at least 0.60;
 - failed-evaluation fraction no greater than 0.25.
 
-The driver wrote `results/corrected_boundary_v3/screening_gate.json`; the
+The driver wrote `results/corrected_boundary_v3/screening_gate.json` (shipped as
+`reference/corrected_boundary_v3/screening_gate.json`); the
 tracked result summary is `research/corrected_screening_summary.yaml`. The
 no-go means the planar topology must be adapted before spending the full BO
 budget.

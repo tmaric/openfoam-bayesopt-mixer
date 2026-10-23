@@ -208,8 +208,9 @@ stretches and diffuses the inlet interface but does not multiply it, and no
 setting of its six parameters reaches a useful mixing index. The finding is the
 result — the sibling `TwoLayerSerpentineCrossingMixer` study is the response.
 
-`results/corrected_boundary_v3_baselines/` and `results/corrected_boundary_v3/`
-hold the corrected data. The archived `results/` and
+`reference/corrected_boundary_v3_baselines/` and `reference/corrected_boundary_v3/`
+hold the corrected campaign's summaries, read-only (see
+[reference/README.md](reference/README.md)). The archived `results/` and
 `results/verified_flux_sequential_v2/` predate the boundary repair and **must not
 be pooled** with it.
 

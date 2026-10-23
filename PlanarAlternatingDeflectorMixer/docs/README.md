@@ -78,7 +78,7 @@ The URL carries the slide number (`#/23`), so any slide can be linked directly.
 - **Pareto front and hypervolume** — the dominated staircase against the
   declared reference point, and the area one candidate would add.
 - **The campaign Pareto chart** — the twelve corrected designs, read from
-  `../results/corrected_boundary_v3/all_samples.csv`.
+  `../reference/corrected_boundary_v3/all_samples.csv`.
 
 Editing a figure means editing the data or the kernel, not moving pixels.
 
@@ -114,8 +114,9 @@ the theory deck was derived from. They are deliberately **not tracked** (see
 
 ## Data provenance
 
-- **corrected** baselines: `../results/corrected_boundary_v3_baselines/`
-- **corrected** gated campaign, the only data shown: `../results/corrected_boundary_v3/`
+- **corrected** baselines: `../reference/corrected_boundary_v3_baselines/`
+- **corrected** gated campaign, the only data shown: `../reference/corrected_boundary_v3/`
+  (read-only snapshots; see `../reference/README.md`)
 - the archived 28-point campaign and `../results/verified_flux_sequential_v2/`
   predate the boundary repair. Retained to document the defect; **never pooled**
   with the corrected results.

@@ -169,9 +169,9 @@ varying `np` makes designs incomparable.
 See `CLUSTER.md` for the SLURM path, the bind list, and the one diagnostic that
 outranks the rest (`ClockTime/ExecutionTime` must be ~1, never ~np).
 
-All stored paths are clone-relative. Corrected results are written below
-`results/corrected_boundary_v3_baselines/` and
-`results/corrected_boundary_v3/`; runtime results are not version controlled.
+All stored paths are clone-relative. Everything a run writes goes below
+`results/`, which is never version controlled, so `snakemake ... clean` is safe.
+The archived research campaign's summaries ship read-only in `reference/`.
 
 See `docs/bayesian-optimization-cfd-tutorial.html` and
 `docs/bayesian-optimization-cfd-theory.html` for the slide decks, and

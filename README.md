@@ -158,9 +158,10 @@ cd PlanarAlternatingDeflectorMixer/docs && ./serve.sh
 **Assignment tasks 5 and 6 also run from a bare clone, with no CFD and no
 container.** They refit the GP on the twelve designs the campaign already paid
 for, rank the six parameters by their ARD length scales, and maximise UCB at
-κ = 0, 2 and 10. The campaign summaries they read ship with the repository —
-`all_samples.csv` (9.8 kB), `screening_gate.json` and `baseline_summary.csv` —
-and only a Python environment with BoTorch is needed:
+κ = 0, 2 and 10. The campaign summaries they read ship read-only in
+`PlanarAlternatingDeflectorMixer/reference/` — `all_samples.csv` (9.8 kB),
+`screening_gate.json` and `baseline_summary.csv` — and only a Python environment
+with BoTorch is needed:
 
 ```bash
 python3 PlanarAlternatingDeflectorMixer/docs/exercises/surrogate.py
@@ -374,8 +375,8 @@ results/corrected_boundary_v3/<sample_id>/
 ```
 
 The campaign directory contains `all_samples.csv`, `pareto_front.png`, and the
-GP checkpoint. Generated results are ignored by Git, with three deliberate
-exceptions kept small enough to ship and needed by the teaching exercises:
-`all_samples.csv`, `screening_gate.json` and `baseline_summary.csv`. See
+GP checkpoint. Everything under `results/` is generated and ignored by Git, so
+`clean` is always safe. The archived campaign's three small summaries ship
+separately, read-only, in `PlanarAlternatingDeflectorMixer/reference/`. See
 `PlanarAlternatingDeflectorMixer/docs/RESEARCH_PLAN.md` for the staged
 verification and publication gates.

@@ -1131,7 +1131,7 @@ rm results/ex3/objectives.csv                     &amp;&amp; $DRY   # step 2</co
         <div class="tag task">Task 5</div>
         <h2>Which parameters actually matter? No CFD allowed.</h2>
         <div class="body">
-          <p>The campaign has already paid for twelve designs. They are in <code>results/corrected_boundary_v3/all_samples.csv</code>, with the six BO coordinates in the <code>bo_*</code> columns and the mixing index in <code>metric_flux_weighted_mixing_index</code>.</p>
+          <p>The campaign has already paid for twelve designs. They are in <code>reference/corrected_boundary_v3/all_samples.csv</code>, with the six BO coordinates in the <code>bo_*</code> columns and the mixing index in <code>metric_flux_weighted_mixing_index</code>.</p>
           <p class="claim">Fit a GP to that data and use it to rank the six parameters by how much the mixing index depends on them.</p>
           <p class="definition">Hint: an <strong>ARD</strong> kernel &mdash; <em>automatic relevance determination</em> &mdash; learns one length scale per parameter. What does a very large length scale mean?</p>
         </div>

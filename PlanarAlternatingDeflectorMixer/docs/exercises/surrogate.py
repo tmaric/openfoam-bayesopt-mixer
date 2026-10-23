@@ -29,7 +29,7 @@ from gpytorch.mlls import ExactMarginalLogLikelihood
 torch.set_default_dtype(torch.float64)
 
 STUDY = pathlib.Path(__file__).resolve().parents[2]
-SAMPLES = STUDY / "results" / "corrected_boundary_v3" / "all_samples.csv"
+SAMPLES = STUDY / "reference" / "corrected_boundary_v3" / "all_samples.csv"
 NAMES = ["a_weak", "a_strong_ratio", "t_s", "t_m_ratio", "L_c", "L_s_ratio"]
 
 
