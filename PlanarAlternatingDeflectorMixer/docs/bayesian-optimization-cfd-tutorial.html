@@ -1007,20 +1007,54 @@
       </section>
 
       <section>
+        <h2>The workshop runs a cheap version of the same study</h2>
+        <div class="body">
+          <div class="two-col">
+            <div>
+              <table class="compact-table dense">
+                <thead><tr><th></th><th>research</th><th>workshop</th></tr></thead>
+                <tbody>
+                  <tr><td>device</td><td>5 cells, 24 mm</td><td><strong>2 cells, 12 mm</strong></td></tr>
+                  <tr><td>mesh cells, straight</td><td>157 604</td><td>78 884</td></tr>
+                  <tr><td>flow residual</td><td>10&#8315;&#8309;</td><td>10&#8315;&#8308;</td></tr>
+                  <tr><td>one design, np 2</td><td>3&ndash;5 min</td><td><strong>1&ndash;1.5 min</strong></td></tr>
+                  <tr><td>straight</td><td>2.874 Pa &middot; 0.100</td><td>1.437 Pa &middot; 0.068</td></tr>
+                  <tr><td>symmetric</td><td>10.81 Pa &middot; 0.090</td><td>4.726 Pa &middot; 0.063</td></tr>
+                  <tr><td>strong</td><td>30.51 Pa &middot; 0.145</td><td>11.02 Pa &middot; 0.106</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div>
+              <p class="claim">Same mesh resolution. Same order of the three baselines, in both objectives.</p>
+              <p>Loosening the tolerances alone moves the objectives by 0.1&nbsp;% or less. The shorter device is what saves the time &mdash; and it mixes less, so the numbers differ.</p>
+              <div class="callout">
+                <p>Each design records its fidelity, and the driver <strong>refuses to pool</strong> the two.</p>
+              </div>
+            </div>
+          </div>
+          <p class="caution" style="margin-top:14px">Why not a coarser mesh? At Sc = 1000, numerical diffusion in a coarse channel core inflated the mixing index by up to 122&nbsp;% and reordered the baselines.</p>
+        </div>
+        <aside class="notes">Pairs are pressure drop and flux-weighted mixing index. Two cells is the fewest that still alternate: the strong deflector changes wall from one cell to the next. The research numbers are the archived study's (reference/); --campaign research reproduces them. The scalar stationarity test is 1e-4 in both presets: 1e-3 declared convergence long before the outlet field had settled.</aside>
+      </section>
+
+      <section>
         <h2>Before you start: get inside the image</h2>
         <div class="body">
           <p>One step happens on your own machine &mdash; building the image. <strong>Everything after it happens inside.</strong></p>
-          <p class="cmd"><code>cd openfoam-bayesopt-mixer
-./apptainer/build.sh                              # the only step that cannot run inside
+          <p class="cmd"><code>git clone https://github.com/tmaric/openfoam-bayesopt-mixer.git
+cd openfoam-bayesopt-mixer
+./apptainer/build.sh                       # the only step that cannot run inside
 
 export PADM_SIF="${PADM_SIF:-$PWD/apptainer/padm.sif}"   # or your own path
 apptainer shell --bind "$PWD" "$PADM_SIF"  # now you are in the container
+Apptainer&gt; ./Allwclean &amp;&amp; ./Allwmake     # the study's function objects, built in here
 Apptainer&gt; cd PlanarAlternatingDeflectorMixer</code></p>
           <div class="callout green">
             <p>Inside you have OpenFOAM, cfMesh, CadQuery, BoTorch, Snakemake, ParaView, <code>git</code>, <code>sed</code>, <code>grep</code> &mdash; everything the six exercises need. The repository is bind-mounted, so <strong>files you edit and results you produce are on your real disk</strong>, not lost when you exit.</p>
           </div>
-          <p class="caution">Exercises 1&ndash;4 run CFD, a few minutes each. Exercises 5&ndash;6 run none at all &mdash; they reuse the twelve designs the campaign already paid for, and finish in about a second.</p>
+          <p class="caution">Exercises 1 and 3 run CFD, about a minute and a half each on a laptop. Exercise 2 is a <code>grep</code>, exercise 4 a dry run, and 5&ndash;6 run no CFD at all.</p>
         </div>
+        <aside class="notes">The function objects must be compiled inside the image: the container's OpenFOAM dlopens them, and they compute both objectives. Without them every design ends with an empty objectives.csv. Measured from a fresh clone in the image at np 2: build 11 s, exercise 1 87 s, exercise 3 64 s.</aside>
       </section>
 
       <section class="task-slide">
@@ -1028,9 +1062,8 @@ Apptainer&gt; cd PlanarAlternatingDeflectorMixer</code></p>
         <h2>Reproduce a number you can check independently</h2>
         <div class="body">
           <ol class="steps">
-            <li><p>Build the image and the study&rsquo;s OpenFOAM function-object library inside it.</p></li>
-            <li><p>Run the first baseline the driver asks for &mdash; the straight, unobstructed channel.</p></li>
-            <li><p>Find the pressure drop it reports, and check it against the textbook parallel-plate result <span class="formula" style="font-size:26px !important">&Delta;p = 12&nu;UL/H&sup2; &middot; &rho;</span></p></li>
+            <li><p>Run the first baseline the driver asks for &mdash; the straight, unobstructed channel. At workshop fidelity it is <strong>12 mm</strong> long: two unit cells and the two buffers.</p></li>
+            <li><p>Find the pressure drop it reports, and check it against the textbook parallel-plate result <span class="formula" style="font-size:26px !important">&Delta;p = &rho; &middot; 12&nu;UL/H&sup2;</span></p></li>
           </ol>
           <p class="caution">Why this first? If the empty pipe is wrong, nothing downstream can be trusted.</p>
         </div>
@@ -1038,19 +1071,18 @@ Apptainer&gt; cd PlanarAlternatingDeflectorMixer</code></p>
 
       <section class="answer-slide">
         <div class="tag answer">Answer 1</div>
-        <h2>2.8737 Pa measured against 2.8748 Pa exact</h2>
+        <h2>1.4367 Pa measured against 1.4374 Pa exact</h2>
         <div class="body">
-          <p class="cmd"><code>./Allwclean &amp;&amp; ./Allwmake            # from the repository root, inside the image
-cd PlanarAlternatingDeflectorMixer
-python3 research_sequence.py next --max-new-evaluations 1 --profile profiles/local
-cat results/corrected_boundary_v3_baselines/straight/objectives.csv
-paraview results/corrected_boundary_v3_baselines/straight/FlowCase/FlowCase.foam   # and look at it</code></p>
+          <p class="cmd"><code>python3 research_sequence.py next --max-new-evaluations 1 --profile profiles/local
+cat results/workshop_baselines/straight/objectives.csv
+paraview results/workshop_baselines/straight/FlowCase/FlowCase.foam   # and look at it</code></p>
           <div class="expect">
-            <div class="lbl">analytic</div><div class="val">2.8748 Pa</div><div class="note">12 &middot; 10&#8315;&#8310; &middot; 0.01 &middot; 0.024 / (10&#8315;&sup3;)&sup2; &times; 998.2</div>
-            <div class="lbl">measured</div><div class="val">2.8737 Pa</div><div class="note">0.039 % low &mdash; discretization, and well inside the 15 % gate</div>
+            <div class="lbl">analytic</div><div class="val">1.4374 Pa</div><div class="note">998.2 &middot; 12 &middot; 10&#8315;&#8310; &middot; 0.01 &middot; 0.012 / (10&#8315;&sup3;)&sup2;</div>
+            <div class="lbl">measured</div><div class="val">1.4367 Pa</div><div class="note">0.05 % low &mdash; discretization; the driver allows 15 %</div>
           </div>
-          <p style="margin-top:16px">Still inside the image, repeat it with <code>--profile profiles/local2</code>. Same number: the backend is a profile, and that is the only thing that changed.</p>
+          <p style="margin-top:16px">The driver runs the same check itself: <code>analytical_check_passed</code> in <code>results/workshop_baselines/baseline_summary.csv</code>. At research fidelity &mdash; five cells, 24 mm &mdash; it reads 2.8737&nbsp;Pa against 2.8748&nbsp;Pa.</p>
         </div>
+        <aside class="notes">A participant who runs the driver a second time does not repeat this baseline: it is complete, so the driver moves on to the next missing one. That is the gating working, not a bug.</aside>
       </section>
 
       <section class="task-slide">
@@ -1092,7 +1124,7 @@ grep -nE '_p\[|_p\.get' FlowCase/alternating_deflector_cad.py      # w_s, delta,
         <div class="tag task">Task 3</div>
         <h2>Predict, then measure</h2>
         <div class="body">
-          <p>The <code>strong_alternating</code> baseline uses &delta; = 0.30 and reaches <strong>30.509 Pa</strong> at a mixing index of <strong>0.1450</strong>.</p>
+          <p>The <code>strong_alternating</code> baseline uses &delta; = 0.30 and reaches <strong>11.02 Pa</strong> at a mixing index of <strong>0.1061</strong>. The straight channel from Task 1: 1.437 Pa at 0.0681.</p>
           <p class="claim">Halve the asymmetry to &delta; = 0.15 and run it.</p>
           <p><strong>Write your prediction down first:</strong> do pressure and mixing go up or down, and which one changes more?</p>
           <p class="caution">Committing to a prediction before the run is the entire discipline. It is also how you notice when a result is suspicious.</p>
@@ -1101,7 +1133,7 @@ grep -nE '_p\[|_p\.get' FlowCase/alternating_deflector_cad.py      # w_s, delta,
 
       <section class="answer-slide">
         <div class="tag answer">Answer 3</div>
-        <h2>Both fall &mdash; but pressure falls twice as fast</h2>
+        <h2>Both fall &mdash; and almost all of the extra mixing goes</h2>
         <div class="body">
           <p class="cmd"><code>mkdir -p results/ex3
 sed 's/^delta: 0.30$/delta: 0.15/' research/baselines/strong_alternating.yaml \
@@ -1109,14 +1141,15 @@ sed 's/^delta: 0.30$/delta: 0.15/' research/baselines/strong_alternating.yaml \
 snakemake --snakefile Snakefile --directory results/ex3 \
      --workflow-profile profiles/local --config results_dir=results/ex3 np=2</code></p>
           <div class="expect">
-            <div class="lbl">&delta; = 0.30</div><div class="val">30.509 Pa &middot; 0.1450</div><div class="note">the baseline</div>
-            <div class="lbl">&delta; = 0.15</div><div class="val">13.381 Pa &middot; 0.1023</div><div class="note">&minus;56 % pressure, &minus;29 % mixing</div>
+            <div class="lbl">&delta; = 0.30</div><div class="val">11.02 Pa &middot; 0.1061</div><div class="note">the baseline</div>
+            <div class="lbl">&delta; = 0.15</div><div class="val">5.69 Pa &middot; 0.0742</div><div class="note">&minus;48 % pressure, &minus;30 % mixing</div>
           </div>
           <div class="callout">
-            <p>So the gentler device is the <em>better trade</em> per Pascal &mdash; and further from the 0.60 gate. That is exactly why a single scalar objective would mislead you here.</p>
+            <p>Now measure both against the empty channel. The gentler device still pays <strong>44&nbsp;%</strong> of the extra pressure, for <strong>16&nbsp;%</strong> of the extra mixing. Comparing two designs only with each other hid that.</p>
           </div>
-          <p class="claim" style="margin-top:14px">Now look it up on the front: Sobol design <strong>00000</strong> reached 13.185 Pa at 0.1048. Your hand-tuned design is <strong>dominated by one the optimizer already found</strong>.</p>
+          <p class="claim" style="margin-top:14px">At the same fidelity, Sobol design <strong>00000</strong> &mdash; a screening point, not an optimizer proposal &mdash; reaches 5.50 Pa at 0.0777. Your hand-tuned design is <strong>dominated</strong>.</p>
         </div>
+        <aside class="notes">Extra over the straight channel: delta 0.30 costs 9.58 Pa for +0.0380 in mixing index, delta 0.15 costs 4.26 Pa for +0.0062. At research fidelity the story is the same: 30.51 Pa at 0.1450 becomes 13.38 Pa at 0.1023, against 2.87 Pa at 0.1003 for the empty channel, and design 00000 reaches 13.18 Pa at 0.1048. The mixing index moves in the fourth figure from run to run at workshop fidelity, far below these differences.</aside>
       </section>
 
       <section class="task-slide">
@@ -1268,7 +1301,7 @@ rm results/ex3/objectives.csv                     &amp;&amp; $DRY   # step 2</co
             <div>
               <h3>You need</h3>
               <ul>
-                <li><strong>git</strong>;</li>
+                <li><strong>git</strong>, and at least <strong>two cores</strong> &mdash; every solve runs decomposed;</li>
                 <li><strong>Apptainer</strong> &mdash; and for building the image, either the <code>uidmap</code> package or a setuid installation;</li>
                 <li>about <strong>4 GB</strong> of disk for the image and a first campaign.</li>
               </ul>
@@ -1308,10 +1341,11 @@ Apptainer&gt; ./Allwclean &amp;&amp; ./Allwmake</code></p>
       <section>
         <h2>Step 3 &mdash; run the campaign</h2>
         <div class="body">
-          <p>Still inside the image, from the study directory:</p>
+          <p>Still inside the image, from the study directory. <code>--campaign research</code> selects the archived study&rsquo;s settings: five cells, tight tolerances, a few minutes per design. Without it you get the workshop version from the exercises.</p>
           <p class="cmd"><code>cd PlanarAlternatingDeflectorMixer
-python3 research_sequence.py status                       # what stage are we at?
-python3 research_sequence.py next --max-new-evaluations 1 --profile profiles/local</code></p>
+python3 research_sequence.py status --campaign research      # what stage are we at?
+python3 research_sequence.py next --max-new-evaluations 1 \
+    --profile profiles/local --campaign research</code></p>
           <p>The driver is <strong>gated</strong> and advances one bounded step at a time: three matched baselines first, then the twelve-design screen, and the full campaign only if the screen passes.</p>
           <div class="two-col">
             <div>
@@ -1319,13 +1353,13 @@ python3 research_sequence.py next --max-new-evaluations 1 --profile profiles/loc
               <p class="cmd" style="margin:0"><code>export PADM_BIND=/scratch/$USER
 sbatch -A "$PADM_SLURM_ACCOUNT" --parsable \
     --export=ALL,N=1 run-bo.sbatch &gt;&gt; .padm_jobs</code></p>
-              <p class="definition" style="margin-top:8px"><code>sbatch</code> is not in the image. See CLUSTER.md.</p>
+              <p class="definition" style="margin-top:8px"><code>sbatch</code> is not in the image, and <code>run-bo.sbatch</code> runs the research campaign by default. See CLUSTER.md.</p>
             </div>
             <div>
               <h3>Rebuild the figures &mdash; of a campaign you ran</h3>
               <p class="cmd" style="margin:0"><code>snakemake visualize \
     --workflow-profile profiles/local \
-    --config results_dir=results/workshop</code></p>
+    --config results_dir=results/corrected_boundary_v3</code></p>
             </div>
           </div>
         </div>
@@ -1334,11 +1368,11 @@ sbatch -A "$PADM_SLURM_ACCOUNT" --parsable \
       <section>
         <h2>Step 4 &mdash; check you got what we got</h2>
         <div class="body">
-          <p>The straight baseline is the first thing the driver runs, and it is checkable against theory. To see the field itself, from the case directory inside the image: <code>paraview FlowCase.foam</code>.</p>
+          <p>At research fidelity the straight baseline is the first thing the driver runs, and it is checkable against theory. To see the field, from the case directory inside the image: <code>paraview FlowCase.foam</code>.</p>
           <div class="expect">
-            <div class="lbl">Δp analytic</div><div class="val">2.8748 Pa</div><div class="note">12νUL/H² × ρ</div>
+            <div class="lbl">Δp analytic</div><div class="val">2.8748 Pa</div><div class="note">ρ · 12νUL/H², L = 24 mm</div>
             <div class="lbl">Δp measured</div><div class="val">2.8737 Pa</div><div class="note">0.039 % low &mdash; discretization</div>
-            <div class="lbl">mixing index</div><div class="val">0.10028</div><div class="note">agrees to 5 significant figures across all four backends</div>
+            <div class="lbl">mixing index</div><div class="val">0.1003</div><div class="note">the same to 4 significant figures on all four backends</div>
             <div class="lbl">wall / CPU</div><div class="val">≈ 1</div><div class="note">from <code>log.simpleFoam</code> &mdash; <strong>not</strong> ≈ np</div>
           </div>
           <div class="callout blue">
