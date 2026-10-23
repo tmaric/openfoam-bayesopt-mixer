@@ -87,7 +87,7 @@ def main() -> None:
     parser.add_argument("command", choices=("status", "next", "optimization"))
     parser.add_argument("--max-new-evaluations", type=int, default=1)
     parser.add_argument(
-        "--np", type=int, default=2, help="MPI ranks per CFD solve (default 2)"
+        "--np", type=int, default=2, help="MPI ranks per CFD solve (default 2, minimum 2)"
     )
     parser.add_argument(
         "--cores", type=int, default=None,

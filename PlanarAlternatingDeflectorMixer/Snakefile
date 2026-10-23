@@ -34,8 +34,12 @@ WORKFLOW = RESULTS_ROOT / ".workflow"
 # rules write `numberOfSubdomains {NP}` into both decomposeParDicts, so the
 # committed dictionaries are never read and the launcher can never disagree
 # with the number of processor* directories that decomposePar produced.
+# Every solve runs decomposed, with -parallel, and OpenFOAM aborts with "attempt
+# to run parallel on 1 processor" for np=1 -- after the CAD and the mesh have
+# already been paid for.  Refuse it here instead.
 NP = int(config.get("np", 2))
-assert NP >= 1, "np must be >= 1"
+if NP < 2:
+    raise ValueError(f"np={NP}: the solves run decomposed and need np >= 2")
 
 # `{np}` placeholder: mpirun needs an explicit rank count, srun does not because
 # a SLURM allocation already carries it.  Keeping this a format string lets one

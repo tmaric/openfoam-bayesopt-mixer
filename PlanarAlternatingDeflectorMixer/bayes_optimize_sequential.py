@@ -169,8 +169,8 @@ def _validate_config() -> None:
         raise ValueError("screening_n_init must be between 2 and n_init")
     if Q_BATCH != 1:
         raise ValueError("This research campaign requires strictly sequential BO (q = 1).")
-    if NP < 1 or NP > MAX_NP:
-        raise ValueError(f"np must be between 1 and {MAX_NP}.")
+    if NP < 2 or NP > MAX_NP:
+        raise ValueError(f"np must be between 2 and {MAX_NP}: the solves run decomposed.")
     if TORCH_THREADS != 1:
         raise ValueError("torch_threads must be 1 for the resource-limited campaign.")
     if N_CELLS < 1:
