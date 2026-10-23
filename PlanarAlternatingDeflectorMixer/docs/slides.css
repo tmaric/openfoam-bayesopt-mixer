@@ -889,3 +889,18 @@ body {
 }
 .odds .box .num { color: var(--ink); font-size: 46px; font-weight: 700; line-height: 1.15; }
 .odds .box .sub { color: var(--muted); font-size: 19px; }
+
+/* --- citations -------------------------------------------------------
+   A short tag at the foot of the slide body, and a references layout for
+   the "Further reading" slide. Muted and small: present, never competing. */
+.reveal .slides section .cite {
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.35;
+  margin-top: 16px;
+}
+.reveal .slides section .cite::before { content: "\2192\00a0"; color: var(--line); }
+.refs { columns: 2; column-gap: 46px; font-size: 17px; line-height: 1.38; color: var(--ink); }
+.refs p { break-inside: avoid; margin: 0 0 9px; }
+.refs p b { font-weight: 700; }
+.refs .main { background: var(--white); border-left: 5px solid var(--orange); padding: 8px 12px; }
