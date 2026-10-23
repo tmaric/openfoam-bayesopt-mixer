@@ -917,3 +917,7 @@ body {
 .reveal .slides section.divider .qr-corner .qr-tile img { height: 230px; width: 230px; }
 .reveal .slides section.divider .qr-corner .cap { color: var(--blue-soft); font-size: 20px; margin-top: 12px; }
 .reveal .slides section.divider .qr-corner + h2, .reveal .slides section.divider.has-qr p { max-width: 15em; }
+
+/* headings on the dark closing slide were ink on ink */
+.reveal .slides section.closing h3 { color: var(--orange); }
+.reveal .slides section.closing h3 code { color: var(--white); background: transparent; }
