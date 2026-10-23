@@ -574,7 +574,7 @@ function renderMarginalConditional(svg, mode) {
       stroke: ORANGE, 'stroke-width': 2, 'stroke-dasharray': '6 4' }));
     svg.appendChild(svgText(m.left, 26, 'p(y₁ | y₂ = 1.5)',
       { fill: ORANGE, 'font-size': 22, 'font-weight': 700 }));
-    svg.appendChild(svgText(m.left, 50, `mean ${mu.toFixed(2)},  sd ${sd.toFixed(2)}  —  moved, and 40% as wide`,
+    svg.appendChild(svgText(m.left, 50, `mean ${mu.toFixed(2)},  sd ${sd.toFixed(2)}  —  moved, and 60% as wide`,
       { fill: MUTED, 'font-size': 19 }));
   }
 }
@@ -707,9 +707,9 @@ function renderFailureGP(svg, mode) {
 
   /* the true optimum, so the eye has something to compare the pick against */
   svg.appendChild(svgElement('line', {
-    x1: X(0.759), x2: X(0.759), y1: Y(1.0), y2: Y(-3.4),
+    x1: X(0.757), x2: X(0.757), y1: Y(1.0), y2: Y(-3.4),
     stroke: GREEN, 'stroke-width': 2, 'stroke-dasharray': '4 4', opacity: 0.8 }));
-  svg.appendChild(svgText(X(0.759), Y(-3.4) + 2, 'true optimum',
+  svg.appendChild(svgText(X(0.757), Y(-3.4) + 2, 'true optimum',
     { 'text-anchor': 'middle', fill: GREEN, 'font-size': 17 }));
 
   FAIL_X.forEach((xi, i) => {
@@ -1366,7 +1366,7 @@ function forrester(x) {
 
 /* Sample placement chosen so the kappa dial tells a true story:
    kappa=0 re-measures next to the best known point, kappa=3 lands on the
-   real optimum at x=0.758.  (Pushing further drifts past it: kappa=15
+   real optimum at x=0.757.  (Pushing further drifts past it: kappa=15
    picks 0.781.) */
 const FX = [0.05, 0.25, 0.45, 0.62, 0.95];
 
