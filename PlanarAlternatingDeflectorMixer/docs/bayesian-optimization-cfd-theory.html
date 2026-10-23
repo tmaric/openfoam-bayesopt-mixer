@@ -103,7 +103,7 @@
           <div class="two-col">
             <div>
               <h3>Chip cooling</h3>
-              <p>A parameterised cooling geometry. Objectives in tension: <strong>heat removed</strong> against <strong>pressure loss</strong>. The result is a Pareto front, sampled and then confirmed, from which an engineer picks against a pump curve.</p>
+              <p>A parameterized cooling geometry. Objectives in tension: <strong>heat removed</strong> against <strong>pressure loss</strong>. The result is a Pareto front, sampled and then confirmed, from which an engineer picks against a pump curve.</p>
             </div>
             <div>
               <h3>Passive chaotic micromixing</h3>
@@ -153,7 +153,7 @@
       <section>
         <h2>Constraining the parametric CAD</h2>
         <div class="body">
-          <p class="claim">The optimiser will propose the corners of your box. Every corner must be a shape that can be built, meshed and solved.</p>
+          <p class="claim">The optimizer will propose the corners of your box. Every corner must be a shape that can be built, meshed and solved.</p>
           <div class="two-col">
             <div>
               <h3>Why it matters</h3>
@@ -161,7 +161,7 @@
             </div>
             <div>
               <h3>How to do it</h3>
-              <p>Express dependent parameters as <strong>ratios into admissible intervals</strong> whose endpoints depend on the other parameters. The optimiser then searches a plain unit box, and feasibility is structural rather than checked after the fact.</p>
+              <p>Express dependent parameters as <strong>ratios into admissible intervals</strong> whose endpoints depend on the other parameters. The optimizer then searches a plain unit box, and feasibility is structural rather than checked after the fact.</p>
             </div>
           </div>
         </div>
@@ -208,7 +208,7 @@
           </div>
           <p class="caution" style="margin-top:14px">Nothing crashed. The campaign runs to completion, reports an optimum, and is wrong &mdash; because a failed <em>run</em> was written back as a failed <em>design</em>.</p>
         </div>
-        <aside class="notes">Same six designs and the same kernel in both panels; only two recorded values differ. The penalty value used here is -2.5, which is the sort of number a failure handler writes so the optimiser "avoids that region". It works — that is the problem.</aside>
+        <aside class="notes">Same six designs and the same kernel in both panels; only two recorded values differ. The penalty value used here is -2.5, which is the sort of number a failure handler writes so the optimizer "avoids that region". It works — that is the problem.</aside>
       </section>
 
       <section>
@@ -270,8 +270,8 @@
             </div>
             <div>
               <h3>The acquisition function</h3>
-              <p>Optimising μ alone would only <strong>exploit</strong>. Including σ² lets us <strong>explore</strong> where the GP is uncertain.</p>
-              <p class="definition">The acquisition function combines the two into one number to maximise.</p>
+              <p>Optimizing μ alone would only <strong>exploit</strong>. Including σ² lets us <strong>explore</strong> where the GP is uncertain.</p>
+              <p class="definition">The acquisition function combines the two into one number to maximize.</p>
             </div>
           </div>
         </div>
@@ -282,9 +282,9 @@
         <div class="body">
           <p><strong>Before the loop:</strong> evaluate f at n<sub>0</sub> space-filling points (Sobol or Latin hypercube) to get D = {(x<sub>i</sub>, y<sub>i</sub>)}. With no data the acquisition is flat and says nothing; with only a few points the uncertainty peaks at the edges of the box, so a space-filling start pays for itself.</p>
           <div class="emph-rows">
-            <div class="emph-row"><div class="n">1</div><div class="t"><strong>Fit</strong> the GP to D: maximise the log marginal likelihood over &theta; = (&#8467;, &sigma;<sub>f</sub>, &sigma;<sub>n</sub>).</div></div>
+            <div class="emph-row"><div class="n">1</div><div class="t"><strong>Fit</strong> the GP to D: maximize the log marginal likelihood over &theta; = (&#8467;, &sigma;<sub>f</sub>, &sigma;<sub>n</sub>).</div></div>
             <div class="emph-row"><div class="n">2</div><div class="t"><strong>Condition</strong> on D to get the posterior mean &mu;&prime;(x) and standard deviation &sigma;&prime;(x).</div></div>
-            <div class="emph-row"><div class="n">3</div><div class="t"><strong>Maximise</strong> the acquisition, x<sub>new</sub> = argmax<sub>x</sub> &alpha;(x; &mu;&prime;, &sigma;&prime;). Cheap, so: global, many restarts.</div></div>
+            <div class="emph-row"><div class="n">3</div><div class="t"><strong>Maximize</strong> the acquisition, x<sub>new</sub> = argmax<sub>x</sub> &alpha;(x; &mu;&prime;, &sigma;&prime;). Cheap, so: global, many restarts.</div></div>
             <div class="emph-row"><div class="n">4</div><div class="t"><strong>Evaluate</strong> the expensive f at x<sub>new</sub> &mdash; one design, or q of them in parallel.</div></div>
             <div class="emph-row"><div class="n">5</div><div class="t"><strong>Augment</strong> D &larr; D &cup; {(x<sub>new</sub>, y<sub>new</sub>)}, and go to 1.</div></div>
           </div>
@@ -437,9 +437,9 @@
         <h2>A prior over functions, not over numbers</h2>
         <div class="body">
           <svg data-fig="gp-prior" data-ell="0.13" style="background:var(--white);border:1px solid #d7e0e7;width:100%;height:340px"></svg>
-          <p style="margin-top:14px">Every coloured line is one function drawn from the prior. Before any data, the GP says: <strong>the truth is some function like these</strong> &mdash; mean zero, and smooth on the length scale ℓ set by the kernel.</p>
+          <p style="margin-top:14px">Every colored line is one function drawn from the prior. Before any data, the GP says: <strong>the truth is some function like these</strong> &mdash; mean zero, and smooth on the length scale ℓ set by the kernel.</p>
         </div>
-        <aside class="notes">Drawn by Cholesky-factorising the kernel matrix over the grid and multiplying by standard normals — the same construction as the maths on the previous slides, run for real.</aside>
+        <aside class="notes">Drawn by Cholesky-factorizing the kernel matrix over the grid and multiplying by standard normals — the same construction as the maths on the previous slides, run for real.</aside>
       </section>
 
       <section>
@@ -455,7 +455,7 @@
           </div>
           <p class="claim" style="margin-top:16px">Same five random draws in all three panels. Only &#8467; changed &mdash; and with it, everything the model is prepared to believe about the parts of f it has not seen.</p>
         </div>
-        <aside class="notes">The coloured curves correspond one-to-one across the panels: identical standard normals, different Cholesky factor. One length scale per dimension is exactly what ARD, introduced with the kernel two slides back, exploits.</aside>
+        <aside class="notes">The colored curves correspond one-to-one across the panels: identical standard normals, different Cholesky factor. One length scale per dimension is exactly what ARD, introduced with the kernel two slides back, exploits.</aside>
       </section>
 
       <section>
@@ -466,7 +466,7 @@
             <li>Specifically <strong>Gaussian</strong>. That may not be the best assumption for every problem; in CFD, practice shows it works.</li>
             <li>As the engineer, you choose the <strong>covariance kernel and its parameters</strong>.</li>
           </ul>
-          <div class="verdict">Choosing the kernel <strong>is</strong> the modelling step. It encodes what you believe about smoothness, length scales, and which parameters matter.</div>
+          <div class="verdict">Choosing the kernel <strong>is</strong> the modeling step. It encodes what you believe about smoothness, length scales, and which parameters matter.</div>
           <p class="cite">Garnett 2023, ch. 3 &middot; Rasmussen &amp; Williams 2006, ch. 4</p>
         </div>
       </section>
@@ -484,7 +484,7 @@
           </div>
           <p class="caution" style="margin-top:14px">The right-hand panel is the dangerous one: the band is <em>narrow</em> exactly where the mean is most wrong. An over-smooth prior does not report its own misspecification.</p>
         </div>
-        <aside class="notes">Grey dashed is the hidden truth; the black dots are the same five observations in all three panels. Nothing changed but one kernel parameter. This is the motivation for maximum likelihood, after the Bayes part: you do not want to be choosing this number by eye.</aside>
+        <aside class="notes">Gray dashed is the hidden truth; the black dots are the same five observations in all three panels. Nothing changed but one kernel parameter. This is the motivation for maximum likelihood, after the Bayes part: you do not want to be choosing this number by eye.</aside>
       </section>
 
 
@@ -538,7 +538,7 @@
           <p class="claim" style="margin-top:16px">The description fits a mathematician <strong>eight times better</strong> &mdash; and John is still more than twice as likely to be a librarian.</p>
           <p class="cite">Tversky &amp; Kahneman 1974</p>
         </div>
-        <aside class="notes">The odds form is worth writing out: posterior odds = prior odds x likelihood ratio, with no normalising constant to carry. Evidence multiplies the prior, it does not replace it — which is exactly what the GP posterior does on the next slides, pulling the prior around rather than overwriting it.</aside>
+        <aside class="notes">The odds form is worth writing out: posterior odds = prior odds x likelihood ratio, with no normalizing constant to carry. Evidence multiplies the prior, it does not replace it — which is exactly what the GP posterior does on the next slides, pulling the prior around rather than overwriting it.</aside>
       </section>
 
       <section>
@@ -556,7 +556,7 @@
       </section>
 
       <section>
-        <h2>Marginalising: integrating out what you did not ask about</h2>
+        <h2>Marginalizing: integrating out what you did not ask about</h2>
         <div class="body">
           <p>A joint density carries every variable at once. Usually you want a statement about <em>one</em> of them, with the rest allowed to be anything they like. That is a marginal:</p>
           <p class="formula">p(y<sub>1</sub>) = &int; p(y<sub>1</sub>, y<sub>2</sub>) dy<sub>2</sub></p>
@@ -579,7 +579,7 @@
         <div class="body">
           <div class="panel-pair">
             <figure><svg data-mc="marginal"></svg>
-              <figcaption><strong>Marginalise</strong>collapse the joint along y&#8322;, keeping every value it might have taken. You learn nothing new, so the spread over y&#8321; is unchanged.</figcaption></figure>
+              <figcaption><strong>Marginalize</strong>collapse the joint along y&#8322;, keeping every value it might have taken. You learn nothing new, so the spread over y&#8321; is unchanged.</figcaption></figure>
             <figure><svg data-mc="conditional"></svg>
               <figcaption><strong>Condition</strong>take the single slice where y&#8322; = 1.5 and renormalise it. Because the two are correlated, the mean moves to 1.20 and the spread shrinks to 0.60.</figcaption></figure>
           </div>
@@ -593,7 +593,7 @@
         <div class="body">
           <div class="two-col">
             <div>
-              <h3>Marginalising = deleting</h3>
+              <h3>Marginalizing = deleting</h3>
               <p>Take a jointly Gaussian vector, drop the components you do not want, and the rest is still Gaussian &mdash; with the mean and covariance you get by <strong>striking out the corresponding rows and columns</strong>. No integral is performed.</p>
               <p class="formula" style="font-size:26px">N(&mu;, &Sigma;) &rarr; N(&mu;<sub>A</sub>, &Sigma;<sub>AA</sub>)</p>
             </div>
@@ -611,7 +611,7 @@
         <div class="body">
           <p>The kernel has hyperparameters θ = (ℓ<sub>1</sub>, … , ℓ<sub>d</sub>, σ<sub>f</sub>, σ<sub>n</sub>). Fitting them means maximizing the <strong>evidence</strong> &mdash; p(y | θ), the marginal likelihood, f integrated out:</p>
           <p class="formula">θ* = argmax<sub>θ</sub> p(y | θ)</p>
-          <p>Because the GP is a multivariate Gaussian, efficient closed-form expressions for ∂<sub>θᵢ</sub>GP exist. Since it involves exponentials, we maximise the <strong>log</strong> marginal likelihood:</p>
+          <p>Because the GP is a multivariate Gaussian, efficient closed-form expressions for ∂<sub>θᵢ</sub>GP exist. Since it involves exponentials, we maximize the <strong>log</strong> marginal likelihood:</p>
           <p class="formula">log p(y | θ) = −½ (y−μ)<sup>T</sup> (K + σ<sub>n</sub>²I)<sup>−1</sup> (y−μ) − ½ log|K + σ<sub>n</sub>²I| − (N/2) log 2π</p>
           <div class="callout blue">
             <p>The three terms trade off against each other: <strong>data fit</strong>, a <strong>complexity penalty</strong>, and a constant. The middle term is why maximum likelihood does not simply drive the length scales to zero.</p>
@@ -631,7 +631,7 @@
           </div>
           <p class="caution" style="margin-top:14px">Maximum likelihood fits <strong>&theta;</strong>, not <strong>f</strong>. It chooses which family of functions the model finds plausible. It does not make the model pass through a single data point &mdash; that is conditioning, next.</p>
         </div>
-        <aside class="notes">Ten samples here, not the five used elsewhere, and deliberately: with five the profile is nearly flat and the optimiser runs to the lower bound on the length scale, declaring the data uncorrelated noise. Hyperparameters need data too. In practice you bound the length scales or put priors on them precisely because early in a campaign there is not enough data to identify them — worth saying out loud, because it is the state every CFD campaign starts in.</aside>
+        <aside class="notes">Ten samples here, not the five used elsewhere, and deliberately: with five the profile is nearly flat and the optimizer runs to the lower bound on the length scale, declaring the data uncorrelated noise. Hyperparameters need data too. In practice you bound the length scales or put priors on them precisely because early in a campaign there is not enough data to identify them — worth saying out loud, because it is the state every CFD campaign starts in.</aside>
       </section>
       <section>
         <h2>Conditioning a GP is Bayes in a continuous setting</h2>
@@ -640,7 +640,7 @@
           <h3 style="margin-top:20px">The recipe</h3>
           <ol class="steps">
             <li><p>The observed y and the wanted y′ come from the <strong>same</strong> GP, so write their joint as one Gaussian with a block covariance: K + σ<sub>n</sub>²I, k(X, x′) and k(x′, x′).</p></li>
-            <li><p>The denominator GP(y) is that joint <strong>marginalised</strong> over y′ — the evidence, which by the previous slide costs nothing to write down.</p></li>
+            <li><p>The denominator GP(y) is that joint <strong>marginalized</strong> over y′ — the evidence, which by the previous slide costs nothing to write down.</p></li>
             <li><p>Divide, cancel, apply the <strong>block-matrix inverse</strong>. The exponent stays quadratic, so the result is another Gaussian — and you read its mean and covariance straight off.</p></li>
           </ol>
           <p class="claim" style="margin-top:14px">The posterior of a Gaussian conditioned on Gaussian data is again Gaussian. That closure is the reason any of this is cheap.</p>
@@ -676,7 +676,7 @@
             <figure><svg data-cond="6"></svg><figcaption><strong>Six</strong>the mean has found the shape of the hidden function, and the average &#963; has fallen by a factor of seven.</figcaption></figure>
           </div>
         </div>
-        <aside class="notes">Every panel is the two formulas from the previous slide evaluated on a grid — nothing else. Grey dashed is the hidden truth, which the model never sees. The number to read out is the mean uncertainty printed at the top of each panel: 1.10, 0.93, 0.57, 0.16.</aside>
+        <aside class="notes">Every panel is the two formulas from the previous slide evaluated on a grid — nothing else. Gray dashed is the hidden truth, which the model never sees. The number to read out is the mean uncertainty printed at the top of each panel: 1.10, 0.93, 0.57, 0.16.</aside>
       </section>
 
 
@@ -747,13 +747,13 @@
           </div>
           <p class="cite">test function: Forrester, S&oacute;bester &amp; Keane 2008</p>
         </div>
-        <aside class="notes">Forrester function, five samples, one shared posterior. Grey dashed is the hidden truth; the green tick is the true optimum at x = 0.757.</aside>
+        <aside class="notes">Forrester function, five samples, one shared posterior. Gray dashed is the hidden truth; the green tick is the true optimum at x = 0.757.</aside>
       </section>
 
       <section>
         <h2>An optimization inside the optimization</h2>
         <div class="body">
-          <p class="claim">Maximising α(x) is itself a global optimization problem. Why is that affordable?</p>
+          <p class="claim">Maximizing α(x) is itself a global optimization problem. Why is that affordable?</p>
           <div class="two-col">
             <div>
               <h3>Because the objective changed</h3>
@@ -789,7 +789,7 @@
         <div class="body">
           <svg data-efficiency style="background:var(--white);border:1px solid #d7e0e7;width:100%;height:470px"></svg>
           <div class="two-col" style="margin-top:10px">
-            <div><p><strong>&kappa; = 0 never leaves the first hill it climbs.</strong> With no reward for uncertainty the acquisition just maximises the mean, and the mean is only informative where data already exists. It re-proposes the same design forever.</p></div>
+            <div><p><strong>&kappa; = 0 never leaves the first hill it climbs.</strong> With no reward for uncertainty the acquisition just maximizes the mean, and the mean is only informative where data already exists. It re-proposes the same design forever.</p></div>
             <div><p><strong>Random search does not get stuck &mdash; it is only slow.</strong> Averaged over 40 runs it is still short of the optimum after 18 evaluations, which BO reached on its eighth.</p></div>
           </div>
         </div>
@@ -834,7 +834,7 @@
               <p>The designs that nothing dominates. Along it, one objective improves only at the other's expense: the trade-off, measured rather than assumed.</p>
             </div>
           </div>
-          <div class="verdict">Reporting a front instead of a winner is the honest output. It also defers the value judgement until you can see what it costs.</div>
+          <div class="verdict">Reporting a front instead of a winner is the honest output. It also defers the value judgment until you can see what it costs.</div>
         </div>
       </section>
 
@@ -844,9 +844,9 @@
           <div class="three-col">
             <div><h3>Reduce</h3><p>Δp from a patch-averaged pressure. Mixing from a variance integral over the outlet. Drag from a force integral. One function object, one number, once per design.</p></div>
             <div><h3>Normalize</h3><p>Divide by a matched baseline, so each objective is dimensionless and O(1). Units do not hurt one independent GP per objective; they distort anything that <em>combines</em> objectives &mdash; a weighted sum, the hypervolume, a multi-output GP.</p></div>
-            <div><h3>Sign, once</h3><p>Negate what you minimise in exactly one place. And give each objective its own noise: solver tolerance is not the same for a pressure as for a scalar variance.</p></div>
+            <div><h3>Sign, once</h3><p>Negate what you minimize in exactly one place. And give each objective its own noise: solver tolerance is not the same for a pressure as for a scalar variance.</p></div>
           </div>
-          <div class="verdict">Getting the objective wrong is quieter, and far more expensive, than getting the optimiser wrong.</div>
+          <div class="verdict">Getting the objective wrong is quieter, and far more expensive, than getting the optimizer wrong.</div>
         </div>
         <aside class="notes">One GP per objective, fitted independently, is the usual choice and usually enough. A multi-output GP that shares information across objectives helps only when they genuinely share structure and you have the data to identify it — which early in a campaign you do not.</aside>
       </section>
@@ -864,7 +864,7 @@
           <div class="two-col">
             <div>
               <h3>What goes wrong</h3>
-              <p>Add a constraint as another weighted term and you have <strong>priced</strong> it. The optimiser will then buy a violation whenever the other objective pays enough &mdash; and report that design as a success.</p>
+              <p>Add a constraint as another weighted term and you have <strong>priced</strong> it. The optimizer will then buy a violation whenever the other objective pays enough &mdash; and report that design as a success.</p>
             </div>
             <div>
               <h3>What to do instead</h3>
@@ -879,7 +879,7 @@
       <section>
         <h2>The tempting shortcut: add them up</h2>
         <div class="body">
-          <p class="formula" style="font-size:34px">minimise&nbsp;&nbsp; w<sub>1</sub> f<sub>1</sub>(x) + w<sub>2</sub> f<sub>2</sub>(x)</p>
+          <p class="formula" style="font-size:34px">minimize&nbsp;&nbsp; w<sub>1</sub> f<sub>1</sub>(x) + w<sub>2</sub> f<sub>2</sub>(x)</p>
           <div class="two-col" style="margin-top:30px">
             <div>
               <h3>You must price it first</h3>
@@ -901,7 +901,7 @@
           <p style="margin-top:12px">Sweep the weights and the chosen design <strong>jumps across the gap</strong>. Every design on the red arc is a perfectly good, non-dominated compromise &mdash; and no weighted sum will ever select one.</p>
           <p class="cite">Das &amp; Dennis 1997</p>
         </div>
-        <aside class="notes">Both objectives are minimized. Computed here: the front is sampled, its lower convex hull taken, and the longest hull edge identifies the non-convex (unsupported) stretch. The critical weight and the two jump endpoints are read off that geometry, not typed in. ε-constraint methods do reach concave regions — "minimise f1 subject to f2 ≤ ε" — but they still need you to pick ε, and still cost one campaign per ε.</aside>
+        <aside class="notes">Both objectives are minimized. Computed here: the front is sampled, its lower convex hull taken, and the longest hull edge identifies the non-convex (unsupported) stretch. The critical weight and the two jump endpoints are read off that geometry, not typed in. ε-constraint methods do reach concave regions — "minimize f1 subject to f2 ≤ ε" — but they still need you to pick ε, and still cost one campaign per ε.</aside>
       </section>
 
       <section>
@@ -911,7 +911,7 @@
           <p style="margin-top:12px">A front cannot be ranked against another front without a scalar &mdash; and it has to be a scalar of the <em>set</em>, not of any one design. The <strong>hypervolume</strong> is the area the front dominates with respect to a declared <strong>reference point</strong>. It rewards a front for being good and for being wide, and it is <strong>Pareto-compliant</strong>: a front that dominates another always has more hypervolume. That is why it became the standard.</p>
           <p class="cite">Zitzler &amp; Thiele 1999</p>
         </div>
-        <aside class="notes">The reference point is a modelling choice, not a detail: it must be dominated by everything you would accept, because designs worse than it contribute nothing and become invisible to the optimiser. Place it a little beyond the worst tolerable value of each objective. Placing it deliberately close on one axis is also how you tell the optimiser to concentrate there.</aside>
+        <aside class="notes">The reference point is a modeling choice, not a detail: it must be dominated by everything you would accept, because designs worse than it contribute nothing and become invisible to the optimizer. Place it a little beyond the worst tolerable value of each objective. Placing it deliberately close on one axis is also how you tell the optimizer to concentrate there.</aside>
       </section>
 
       <section>
@@ -1004,9 +1004,9 @@
             <figure><svg data-mf="functions"></svg>
               <figcaption><strong>The two levels</strong>the cheap model is not a noisy copy of the expensive one. It is systematically different, and here its own maximum is at x = 0.09 while the truth is at x = 0.76.</figcaption></figure>
             <figure><svg data-mf="posteriors"></svg>
-              <figcaption><strong>Same four expensive runs</strong>modelled alone (red) and together with eleven cheap ones (blue). Adding the biased cheap data more than halves the error.</figcaption></figure>
+              <figcaption><strong>Same four expensive runs</strong>modeled alone (red) and together with eleven cheap ones (blue). Adding the biased cheap data more than halves the error.</figcaption></figure>
           </div>
-          <p class="claim" style="margin-top:14px">The cheap model is useful for its <strong>shape</strong>, not its values. Optimise it directly and you get the wrong answer with confidence; model the <em>difference</em> between the levels and you get most of the expensive model for a fraction of the price.</p>
+          <p class="claim" style="margin-top:14px">The cheap model is useful for its <strong>shape</strong>, not its values. Optimize it directly and you get the wrong answer with confidence; model the <em>difference</em> between the levels and you get most of the expensive model for a fraction of the price.</p>
         </div>
         <aside class="notes">The standard multi-fidelity Forrester pair, in this deck's scaling. Right panel is recursive co-kriging: fit the cheap model densely, regress the four expensive points onto it (rho = 0.97 here), and give the leftover discrepancy its own GP with a long length scale. RMSE 0.78 -> 0.34 (as printed on the figure), and the predicted argmax moves from 0.56 to 0.71 against a truth of 0.757.</aside>
       </section>
@@ -1043,10 +1043,10 @@
             </div>
             <div>
               <h3>Fidelity becomes a search dimension</h3>
-              <p>Add s to the space, attach a cost model, and the optimiser chooses <strong>where <em>and</em> at what fidelity</strong>. In BoTorch: <code>qMultiFidelityKnowledgeGradient</code>.</p>
+              <p>Add s to the space, attach a cost model, and the optimizer chooses <strong>where <em>and</em> at what fidelity</strong>. In BoTorch: <code>qMultiFidelityKnowledgeGradient</code>.</p>
             </div>
           </div>
-          <div class="verdict">The fidelity stops being your decision and becomes part of the optimiser's.</div>
+          <div class="verdict">The fidelity stops being your decision and becomes part of the optimizer's.</div>
         </div>
       </section>
 
@@ -1101,7 +1101,7 @@
             <div><strong>The GP is a prior over functions</strong>, made concrete by a kernel; conditioning it on data is Bayes' theorem in a continuous setting.</div>
             <div><strong>The posterior mean and variance are closed-form and cheap</strong>, which is what makes an inner global optimization affordable.</div>
             <div><strong>The acquisition function is where exploration is bought</strong>, and κ is the price you set.</div>
-            <div><strong>Constraining the CAD is not housekeeping</strong> &mdash; it is what stops the optimiser spending simulations on shapes that cannot exist.</div>
+            <div><strong>Constraining the CAD is not housekeeping</strong> &mdash; it is what stops the optimizer spending simulations on shapes that cannot exist.</div>
             <div><strong>Real problems have several objectives</strong>, so the answer is a Pareto front. Do not add them up &mdash; a weighted sum prices a trade-off you have not measured yet, and cannot reach the non-convex part of a front at all.</div>
           </div>
         </div>
@@ -1120,7 +1120,7 @@
           <div class="refs">
             <p class="main"><b>R. Garnett.</b> <em>Bayesian Optimization.</em> Cambridge University Press, 2023. doi:10.1017/9781108348973 &mdash; free at bayesoptbook.com. The main text for everything here.</p>
             <p><b>C. E. Rasmussen, C. K. I. Williams.</b> <em>Gaussian Processes for Machine Learning.</em> MIT Press, 2006 &mdash; free at gaussianprocess.org/gpml.</p>
-            <p><b>A. I. J. Forrester, A. S&oacute;bester, A. J. Keane.</b> <em>Engineering Design via Surrogate Modelling.</em> Wiley, 2008.</p>
+            <p><b>A. I. J. Forrester, A. S&oacute;bester, A. J. Keane.</b> <em>Engineering Design via Surrogate Modeling.</em> Wiley, 2008.</p>
             <p><b>D. R. Jones, M. Schonlau, W. J. Welch.</b> Efficient global optimization of expensive black-box functions. <em>J. Global Optim.</em> 13:455&ndash;492, 1998.</p>
             <p><b>N. Srinivas, A. Krause, S. Kakade, M. Seeger.</b> Gaussian process optimization in the bandit setting: no regret and experimental design. ICML 2010.</p>
             <p><b>A. Tversky, D. Kahneman.</b> Judgment under uncertainty: heuristics and biases. <em>Science</em> 185:1124&ndash;1131, 1974.</p>

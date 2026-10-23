@@ -13,7 +13,7 @@
       <section class="title-slide">
         <div class="eyebrow">CAD &rarr; CFD &rarr; Bayesian optimization</div>
         <h1>Planar Alternating-Deflector<br>Micromixer</h1>
-        <p class="subtitle">A worked, reproducible study: what we optimise, how Bayesian optimization actually works, and how to build the whole thing with agents.</p>
+        <p class="subtitle">A worked, reproducible study: what we optimize, how Bayesian optimization actually works, and how to build the whole thing with agents.</p>
         <svg class="geometry-strip" viewBox="0 0 1450 170" role="img" aria-label="Five-cell planar alternating-deflector channel">
           <rect x="5" y="24" width="1440" height="122" fill="#fffdf8" stroke="#2f78a8" stroke-width="6"/>
           <g fill="#f6b66e" stroke="#ad5c10" stroke-width="3">
@@ -80,7 +80,7 @@
           <div class="three-col" style="margin-top:22px">
             <div>
               <h3>Split</h3>
-              <p>A centre baffle of thickness <strong>t<sub>s</sub></strong> over length <strong>L<sub>s</sub></strong> divides the stream in two.</p>
+              <p>A center baffle of thickness <strong>t<sub>s</sub></strong> over length <strong>L<sub>s</sub></strong> divides the stream in two.</p>
             </div>
             <div>
               <h3>Interact</h3>
@@ -141,7 +141,7 @@
             <p>A perfectly legal corner of a box over raw lengths. The deflectors nearly touch &mdash; a <strong>0.04 H gap</strong>, below the 0.05 H the mesh can resolve &mdash; and the merge baffle is <strong>thicker than the split baffle</strong>, so the transition steps the wrong way.</p>
           </div>
         </div>
-        <aside class="notes">cfMesh leaves zero-area faces at features like this and simpleFoam then dies on a floating-point exception. The optimiser would spend real CFD time discovering that.</aside>
+        <aside class="notes">cfMesh leaves zero-area faces at features like this and simpleFoam then dies on a floating-point exception. The optimizer would spend real CFD time discovering that.</aside>
       </section>
 
       <section>
@@ -180,7 +180,7 @@
               <p>Maximum obstruction &mdash; and still meshable.</p>
             </div>
           </div>
-          <p class="claim" style="margin-top:22px">Every corner of [0,1]<sup>6</sup> is a geometry that can be built, meshed and solved. The optimiser never wastes a CFD run learning that.</p>
+          <p class="claim" style="margin-top:22px">Every corner of [0,1]<sup>6</sup> is a geometry that can be built, meshed and solved. The optimizer never wastes a CFD run learning that.</p>
         </div>
       </section>
 
@@ -191,7 +191,7 @@
           <p>The pressure the pump must supply, divided by what an <em>empty</em> channel of the same size would need. It reads directly as &ldquo;how many times more expensive than a plain pipe&rdquo;.</p>
           <div class="takeaway">
             <div class="big">2.874 Pa</div>
-            <div class="txt">the straight-channel reference &mdash; within <strong>0.039 %</strong> of the analytic parallel-plate solution &rho;&middot;12&nu;UL/H&sup2;, which is how we know the CFD chain is trustworthy before optimising anything.</div>
+            <div class="txt">the straight-channel reference &mdash; within <strong>0.039 %</strong> of the analytic parallel-plate solution &rho;&middot;12&nu;UL/H&sup2;, which is how we know the CFD chain is trustworthy before optimizing anything.</div>
           </div>
         </div>
       </section>
@@ -273,7 +273,7 @@
             <div class="txt">the pressure budget: the hypervolume reference point and the publication target. The automatic screening gate checks the mixing index and a failure fraction &le; 25 %.</div>
           </div>
           <div class="callout" style="margin-top:34px">
-            <p>Declaring the gate <em>first</em> is what makes a later &ldquo;no&rdquo; a result instead of a rationalisation.</p>
+            <p>Declaring the gate <em>first</em> is what makes a later &ldquo;no&rdquo; a result instead of a rationalization.</p>
           </div>
         </div>
       </section>
@@ -310,7 +310,7 @@
             </div>
           </div>
           <div class="callout">
-            <p>The intuition that fails here is the one that fails in optimisation: <strong>we judge by fit to the evidence and forget how much space the hypothesis occupied to begin with.</strong></p>
+            <p>The intuition that fails here is the one that fails in optimization: <strong>we judge by fit to the evidence and forget how much space the hypothesis occupied to begin with.</strong></p>
           </div>
         </div>
       </section>
@@ -335,7 +335,7 @@
             <text x="156" y="250" fill="#5d7285" font-size="18">a thin column: mathematicians are rare</text>
             <text x="640" y="90" text-anchor="middle" fill="#102a43" font-size="20" font-weight="700">D and not H = 0.095</text>
             <text x="640" y="320" text-anchor="middle" fill="#5d7285" font-size="19">no D</text>
-            <text x="60" y="446" fill="#102a43" font-size="25">Seeing D, only the two coloured blocks remain possible.</text>
+            <text x="60" y="446" fill="#102a43" font-size="25">Seeing D, only the two colored blocks remain possible.</text>
             <text x="60" y="484" fill="#102a43" font-size="28" font-weight="700">P(H | D) = 0.038 / (0.038 + 0.095) = 0.29 &mdash; librarian, 2.5 to 1</text>
           </svg>
         </div>
@@ -436,7 +436,7 @@
             <div>
               <p>The <strong>Forrester function</strong> is the standard 1-D benchmark for exactly this &mdash; one sharp global optimum and a deceptive local one.</p>
               <p class="formula">f(x) = &minus;(6x&minus;2)&sup2; sin(12x&minus;4)</p>
-              <p>We are allowed <strong>five</strong> evaluations. The dashed grey curve is the truth; the optimiser never sees it.</p>
+              <p>We are allowed <strong>five</strong> evaluations. The dashed gray curve is the truth; the optimizer never sees it.</p>
               <p class="definition">Green tick: the real optimum, x = 0.757.</p>
             </div>
             <div>
@@ -444,7 +444,7 @@
             </div>
           </div>
         </div>
-        <aside class="notes">Shown as a maximisation to match the UCB story; our real objectives are minimised, where the identical argument runs with mu minus kappa sigma.</aside>
+        <aside class="notes">Shown as a maximization to match the UCB story; our real objectives are minimized, where the identical argument runs with mu minus kappa sigma.</aside>
       </section>
 
       <section>
@@ -465,7 +465,7 @@
             </div>
           </div>
         </div>
-        <aside class="notes">Blue: posterior mean and plus/minus 2 sigma. Orange: the acquisition and its argmax. Grey dashed: the hidden truth. Green tick: the true optimum.</aside>
+        <aside class="notes">Blue: posterior mean and plus/minus 2 sigma. Orange: the acquisition and its argmax. Gray dashed: the hidden truth. Green tick: the true optimum.</aside>
       </section>
 
       <section>
@@ -483,10 +483,10 @@
       </section>
 
       <section>
-        <h2>Optimising the acquisition is a different kind of problem</h2>
+        <h2>Optimizing the acquisition is a different kind of problem</h2>
         <div class="body">
           <div class="pipeline">
-            <div class="stage"><strong>1 &middot; Fit</strong><span>Maximise the marginal likelihood for the kernel hyperparameters.</span></div>
+            <div class="stage"><strong>1 &middot; Fit</strong><span>Maximize the marginal likelihood for the kernel hyperparameters.</span></div>
             <div class="pipeline-arrow">&rarr;</div>
             <div class="stage"><strong>2 &middot; Search &alpha;</strong><span>Multi-start L-BFGS, 1024 raw samples, 32 restarts.</span></div>
             <div class="pipeline-arrow">&rarr;</div>
@@ -531,7 +531,7 @@
           <svg data-objspace="front" style="background:var(--white);border:1px solid #d7e0e7;width:100%;height:470px"></svg>
           <p class="claim" style="margin-top:16px">With one objective there is a best design. With two there is a <strong>set</strong> &mdash; every design where mixing cannot improve without paying more pressure.</p>
         </div>
-        <aside class="notes">Both axes are minimised, so better is down and to the left. A grey point is dominated: some orange point beats it on BOTH objectives at once.</aside>
+        <aside class="notes">Both axes are minimized, so better is down and to the left. A gray point is dominated: some orange point beats it on BOTH objectives at once.</aside>
       </section>
 
       <section>
@@ -540,11 +540,11 @@
           <div class="two-col">
             <div>
               <p>To say one front is <em>better</em> than another, you need a single number. The standard one is the <strong>hypervolume</strong>: the area of objective space the front dominates, measured against a fixed <strong>reference point</strong>.</p>
-              <p class="definition">Push the front down and left and the shaded staircase grows. That growth is the only thing the optimiser is trying to maximise.</p>
+              <p class="definition">Push the front down and left and the shaded staircase grows. That growth is the only thing the optimizer is trying to maximize.</p>
             </div>
             <div>
               <div class="callout">
-                <p><strong>The reference point is a real modelling choice.</strong> It says how bad a design has to be before it stops counting at all. Ours is declared in config as (20 Pa, I<sub>s</sub> = 1) &mdash; move it and you silently change what &ldquo;improvement&rdquo; means.</p>
+                <p><strong>The reference point is a real modeling choice.</strong> It says how bad a design has to be before it stops counting at all. Ours is declared in config as (20 Pa, I<sub>s</sub> = 1) &mdash; move it and you silently change what &ldquo;improvement&rdquo; means.</p>
               </div>
             </div>
           </div>
@@ -568,7 +568,7 @@
             </div>
             <div>
               <h3>Log</h3>
-              <p>The raw improvement underflows to zero over most of the box. The log form keeps the optimiser able to see a gradient.</p>
+              <p>The raw improvement underflows to zero over most of the box. The log form keeps the optimizer able to see a gradient.</p>
             </div>
           </div>
         </div>
@@ -578,7 +578,7 @@
         <h2>No weighted sum, and no penalty for failures</h2>
         <div class="body">
           <div class="callout green">
-            <p>No scalarising into a weighted sum &mdash; that would need weights nobody can justify, and it would quietly hide the trade-off you are trying to expose. <strong>Failed designs are excluded, never given a fictitious penalty.</strong></p>
+            <p>No scalarizing into a weighted sum &mdash; that would need weights nobody can justify, and it would quietly hide the trade-off you are trying to expose. <strong>Failed designs are excluded, never given a fictitious penalty.</strong></p>
           </div>
         </div>
       </section>
@@ -632,7 +632,7 @@
           <p class="claim">The CAD generator decided which faces were <em>inlets</em> by looking at which way they pointed &mdash; not at where they were.</p>
           <div class="two-col">
             <div>
-              <p>Every baffle and every deflector has faces pointing along <code>-x</code>, exactly like the real inlet does. So all of them were labelled &ldquo;inlet&rdquo; too.</p>
+              <p>Every baffle and every deflector has faces pointing along <code>-x</code>, exactly like the real inlet does. So all of them were labeled &ldquo;inlet&rdquo; too.</p>
               <p><strong>The consequence:</strong> OpenFOAM dutifully injected fluid and scalar through the middle of the device &mdash; out of the obstacles &mdash; instead of only at <code>x = 0</code>.</p>
             </div>
             <div>
@@ -731,7 +731,7 @@
               <ul>
                 <li>one session, one model, <strong>develops</strong>;</li>
                 <li>a clean session &mdash; ideally a different model &mdash; <strong>tests and reports</strong>;</li>
-                <li>the reviewer gets the artefacts and the acceptance criteria, never the reasoning.</li>
+                <li>the reviewer gets the artifacts and the acceptance criteria, never the reasoning.</li>
               </ul>
             </div>
             <div>
@@ -826,7 +826,7 @@
               <div class="cost">~1 s &middot; one core</div>
             </div>
             <div class="cost-row">
-              <div class="who">Optimise the acquisition</div>
+              <div class="who">Optimize the acquisition</div>
               <div class="bar"><span class="gp" style="width:1.2%"></span></div>
               <div class="cost">~3 s &middot; one core</div>
             </div>
@@ -877,7 +877,7 @@
             <div class="node dear"><strong>Simulate</strong><span>CAD &rarr; mesh &rarr; flow &rarr; scalar.</span><span class="price">the whole cost</span></div>
             <div class="node cheap"><strong>Refit</strong><span>New posterior, new length scales.</span><span class="price">seconds</span></div>
             <div class="node cheap"><strong>Read it</strong><span>Which parameters moved? Which are inert?</span><span class="price">free</span></div>
-            <div class="node"><strong>Decide</strong><span>Continue, re-bound, or re-parameterise.</span><span class="price">you</span></div>
+            <div class="node"><strong>Decide</strong><span>Continue, re-bound, or re-parameterize.</span><span class="price">you</span></div>
           </div>
           <div class="callout green">
             <p><strong>ARD &mdash; <em>automatic relevance determination</em> &mdash; is a free sensitivity analysis.</strong> A huge length scale means that parameter does nothing across its whole range. You get it after every evaluation, at no cost &mdash; read it as a hint, not a verdict, while runs are few.</p>
@@ -895,7 +895,7 @@
             </div>
             <div>
               <div class="callout blue">
-                <p>Bayes at the level above the optimiser. The prior for the next campaign &mdash; which bounds are plausible, which mechanism is needed, what asymmetry costs in pressure &mdash; is <strong>entirely inherited</strong> from the one that failed.</p>
+                <p>Bayes at the level above the optimizer. The prior for the next campaign &mdash; which bounds are plausible, which mechanism is needed, what asymmetry costs in pressure &mdash; is <strong>entirely inherited</strong> from the one that failed.</p>
               </div>
             </div>
           </div>
@@ -910,7 +910,7 @@
           <div class="three-col">
             <div>
               <h3>Manufacturable by construction</h3>
-              <p>Feature-size limits live in the parameterisation, so every proposal is a shape that can be etched or printed.</p>
+              <p>Feature-size limits live in the parameterization, so every proposal is a shape that can be etched or printed.</p>
             </div>
             <div>
               <h3>A trade-off, not a point</h3>
@@ -1003,7 +1003,7 @@
         <div class="qr-corner"><div class="qr-tile"><img src="assets/github-repo-qr.svg" alt="QR code linking to https://github.com/tmaric/openfoam-bayesopt-mixer"></div><div class="cap">github.com/tmaric/openfoam-bayesopt-mixer</div></div>
         <div class="part">Part five</div>
         <h2>Your turn</h2>
-        <p>Six exercises. Each is a question first, then the answer with the exact commands. By the end you will have run the workflow, changed the device, and steered the optimiser by hand.</p>
+        <p>Six exercises. Each is a question first, then the answer with the exact commands. By the end you will have run the workflow, changed the device, and steered the optimizer by hand.</p>
       </section>
 
       <section>
@@ -1047,7 +1047,7 @@ cat results/corrected_boundary_v3_baselines/straight/objectives.csv
 paraview results/corrected_boundary_v3_baselines/straight/FlowCase/FlowCase.foam   # and look at it</code></p>
           <div class="expect">
             <div class="lbl">analytic</div><div class="val">2.8748 Pa</div><div class="note">12 &middot; 10&#8315;&#8310; &middot; 0.01 &middot; 0.024 / (10&#8315;&sup3;)&sup2; &times; 998.2</div>
-            <div class="lbl">measured</div><div class="val">2.8737 Pa</div><div class="note">0.039 % low &mdash; discretisation, and well inside the 15 % gate</div>
+            <div class="lbl">measured</div><div class="val">2.8737 Pa</div><div class="note">0.039 % low &mdash; discretization, and well inside the 15 % gate</div>
           </div>
           <p style="margin-top:16px">Still inside the image, repeat it with <code>--profile profiles/local2</code>. Same number: the backend is a profile, and that is the only thing that changed.</p>
         </div>
@@ -1115,7 +1115,7 @@ snakemake --snakefile Snakefile --directory results/ex3 \
           <div class="callout">
             <p>So the gentler device is the <em>better trade</em> per Pascal &mdash; and further from the 0.60 gate. That is exactly why a single scalar objective would mislead you here.</p>
           </div>
-          <p class="claim" style="margin-top:14px">Now look it up on the front: Sobol design <strong>00000</strong> reached 13.185 Pa at 0.1048. Your hand-tuned design is <strong>dominated by one the optimiser already found</strong>.</p>
+          <p class="claim" style="margin-top:14px">Now look it up on the front: Sobol design <strong>00000</strong> reached 13.185 Pa at 0.1048. Your hand-tuned design is <strong>dominated by one the optimizer already found</strong>.</p>
         </div>
       </section>
 
@@ -1247,7 +1247,7 @@ rm results/ex3/objectives.csv                     &amp;&amp; $DRY   # step 2</co
             <div><strong>The tools.</strong> What the container guarantees, what Snakemake derives for you, and why the backend is a one-flag change.</div>
             <div><strong>The surrogate.</strong> Why a GP gives a mean and an error bar, and why fitting it is free next to one simulation.</div>
             <div><strong>The acquisition.</strong> What &kappa; trades, and why the proposal only moves along directions the model is unsure about.</div>
-            <div><strong>The judgement.</strong> Why a predeclared gate turns a disappointing campaign into a publishable result.</div>
+            <div><strong>The judgment.</strong> Why a predeclared gate turns a disappointing campaign into a publishable result.</div>
           </div>
           <div class="callout" style="margin-top:22px">
             <p><strong>Going further:</strong> re-run Task 5 against the pressure objective instead. Do the same two parameters dominate? If not, you have found the trade-off in the model itself &mdash; which is where the Pareto front comes from.</p>
@@ -1337,7 +1337,7 @@ sbatch -A "$PADM_SLURM_ACCOUNT" --parsable \
           <p>The straight baseline is the first thing the driver runs, and it is checkable against theory. To see the field itself, from the case directory inside the image: <code>paraview FlowCase.foam</code>.</p>
           <div class="expect">
             <div class="lbl">Δp analytic</div><div class="val">2.8748 Pa</div><div class="note">12νUL/H² × ρ</div>
-            <div class="lbl">Δp measured</div><div class="val">2.8737 Pa</div><div class="note">0.039 % low &mdash; discretisation</div>
+            <div class="lbl">Δp measured</div><div class="val">2.8737 Pa</div><div class="note">0.039 % low &mdash; discretization</div>
             <div class="lbl">mixing index</div><div class="val">0.10028</div><div class="note">agrees to 5 significant figures across all four backends</div>
             <div class="lbl">wall / CPU</div><div class="val">≈ 1</div><div class="note">from <code>log.simpleFoam</code> &mdash; <strong>not</strong> ≈ np</div>
           </div>

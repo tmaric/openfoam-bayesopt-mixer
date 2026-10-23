@@ -648,16 +648,16 @@ function renderScalarise(svg) {
 
   svg.appendChild(svgElement('line', { x1: m.left, x2: W - m.right, y1: Y(0), y2: Y(0), stroke: INK, 'stroke-width': 2 }));
   svg.appendChild(svgElement('line', { x1: m.left, x2: m.left, y1: m.top, y2: Y(0), stroke: INK, 'stroke-width': 2 }));
-  svg.appendChild(svgText((m.left + W - m.right) / 2, H - 14, 'objective 1  (minimise →)',
+  svg.appendChild(svgText((m.left + W - m.right) / 2, H - 14, 'objective 1  (minimize →)',
     { 'text-anchor': 'middle', fill: INK, 'font-size': 21 }));
-  const yl = svgText(30, H / 2, 'objective 2  (minimise ↓)', { 'text-anchor': 'middle', fill: INK, 'font-size': 21 });
+  const yl = svgText(30, H / 2, 'objective 2  (minimize ↓)', { 'text-anchor': 'middle', fill: INK, 'font-size': 21 });
   yl.setAttribute('transform', `rotate(-90 30 ${H / 2})`);
   svg.appendChild(yl);
 
   const L = W - m.right + 18;
   const lines = [
     ['The weighted sum', INK, 23, 700],
-    [`minimise  w₁f₁ + w₂f₂`, MUTED, 21, 400],
+    [`minimize  w₁f₁ + w₂f₂`, MUTED, 21, 400],
     ['', INK, 10, 400],
     [`Its iso-cost lines are straight, so it`, MUTED, 20, 400],
     ['can only ever touch the front at a', MUTED, 20, 400],
