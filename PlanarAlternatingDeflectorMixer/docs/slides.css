@@ -904,3 +904,16 @@ body {
 .refs p { break-inside: avoid; margin: 0 0 9px; }
 .refs p b { font-weight: 700; }
 .refs .main { background: var(--white); border-left: 5px solid var(--orange); padding: 8px 12px; }
+
+/* --- repository QR code ----------------------------------------------
+   Always dark modules on a white tile with a quiet zone, so it scans on the
+   dark dividers as well as on the paper background. */
+.qr-tile { background: #ffffff; border-radius: 10px; display: inline-block; padding: 16px; box-shadow: 0 1px 0 #d7e0e7; }
+.qr-tile img { display: block; height: 300px; width: 300px; image-rendering: pixelated; }
+.get-code { align-items: center; display: grid; gap: 56px; grid-template-columns: auto 1fr; }
+.get-code .url { font-size: 34px; font-weight: 700; word-break: break-all; }
+.get-code .url a { color: var(--blue); text-decoration: none; }
+.reveal .slides section.divider .qr-corner { position: absolute; right: 110px; top: 50%; transform: translateY(-50%); text-align: center; }
+.reveal .slides section.divider .qr-corner .qr-tile img { height: 230px; width: 230px; }
+.reveal .slides section.divider .qr-corner .cap { color: var(--blue-soft); font-size: 20px; margin-top: 12px; }
+.reveal .slides section.divider .qr-corner + h2, .reveal .slides section.divider.has-qr p { max-width: 15em; }
