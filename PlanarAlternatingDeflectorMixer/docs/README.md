@@ -85,7 +85,8 @@ Editing a figure means editing the data or the kernel, not moving pixels.
 ## The assignment
 
 Part five of the tutorial deck is six exercises alternating **task → answer**,
-with the exact commands. Tasks 1–4 run CFD (minutes each); tasks 5–6 run none,
+with the exact commands. Tasks 1 and 3 run CFD at workshop fidelity, a minute or
+two each; task 2 is a `grep`, task 4 a dry run, and tasks 5–6 run no CFD,
 reusing the twelve designs the campaign already paid for. The whole assignment
 runs **inside the container** — building the image is the only step that cannot:
 
@@ -94,7 +95,8 @@ export PADM_SIF="${PADM_SIF:-$PWD/apptainer/padm.sif}"   # default; or /opt/appt
 apptainer shell --bind "$PWD" "$PADM_SIF"
 ```
 
-Reference solution for tasks 5 and 6: [`exercises/surrogate.py`](exercises/surrogate.py).
+Tasks 5 and 6 start from [`exercises/surrogate_skeleton.py`](exercises/surrogate_skeleton.py),
+four TODOs; the reference solution is [`exercises/surrogate.py`](exercises/surrogate.py).
 
 ## Assets
 

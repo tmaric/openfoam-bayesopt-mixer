@@ -8,7 +8,7 @@ workflow profile, so the same study runs on a laptop and on a SLURM cluster.
 ```
 CadQuery geometry → cfMesh (cartesian2DMesh) → simpleFoam → scalarTransportFoam → objectives.csv
                                      ↑                                                    │
-                                     └────────── BoTorch qLogNEHVI proposes θ ←────────────┘
+                                     └────────── BoTorch qLogNEHVI proposes x ←────────────┘
 ```
 
 | | |
@@ -16,6 +16,7 @@ CadQuery geometry → cfMesh (cartesian2DMesh) → simpleFoam → scalarTranspor
 | **Design space** | 6 dimensions, mesh-safe (`bayes_optimize_sequential.yaml`) |
 | **Objectives** | minimise Δp/Δp<sub>straight</sub> and the flux-weighted intensity of segregation |
 | **Operating point** | Re = 10, Sc = 1000, H = 1 mm, L = 24 mm, water |
+| **Fidelity** | `workshop` (default): 2 unit cells, ~1 min per design · `research`: 5 cells, the archived study, 3–5 min |
 | **Model** | ARD Matérn-5/2 `SingleTaskGP` per objective, q = 1 |
 | **Acquisition** | `qLogNoisyExpectedHypervolumeImprovement` |
 | **Status** | corrected screen complete — **NO-GO**, see [Results](#results) |
@@ -67,7 +68,12 @@ apptainer exec --bind "$PWD/.." "$PADM_SIF" \
 ```
 
 `research_sequence.py` is the gated driver. It advances the campaign by **one
-bounded step** and stops:
+bounded step** and stops. Without `--campaign` that is the **workshop** campaign
+(`bayes_optimize_workshop.yaml`, results in `results/workshop*/`); add
+`--campaign research` to every call for the archived study's settings
+(`bayes_optimize_sequential.yaml`, `results/corrected_boundary_v3*/`). The two
+presets are described, with measured costs, in `config/config.yaml`, and their
+results are never pooled.
 
 | stage | what runs |
 |---|---|
@@ -141,7 +147,8 @@ apptainer exec --bind "$PWD/.." "$PADM_SIF" \
 ```
 
 Writes `pareto_animation.gif` (always) and `pareto_animation.mp4` (ffmpeg) into
-`<results_dir>/visualizations/`. This is the animation embedded in the slide deck.
+`<results_dir>/visualizations/`; point `results_dir` at a campaign you have run
+(`results/workshop` for the default one). This is the animation embedded in the slide deck.
 
 ## 3. Running natively, without the container
 
@@ -217,13 +224,14 @@ be pooled** with it.
 ## 7. Using this as a teaching study
 
 Part 5 of the slide deck is a hands-on assignment: six exercises that alternate
-**task → answer**, with the exact commands on the answer slide. Tasks 1–4 run
-CFD (minutes each); tasks 5–6 run none at all, reusing the twelve designs the
+**task → answer**, with the exact commands on the answer slide. Tasks 1 and 3
+run CFD at workshop fidelity, a minute or two each; task 2 is a `grep` and task
+4 a dry run; tasks 5–6 run no CFD at all, reusing the twelve designs the
 campaign already paid for.
 
 | # | Task | Learning outcome |
 |---|---|---|
-| 1 | Run the straight baseline; check it against 12νUL/H² | the workflow, the container, the profile switch |
+| 1 | Run the straight baseline; check it against ρ·12νUL/H² | the workflow, the container, the profile switch |
 | 2 | Find which YAML keys the CAD actually reads | read the source, not the field names |
 | 3 | Halve the asymmetry; predict, then measure | parameters → geometry → objectives; the trade-off |
 | 4 | Delete outputs; predict what Snakemake re-runs | the DAG is target-driven, not a file watcher |
@@ -242,8 +250,9 @@ apptainer shell --bind "$PWD" "$PADM_SIF"  # everything else happens in here
 
 The repository is bind-mounted, so edits and results land on the real disk.
 
-Every number on the answer slides was produced by running the exercise. The
-reference solution for tasks 5 and 6 is `docs/exercises/surrogate.py`:
+Every number on the answer slides was produced by running the exercise.
+Participants start tasks 5 and 6 from `docs/exercises/surrogate_skeleton.py`,
+four TODOs; the reference solution is `docs/exercises/surrogate.py`:
 
 ```bash
 python3 docs/exercises/surrogate.py               # from inside the image

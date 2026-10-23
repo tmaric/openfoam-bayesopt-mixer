@@ -52,9 +52,15 @@ The default command advances at most one CFD evaluation and never runs cases
 in parallel:
 
 ```bash
-python research_sequence.py status
-python research_sequence.py next --max-new-evaluations 1
+python research_sequence.py status --campaign research
+python research_sequence.py next --max-new-evaluations 1 --campaign research
 ```
+
+`--campaign research` selects the settings this document describes, and the
+baseline values below. Without it the drivers run the cheap **workshop**
+campaign — two unit cells instead of five, looser tolerances, same mesh
+resolution — whose numbers differ and are kept apart, in `results/workshop*/`
+(see `config/config.yaml`).
 
 The sequence is gated:
 

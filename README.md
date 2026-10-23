@@ -115,7 +115,7 @@ CAD-to-CFD pipeline:
 ```text
 CadQuery geometry → cfMesh (cartesian2DMesh) → simpleFoam → scalarTransportFoam → objectives.csv
                                    ↑                                                    │
-                                   └────────── BoTorch qLogNEHVI proposes θ ←────────────┘
+                                   └────────── BoTorch qLogNEHVI proposes x ←────────────┘
 ```
 
 Six mesh-safe parameters describe a 1 mm × 24 mm channel of five repeated cells,
@@ -140,8 +140,8 @@ Cloning is 3.4 MB and needs nothing installed.
 
 | | |
 |---|---|
-| **Theory deck**, 70 slides | [`docs/bayesian-optimization-cfd-theory.html`](PlanarAlternatingDeflectorMixer/docs/bayesian-optimization-cfd-theory.html) — Gaussian distribution → multivariate Gaussian → Gaussian process → marginalising and conditioning → acquisition functions → multi-objective BO → multi-fidelity. Self-contained: it refers neither to the tutorial nor to this repository, so it can be given on its own. |
-| **Hands-on tutorial**, 75 slides | [`docs/bayesian-optimization-cfd-tutorial.html`](PlanarAlternatingDeflectorMixer/docs/bayesian-optimization-cfd-tutorial.html) — the study end to end, a six-exercise assignment with answers, and a reproduction appendix. |
+| **Theory deck**, 76 slides | [`docs/bayesian-optimization-cfd-theory.html`](PlanarAlternatingDeflectorMixer/docs/bayesian-optimization-cfd-theory.html) — Gaussian distribution → multivariate Gaussian → Gaussian process → marginalising and conditioning → acquisition functions → multi-objective BO → multi-fidelity. Self-contained: it refers neither to the tutorial nor to this repository, so it can be given on its own. |
+| **Hands-on tutorial**, 80 slides | [`docs/bayesian-optimization-cfd-tutorial.html`](PlanarAlternatingDeflectorMixer/docs/bayesian-optimization-cfd-tutorial.html) — the study end to end, a six-exercise assignment with answers, and a reproduction appendix. |
 | **The study itself** | [`PlanarAlternatingDeflectorMixer/`](PlanarAlternatingDeflectorMixer/) and [its README](PlanarAlternatingDeflectorMixer/README.md) |
 
 Both decks are plain HTML with local CSS and JS — no reveal.js, no plugins, no
@@ -250,17 +250,40 @@ the cluster and copied back.
 |---|---|
 | **Building the image** | It carries OpenFOAM v2512, cfMesh, CadQuery, BoTorch, Snakemake and ParaView 5.11. The `.sif` is 1.6 GB (measured: 1 607 462 912 bytes) and is deliberately **not** tracked. |
 | **Building the function objects** | `pressureDrop` and `patchMixingQuality` are `dlopen`ed by the container's OpenFOAM and produce *both* objectives, so they must be compiled in the same environment that runs the solvers. |
-| **Assignment tasks 1–4** | They run real CFD — a few minutes each. Task 1 checks the straight baseline against the analytic 12νUL/H²; tasks 2–4 edit the CAD parameters and re-run. |
-| **Re-running the campaign** | `research_sequence.py next` advances it one bounded evaluation at a time. |
+| **Assignment tasks 1 and 3** | They run real CFD, at workshop fidelity (below) a minute or two each. Task 1 checks the straight baseline against the analytic ρ·12νUL/H²; task 3 edits one CAD parameter and re-runs. Task 2 is a `grep`, task 4 a dry run. |
+| **Re-running the campaign** | `research_sequence.py next` advances it one bounded evaluation at a time; `--campaign research` for the archived study's settings. |
 | **Rebuilding the figures or the animation** | `snakemake visualize` needs a campaign directory you have generated. The finished animation already ships in `docs/assets/`, so the results slide works without it. |
 | **The cluster path** | `profiles/slurm` and `run-bo.sbatch`, on a SLURM site. See [CLUSTER.md](PlanarAlternatingDeflectorMixer/CLUSTER.md). |
 
 **The 3.4 GB of fields and meshes the campaign produced is not in the
 repository**, and cannot be — only the small summaries above are. Reproducing a
-number end to end therefore means re-running that design, which is exactly what
-tasks 1–4 are for. The straight baseline is the cheapest check and gives
-Δp = 2.873688034 Pa, identical on a laptop, in the container, on a login node
-and on SLURM compute nodes.
+number end to end therefore means re-running that design. The straight baseline
+is the cheapest check: at research fidelity it gives Δp = 2.873688034 Pa,
+identical on a laptop, in the container, on a login node and on SLURM compute
+nodes.
+
+#### Two fidelities: workshop by default, research on request
+
+Every driver and every `snakemake` call runs at one of two presets
+(`config/config.yaml`), chosen with `--campaign` / `--config fidelity=…`:
+
+| | **workshop** (default) | **research** |
+|---|---|---|
+| device | 2 unit cells, 12 mm | 5 unit cells, 24 mm — the archived study |
+| cells (straight / strong baseline) | 78 884 / 66 136 | 157 604 / 125 728 |
+| flow: residuals, solver tolerance | 1e-4, 1e-6 | 1e-5, 1e-7 |
+| scalar: solver tolerance, stationarity | 1e-6, 1e-4 | 1e-8, 1e-4 |
+| one design, np 2, this laptop | 59–82 s | 197–278 s |
+| results | `results/workshop*/` | `results/corrected_boundary_v3*/` |
+
+The mesh resolution is the same in both. A coarser mesh was tried and rejected:
+at Sc = 1000 numerical diffusion in a coarse channel core inflated the mixing
+index by 30–122 % and reordered the baselines. Loosening the tolerances alone
+moves the objectives by 0.1 % or less; the shorter device is what saves the
+time, and it keeps the baselines in the same order in both objectives. The
+numbers of the two fidelities differ — the shorter device mixes less and costs
+less pressure — so they are never pooled: the fidelity is recorded with every
+design, and the BO driver refuses to mix them.
 
 To run the study rather than read about it, start at
 [`PlanarAlternatingDeflectorMixer/README.md`](PlanarAlternatingDeflectorMixer/README.md);
@@ -331,6 +354,10 @@ apptainer exec --bind "$PWD/.." "$PADM_SIF" \
     python3 research_sequence.py next --max-new-evaluations 1 --profile profiles/local
 ```
 
+This is the workshop campaign. Append `--campaign research` to every
+`research_sequence.py` call to work on the archived study's settings instead,
+in `results/corrected_boundary_v3*/`.
+
 ### Local and cluster from one workflow
 
 The execution backend is a Snakemake workflow profile and nothing else -- the
@@ -367,7 +394,7 @@ snakemake --workflow-profile profiles/local clean
 ## Main outputs
 
 ```text
-results/corrected_boundary_v3/<sample_id>/
+results/workshop/<sample_id>/            (research: results/corrected_boundary_v3/<sample_id>/)
 ├── FlowCase/pressureDrop.csv
 ├── ScalarTransportCase/mixing.csv
 ├── objectives.csv
