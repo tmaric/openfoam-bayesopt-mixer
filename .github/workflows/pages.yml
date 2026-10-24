@@ -1,0 +1,76 @@
+# Publishes the two slide decks to GitHub Pages -- and nothing else.
+#
+# The site is assembled from an explicit list below.  A file that is not on the
+# list never reaches the website, including files added to the repository later;
+# the READMEs, the study, the exercises and the notes stay in the repository only.
+# A new image or script a deck starts to load must be added to the list, and the
+# check below fails the deployment until it is.
+#
+# One-time setup: Settings -> Pages -> Build and deployment -> Source: GitHub Actions.
+name: slides to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - PlanarAlternatingDeflectorMixer/docs/**
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble the site from the list
+        run: |
+          set -euo pipefail
+          src=PlanarAlternatingDeflectorMixer/docs
+          mkdir -p site/assets
+          for f in index.html \
+                   bayesian-optimization-cfd-theory.html \
+                   bayesian-optimization-cfd-tutorial.html \
+                   slides.css slides.js; do
+            cp "$src/$f" site/
+          done
+          for f in github-repo-qr.svg \
+                   pareto_animation.mp4 pareto_animation.gif \
+                   pareto_front_corrected.png; do
+            cp "$src/assets/$f" site/assets/
+          done
+          find site -type f | sort
+
+      - name: Every local file a page loads is on the list
+        run: |
+          set -euo pipefail
+          cd site
+          missing=0
+          for ref in $( { grep -ohE '(src|href|poster)="[^"]+"' ./*.html | sed -E 's/^[a-z]+="//; s/"$//';
+                          grep -ohE 'assets/[A-Za-z0-9_.-]+' slides.js slides.css; } \
+                        | grep -vE '^(https?:|mailto:|#|data:)' | sed 's/[?#].*//' | sort -u ); do
+            if [ ! -f "$ref" ]; then
+              echo "::error::a published page loads '$ref', which is not on the list in pages.yml"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

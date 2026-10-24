@@ -9,7 +9,7 @@ DOCS_DIR="$(cd "${0%/*}" && pwd)"
 PORT="${1:-8000}"
 
 cd "$DOCS_DIR"
-echo "Serving on http://localhost:${PORT}/"
+echo "Serving on http://localhost:${PORT}/   (index.html links both decks)"
 echo "  theory   : http://localhost:${PORT}/bayesian-optimization-cfd-theory.html"
 echo "  tutorial : http://localhost:${PORT}/bayesian-optimization-cfd-tutorial.html"
 python3 -m http.server "$PORT"

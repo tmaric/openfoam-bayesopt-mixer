@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bayesian Optimization in CFD</title>
+  <meta name="description" content="Two slide decks: the theory of Bayesian optimization, and a hands-on tutorial that optimizes a micromixer with OpenFOAM and BoTorch.">
+  <style>
+    :root {
+      --ink: #102a43; --muted: #5d7285; --paper: #f6f1e8; --white: #fffdf8;
+      --blue: #2f78a8; --orange: #f28e2b; --line: #9bb2c4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--paper); color: var(--ink);
+      font-family: Inter, Aptos, "Segoe UI", Arial, sans-serif; line-height: 1.5;
+    }
+    main { max-width: 960px; margin: 0 auto; padding: 56px 16px 40px; }
+    h1 { font-size: clamp(28px, 5vw, 44px); line-height: 1.15; margin: 0 0 12px; }
+    .lead { color: var(--muted); font-size: 19px; margin: 0 0 36px; max-width: 46em; }
+    .decks { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+    a.deck {
+      display: block; background: var(--white); border: 1px solid var(--line);
+      border-left: 6px solid var(--blue); border-radius: 6px; padding: 22px 24px;
+      color: inherit; text-decoration: none;
+    }
+    a.deck.tutorial { border-left-color: var(--orange); }
+    a.deck:hover, a.deck:focus-visible { box-shadow: 0 4px 14px rgba(16, 42, 67, .14); outline: none; }
+    a.deck h2 { font-size: 23px; margin: 0 0 8px; }
+    a.deck p { margin: 0; color: var(--muted); }
+    .hint { margin: 32px 0 0; color: var(--muted); font-size: 15px; }
+    kbd {
+      font-family: "Cascadia Code", Consolas, monospace; font-size: 13px;
+      background: var(--white); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px;
+    }
+    footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 15px; color: var(--muted); }
+    footer a { color: var(--blue); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Bayesian Optimization in Computational Fluid Dynamics</h1>
+    <p class="lead">Two slide decks from the Delft Workshop on Bayesian Optimization for CFD.</p>
+    <div class="decks">
+      <a class="deck" href="bayesian-optimization-cfd-theory.html">
+        <h2>Theory</h2>
+        <p>From the Gaussian distribution to Gaussian processes, acquisition functions, multi-objective and multi-fidelity optimization. Self-contained.</p>
+      </a>
+      <a class="deck tutorial" href="bayesian-optimization-cfd-tutorial.html">
+        <h2>Hands-on tutorial</h2>
+        <p>A micromixer optimized end to end with CadQuery, OpenFOAM and BoTorch, six exercises with answers, and how to reproduce the study.</p>
+      </a>
+    </div>
+    <p class="hint">Arrow keys or space to advance, <kbd>Home</kbd> / <kbd>End</kbd> for the ends, <kbd>N</kbd> for the speaker notes.</p>
+    <footer>
+      Tomislav Maric &ndash; MMA TU Darmstadt &ndash;
+      <a href="https://tmaric.gitlab.io">tmaric.gitlab.io</a> &ndash;
+      code and study: <a href="https://github.com/tmaric/openfoam-bayesopt-mixer">github.com/tmaric/openfoam-bayesopt-mixer</a>
+    </footer>
+  </main>
+</body>
+</html>

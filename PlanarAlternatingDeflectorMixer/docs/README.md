@@ -7,6 +7,13 @@ Two standalone decks for the **Delft Workshop on Bayesian Optimization for CFD**
 | [`bayesian-optimization-cfd-theory.html`](bayesian-optimization-cfd-theory.html) | **Theory.** Self-contained, and does not refer to the tutorial or to this repository, so it can be given on its own. Gaussian distribution → multivariate Gaussian → Gaussian process → marginalising and conditioning → acquisition functions → multi-objective BO and the hypervolume → multi-fidelity. |
 | [`bayesian-optimization-cfd-tutorial.html`](bayesian-optimization-cfd-tutorial.html) | **Hands-on.** The planar alternating-deflector micromixer end to end: the problem, the method, building it with agents, the results, a six-exercise assignment with answers, and a reproduction appendix. |
 
+Online at <https://tmaric.github.io/openfoam-bayesopt-mixer/>, behind the small
+landing page [`index.html`](index.html). `../../.github/workflows/pages.yml`
+publishes the two decks, `slides.css`, `slides.js` and the assets they load —
+from an explicit list, so nothing else in the repository reaches the website.
+**A new image or video a deck starts to load must be added to that list**; the
+workflow refuses to deploy until it is.
+
 ## No installation, no plugins, no build step
 
 Both decks are plain HTML plus a local `slides.css` and `slides.js`. There is

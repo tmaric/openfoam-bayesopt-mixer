@@ -145,7 +145,10 @@ Cloning is 3.4 MB and needs nothing installed.
 | **The study itself** | [`PlanarAlternatingDeflectorMixer/`](PlanarAlternatingDeflectorMixer/) and [its README](PlanarAlternatingDeflectorMixer/README.md) |
 
 Both decks are plain HTML with local CSS and JS — no reveal.js, no plugins, no
-CDN, no build step, no network access of any kind. **Double-click either file.**
+CDN, no build step, no network access of any kind. **Double-click either file**,
+or open them online at <https://tmaric.github.io/openfoam-bayesopt-mixer/> —
+`.github/workflows/pages.yml` publishes the two decks there, and nothing else
+from this repository.
 Arrow keys or space to advance, `Home`/`End` for the ends, `N` toggles the
 speaker notes. Every diagram is computed in the browser at load time from the
 algebra it illustrates, so there are no image dependencies to go missing. To
