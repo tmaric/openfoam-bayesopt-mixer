@@ -1608,20 +1608,18 @@ function addAuthorLine() {
       el.appendChild(sep);
       el.appendChild(bit);
     });
-    /* a real link, opened in a new tab so the deck is not navigated away from;
-       the click must not also count as a keystroke or slide click */
-    const sep = document.createElement('span');
-    sep.className = 'sep';
-    sep.textContent = '\u2013';
+    section.appendChild(el);
+    /* the website sits on its own, centered in the footer: a real link, opened
+       in a new tab so the deck is not navigated away from; the click must not
+       also count as a keystroke or slide click */
     const site = document.createElement('a');
+    site.className = 'deck-site';
     site.href = AUTHOR_SITE;
     site.textContent = AUTHOR_SITE.replace(/^https?:\/\//, '');
     site.target = '_blank';
     site.rel = 'noopener';
     site.addEventListener('click', (ev) => ev.stopPropagation());
-    el.appendChild(sep);
-    el.appendChild(site);
-    section.appendChild(el);
+    section.appendChild(site);
   });
 }
 

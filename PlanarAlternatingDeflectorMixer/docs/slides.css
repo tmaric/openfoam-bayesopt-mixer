@@ -786,7 +786,7 @@ body {
   bottom: 16px;
   color: var(--muted);
   display: flex;
-  font-size: 20px;
+  font-size: 18px;
   gap: 10px;
   left: 72px;
   letter-spacing: 0.01em;
@@ -799,21 +799,31 @@ body {
   font-weight: 700;
 }
 .reveal .slides section > .deck-author .sep { color: var(--line); }
-.reveal .slides section > .deck-author a {
-  color: inherit;
+/* The author's website, centered in the footer on the author line's baseline. */
+.reveal .slides section > .deck-site {
+  bottom: 16px;
+  color: var(--muted);
+  font-size: 18px;
+  left: 50%;
+  letter-spacing: 0.01em;
+  position: absolute;
   text-decoration: underline;
   text-decoration-color: var(--line);
   text-underline-offset: 3px;
+  transform: translateX(-50%);
+  z-index: 40;
 }
-.reveal .slides section > .deck-author a:hover { color: var(--blue); text-decoration-color: var(--blue); }
+.reveal .slides section > .deck-site:hover { color: var(--blue); text-decoration-color: var(--blue); }
 .reveal .slides section.divider > .deck-author,
 .reveal .slides section.closing > .deck-author { color: rgba(255, 253, 248, 0.72); }
 .reveal .slides section.divider > .deck-author .who,
 .reveal .slides section.closing > .deck-author .who { color: var(--white); }
 .reveal .slides section.divider > .deck-author .sep,
 .reveal .slides section.closing > .deck-author .sep { color: rgba(255, 253, 248, 0.40); }
-.reveal .slides section.divider > .deck-author a:hover,
-.reveal .slides section.closing > .deck-author a:hover { color: var(--white); text-decoration-color: var(--white); }
+.reveal .slides section.divider > .deck-site,
+.reveal .slides section.closing > .deck-site { color: rgba(255, 253, 248, 0.72); text-decoration-color: rgba(255, 253, 248, 0.40); }
+.reveal .slides section.divider > .deck-site:hover,
+.reveal .slides section.closing > .deck-site:hover { color: var(--white); text-decoration-color: var(--white); }
 
 /* --- roadmap on the section dividers -------------------------------
    Repeating the whole arc on every divider, with the current part lit,
